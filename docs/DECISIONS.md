@@ -4,11 +4,12 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
 
 ## 2026-09-24 — M00: SDK location without a personal default
 
-- **Change:** `PDFBOOKMARK_SDK` is a cache path initialised from the `PDFBOOKMARK_SDK` environment variable. Configuration fails with an explanatory message when it is unset.
+- **Change:** `PDFBOOKMARK_SDK` is a cache path. A nonempty cached value wins; an empty one is filled from the `PDFBOOKMARK_SDK` environment variable (with `FORCE`). Configuration fails with an explanatory message when both are empty. `/CMakeUserPresets.json` is git-ignored for personal presets.
 - **Why:** AGENTS.md forbids committing personal absolute paths. An explicit failure is clearer than a `find_package` error about a missing package.
 - **Assumptions:** Existing build folders already cache the path. The Qt Creator folder `build/Desktop_Qt_6_11_2_MSVC2022_64bit_Debug` has `PDFBOOKMARK_SDK:PATH=…/pdfbookmarkSdk`, so the current setup keeps working.
 - **Removed:** The hard-coded personal SDK path default and the leftover `# ← added` comments.
-- **Verified:** A fresh `build/cli-debug` configure with `-DPDFBOOKMARK_SDK=…` built and ran. See IMPLEMENTATION_PROGRESS.md, M00.
+- **Verified:** A fresh `build/cli-debug` configure with `-DPDFBOOKMARK_SDK=…` built and ran. The review fix (PR #1, finding P2) was checked with four configure sequences; see IMPLEMENTATION_PROGRESS.md, M00.
+- **Review fix (PR #1):** The first version used `set(... "$ENV{...}" CACHE ...)`. A failed first configure left an empty cache entry, which `set(CACHE)` never overwrites, so setting the environment variable afterwards did not help.
 
 ## 2026-09-24 — M00: SDK boundary module and `--sdk-check` harness
 

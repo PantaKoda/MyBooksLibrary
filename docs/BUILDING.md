@@ -12,10 +12,10 @@
 
 `CMakeLists.txt` has no machine-specific default. Use one of these (first match wins):
 
-1. The `PDFBOOKMARK_SDK` cache variable: `-DPDFBOOKMARK_SDK=<sdk folder>`, a `CMakeUserPresets.json` (git-ignored by convention), or the Qt Creator build settings (**Projects → Build → CMake → Initial Configuration**).
-2. The `PDFBOOKMARK_SDK` environment variable, read only when the cache variable is first created.
+1. A nonempty `PDFBOOKMARK_SDK` cache variable: `-DPDFBOOKMARK_SDK=<sdk folder>`, a `CMakeUserPresets.json` in the repository root (ignored by `.gitignore`; the shared `CMakePresets.json` would stay tracked), or the Qt Creator build settings (**Projects → Build → CMake → Initial Configuration**).
+2. The `PDFBOOKMARK_SDK` environment variable. It is used whenever the cached value is empty, including after a configure that failed because nothing was set, so setting the variable and re-running configure in the same build folder works.
 
-Configuration fails with a clear message when neither is set. An existing build folder keeps its cached value.
+Configuration fails with a clear message when neither is set. A nonempty cached value is never replaced by the environment variable; to switch SDKs in an existing build folder, pass `-DPDFBOOKMARK_SDK=...` again.
 
 ## Qt Creator
 

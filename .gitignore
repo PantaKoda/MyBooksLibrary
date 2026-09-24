@@ -41,6 +41,9 @@ Thumbs.db
 *.qbs.user*
 CMakeLists.txt.user*
 
+# Personal CMake presets (machine-specific paths such as PDFBOOKMARK_SDK)
+/CMakeUserPresets.json
+
 # xemacs temporary files
 *.flc
 

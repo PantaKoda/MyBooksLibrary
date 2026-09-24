@@ -9,8 +9,13 @@ find_package(Qt6 REQUIRED COMPONENTS Quick)
 
 # --- pdfbookmark SDK ---
 # Set PDFBOOKMARK_SDK as a cache variable (-DPDFBOOKMARK_SDK=..., a CMakeUserPresets.json,
-# or the Qt Creator kit) or as an environment variable. See docs/BUILDING.md.
-set(PDFBOOKMARK_SDK "$ENV{PDFBOOKMARK_SDK}" CACHE PATH "Installed pdfbookmark SDK folder")
+# or the Qt Creator kit) or as an environment variable. A nonempty cache value wins; an empty
+# one (e.g. left by an earlier failed configure) is filled from the environment.
+# See docs/BUILDING.md.
+set(PDFBOOKMARK_SDK "" CACHE PATH "Installed pdfbookmark SDK folder")
+if(NOT PDFBOOKMARK_SDK AND NOT "$ENV{PDFBOOKMARK_SDK}" STREQUAL "")
+    set(PDFBOOKMARK_SDK "$ENV{PDFBOOKMARK_SDK}" CACHE PATH "Installed pdfbookmark SDK folder" FORCE)
+endif()
 if(NOT PDFBOOKMARK_SDK)
     message(FATAL_ERROR
         "PDFBOOKMARK_SDK is not set. Pass -DPDFBOOKMARK_SDK=<installed SDK folder> "
