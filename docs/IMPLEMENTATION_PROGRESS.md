@@ -5,7 +5,7 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | Step | Status | Branch / PR | Notes |
 | --- | --- | --- | --- |
 | M00 Baseline | Merged | `feat/m00-baseline` / [PR #1](https://github.com/PantaKoda/MyBooksLibrary/pull/1), merge `46de94a` | See below |
-| M01 Feasibility | InProgress (part 1 of 2 AwaitingReview; part 2 Blocked) | Part 1: `feat/m01-a3-fts5-probe` | FTS5 part verified locally. Qt PDF part blocked: module not installed |
+| M01 Feasibility | InProgress (part 1 of 2 AwaitingReview; part 2 Blocked) | Part 1: `feat/m01-a3-fts5-probe` / [PR #2](https://github.com/PantaKoda/MyBooksLibrary/pull/2) | FTS5 part verified locally. Qt PDF part blocked: module not installed |
 | M02–M11 | NotStarted | | |
 
 ## M01 — Feasibility
