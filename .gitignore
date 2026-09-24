@@ -41,6 +41,9 @@ Thumbs.db
 *.qbs.user*
 CMakeLists.txt.user*
 
+# Personal CMake presets (machine-specific paths such as PDFBOOKMARK_SDK)
+/CMakeUserPresets.json
+
 # xemacs temporary files
 *.flc
 
@@ -85,3 +88,5 @@ CMakeLists.txt.user*
 
 # Personal PDF books (never commit)
 *.pdf
+# Generated synthetic test fixtures are allowed
+!tests/fixtures/*.pdf

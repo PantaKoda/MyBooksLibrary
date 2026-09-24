@@ -1,8 +1,66 @@
+// appMyBooksLibrary
+//   appMyBooksLibrary                        the window (Main.qml)
+//   appMyBooksLibrary --sdk-check [<pdf>]    no window: print the pdfbookmark SDK identity and,
+//                                            with a PDF, its identity and extracted title.
+//                                            Exit 0 on success, 1 on an SDK error.
+//                                            The exe is a GUI-subsystem app on Windows, so redirect
+//                                            or pipe stdout to see the output.
+#include "processing/sdk/sdkinfo.h"
+
+#include <QCoreApplication>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
+#include <QTextStream>
+
+#include <atomic>
+#include <cstring>
+
+namespace {
+
+int sdkCheck()
+{
+    // QCoreApplication::arguments() is Unicode-safe on Windows.
+    const QStringList args = QCoreApplication::arguments();
+    QTextStream out(stdout);
+
+    const mbl::sdk::SdkIdentity sdk = mbl::sdk::querySdkIdentity();
+    out << "sdk.header_version=" << sdk.headerVersion << Qt::endl
+        << "sdk.loaded_version=" << sdk.loadedVersion << Qt::endl
+        << "sdk.models_found=" << (sdk.modelsFound ? "true" : "false") << Qt::endl;
+    if (sdk.modelsFound)
+        out << "sdk.detector_model=" << sdk.detectorModel << Qt::endl;
+    if (sdk.headerVersion != sdk.loadedVersion)
+        out << "warning=loaded SDK version differs from headers" << Qt::endl;
+
+    if (args.size() < 3)
+        return 0;
+
+    // No GUI exists in this mode, so the blocking SDK call may run here.
+    std::atomic_bool cancel{false};
+    const mbl::sdk::PdfProbe probe = mbl::sdk::probePdf(args.at(2), &cancel);
+    if (!probe.ok) {
+        out << "pdf.error=" << probe.error << Qt::endl;
+        return 1;
+    }
+    out << "pdf.sha256=" << probe.sha256 << Qt::endl
+        << "pdf.page_count=" << probe.pageCount << Qt::endl
+        << "metadata.title_status=" << probe.titleStatus << Qt::endl
+        << "metadata.title=" << probe.title << Qt::endl
+        << "metadata.pages_searched=" << probe.pagesSearched << Qt::endl
+        << "metadata.cancelled=" << (probe.metadataCancelled ? "true" : "false") << Qt::endl
+        << "metadata.report_json_bytes=" << probe.metadataJsonBytes << Qt::endl;
+    return 0;
+}
+
+} // namespace
 
 int main(int argc, char *argv[])
 {
+    if (argc >= 2 && std::strcmp(argv[1], "--sdk-check") == 0) {
+        QCoreApplication app(argc, argv);
+        return sdkCheck();
+    }
+
     QGuiApplication app(argc, argv);
 
     QQmlApplicationEngine engine;
