@@ -4,9 +4,32 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 
 | Step | Status | Branch / PR | Notes |
 | --- | --- | --- | --- |
-| M00 Baseline | AwaitingReview | `feat/m00-baseline` / [PR #1](https://github.com/PantaKoda/MyBooksLibrary/pull/1) | See below |
-| M01 Feasibility | NotStarted | | Known blocker: Qt PDF is not installed (see M00 findings) |
+| M00 Baseline | Merged | `feat/m00-baseline` / [PR #1](https://github.com/PantaKoda/MyBooksLibrary/pull/1), merge `46de94a` | See below |
+| M01 Feasibility | InProgress (part 1 of 2 AwaitingReview; part 2 Blocked) | Part 1: `feat/m01-a3-fts5-probe` | FTS5 part verified locally. Qt PDF part blocked: module not installed |
 | M02–M11 | NotStarted | | |
+
+## M01 — Feasibility
+
+### Part 1: FTS5 through QSQLITE (A3 foundation, infrastructure)
+
+**Touched paths:** `CMakeLists.txt`, `main.cpp`, `src/infrastructure/`, `tests/`, `docs/`.
+
+| Command (in `vcvars64`, Qt `bin` on `PATH` where needed) | Result |
+| --- | --- |
+| `qt-cmake … -B build\cli-debug` + `cmake --build build\cli-debug` | Builds `mbl_core`, the app and `tst_sqlitecapabilities` |
+| `ctest --test-dir build\cli-debug --output-on-failure -V` | 1/1 passed; ctest applied `PATH=path_list_prepend:C:/Qt/6.11.2/msvc2022_64/bin` |
+| `tst_sqlitecapabilities.exe -o file,txt` | 4 passed, 0 failed (`probeReportsFts5`, `punctuationNeedsEscaping`, init and cleanup) |
+| `appMyBooksLibrary.exe --sqlite-check` | Exit 0; SQLite **3.53.4**; compile options include `ENABLE_FTS5`, `ENABLE_FTS3/4`, `THREADSAFE=1`, `OMIT_LOAD_EXTENSION`, `TEMP_STORE=1`; fts5, bm25, remove_diacritics and prefix all `true` |
+| `appMyBooksLibrary.exe --sdk-check tests\fixtures\title-page.pdf` | Exit 0; title still `resolved` (no regression) |
+
+**Findings:**
+- `OMIT_LOAD_EXTENSION` means no custom tokenizers or extensions can be loaded. The built-in `unicode61` (with diacritic folding) and `trigram` tokenizers are the options.
+- Raw user text is FTS5 query syntax (`C++` is rejected), so A3 must quote and escape queries.
+- On this Windows setup, the Qt Test plain-text logger writes nothing to a console or pipe. JUnit XML to stdout and `-o file,txt` both work. CTest uses the exit code.
+
+### Part 2: Qt PDF availability and coexistence (reader) — Blocked
+
+`C:\Qt\6.11.2\msvc2022_64` has no `Qt6Pdf` module (`lib/cmake/Qt6Pdf` and `bin/Qt6Pdf*.dll` are absent). Installing it through the Qt Maintenance Tool needs owner approval. Independent work (M02) can continue meanwhile.
 
 ## M00 — Baseline
 
@@ -64,4 +87,4 @@ The Qt Creator build folder was not rebuilt in this step. CI is not configured.
 
 ### Next action
 
-Owner review of the M00 PR. Then M01: an FTS5 probe through QSQLITE, plus the Qt PDF availability and coexistence check (blocked until the Qt PDF module is installed).
+Merged as PR #1. Continued in M01.

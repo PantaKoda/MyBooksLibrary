@@ -5,7 +5,7 @@ project(MyBooksLibrary VERSION 0.1 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Quick)
+find_package(Qt6 REQUIRED COMPONENTS Quick Sql)
 
 # --- pdfbookmark SDK ---
 # Set PDFBOOKMARK_SDK as a cache variable (-DPDFBOOKMARK_SDK=..., a CMakeUserPresets.json,
@@ -31,13 +31,22 @@ if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/importedcontent/CMakeLists.txt")
     add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/importedcontent)
 endif()
 
+# Application code without the GUI or the SDK, shared by the app and the tests.
+qt_add_library(mbl_core STATIC
+    src/infrastructure/sqlitecapabilities.h
+    src/infrastructure/sqlitecapabilities.cpp
+)
+target_include_directories(mbl_core PUBLIC src)
+target_link_libraries(mbl_core PUBLIC Qt6::Sql)
+if(MSVC)
+    target_compile_options(mbl_core PUBLIC /utf-8)   # UTF-8 string literals
+endif()
+
 qt_add_executable(appMyBooksLibrary
     main.cpp
     src/processing/sdk/sdkinfo.h
     src/processing/sdk/sdkinfo.cpp
 )
-
-target_include_directories(appMyBooksLibrary PRIVATE src)
 
 qt_add_qml_module(appMyBooksLibrary
     URI MyBooksLibrary
@@ -53,14 +62,17 @@ set_target_properties(appMyBooksLibrary PROPERTIES
 )
 
 target_link_libraries(appMyBooksLibrary
-    PRIVATE Qt6::Quick pdfbookmark::pdfbookmark
+    PRIVATE Qt6::Quick mbl_core pdfbookmark::pdfbookmark
 )
-if(MSVC)
-    target_compile_options(appMyBooksLibrary PRIVATE /utf-8)   # UTF-8 string literals
-endif()
 
 # Copies pdfbookmark.dll, its dependency DLLs and the OCR models next to the .exe
 pdfbookmark_deploy_runtime(appMyBooksLibrary)
+
+option(MBL_BUILD_TESTS "Build the MyBooksLibrary tests" ON)
+if(MBL_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
 
 include(GNUInstallDirs)
 install(TARGETS appMyBooksLibrary
