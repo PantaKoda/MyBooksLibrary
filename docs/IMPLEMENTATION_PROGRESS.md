@@ -4,7 +4,7 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 
 | Step | Status | Branch / PR | Notes |
 | --- | --- | --- | --- |
-| M00 Baseline | AwaitingReview | `feat/m00-baseline` | See below |
+| M00 Baseline | AwaitingReview | `feat/m00-baseline` / [PR #1](https://github.com/PantaKoda/MyBooksLibrary/pull/1) | See below |
 | M01 Feasibility | NotStarted | | Known blocker: Qt PDF is not installed (see M00 findings) |
 | M02–M11 | NotStarted | | |
 
