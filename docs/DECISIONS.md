@@ -79,8 +79,9 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   2. The lookup was O(books × matches) on the only database thread, because `book_id` is UNINDEXED in FTS5.
   3. WAL mode is persistent, so a refused newer catalog was being modified, contrary to the refusal guarantee.
 - **Assumptions:** A single table read per search is acceptable at the expected library sizes (400 contents-only matches: 14 ms in Debug). An indexed book-to-rowid projection can replace it if profiling shows a need.
-- **Verified:** New regression tests fail on the previous code and pass now:
+- **Verified:** These regression tests fail on the previous code and pass now:
   - `enablesForeignKeysWithoutPersistentChanges`;
   - `newerSchemaIsRefusedUnchanged` (DELETE-mode catalog stays byte-identical, with no `-wal`/`-shm` files);
-  - `tocOutcomeRoundTripsAndMismatchIsRejected` (including after restart);
-  - `manyContentsOnlyMatchesUseOneTitleRead` (400 books; order and titles checked).
+  - `tocOutcomeRoundTripsAndMismatchIsRejected` (including after restart).
+
+  `manyContentsOnlyMatchesUseOneTitleRead` (400 books) checks results, order and pagination and logs the elapsed time. It does not count scans or assert latency, so it would also pass on the previous, slower implementation. The fix itself was verified by code inspection and the 14 ms measurement.
