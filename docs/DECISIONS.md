@@ -76,6 +76,12 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
 - **Why:** The evidence points to SDK OCR memory pressure on the whole machine, not to a collision between the two PDFium copies. A helper process would not protect the viewer from that.
 - **Assumptions:** The cause of the earlier crashes is unproven (no commit data or dump at the time). The risk stays open and is tracked in READER.md. The primary recommendation is upstream OCR memory reduction.
 
+## 2026-09-25 — M01 re-review fix (PR #4): unambiguous snapshot encoding
+
+- **Change:** `sdksnapshot.cpp` encodes strings as quoted, escaped values, absent optionals as `null`, and composites in brackets. It builds lines by concatenation instead of chained `QString::arg`.
+- **Why:** Re-review of `bd61dc0` found that `TitleValue{"A|B","C"}` and `{"A","B|C"}`, and a missing subtitle and the text `-`, encoded identically, so a changed field could pass the semantic comparison. Contributor separators and line breaks had the same weakness. Chained `arg()` would also re-substitute `%N` inside document text.
+- **Verified:** The new `encodingHasNoCollisions` test fails on the previous encoding (at the reviewer's example) and passes now. ctest 7/7.
+
 ## 2026-09-25 — M02: Domain contracts in `src/domain/`
 
 - **Change:** Added application value contracts: typed UUID IDs (`BookId`, `AssetId`, `RunId`), `Result`/`Status` with error codes, metadata (status per field, ordered contributors with roles, Auto/Value/Cleared overrides, `effectiveMetadata`), TOC entries (hierarchy and destination states, printed label kept apart from the zero-based page), book/asset/run identity, publish tickets, and search request/response types. Stable text codes for every stored enum live in `codes.cpp`.

@@ -100,6 +100,8 @@ The owner installed Qt PDF on 2026-09-25. **Touched paths:** `CMakeLists.txt`, `
 | E2 `image-only.pdf --require-ocr --view persistent` (Release) | 8/8 PASS; 54,526 renders during OCR; system commit peak 51,134/57,248 MB |
 | Fresh `windeployqt --qmldir .` package, clean `PATH`/QML/plugin environment | 8/8 PASS; QtQuick.Pdf plugin and `Qt6PdfQuick.dll` loaded from the package |
 
+**Re-review fix (PR #4, review of `bd61dc0`):** the semantic snapshot encoding is now unambiguous (quoted and escaped strings, explicit `null`, no format-string substitution). `tst_sdksnapshot` has 9 cases; `encodingHasNoCollisions` fails on the previous encoding. ctest 7/7; `--reader-check contents-book.pdf --rounds 3` 8/8 PASS (Debug). The OCR runs above were not repeated for this change, because it only affects how equal results are encoded.
+
 **Risk (not a proven blocker):** earlier runs crashed 3/3 (`0xE0000008` in `Qt6Pdf.dll`); the corrected runs passed 0/2 crashes near the system commit limit. Details and options are in READER.md. Not verified: Qt Quick rendering in a visible window (only instantiation was checked), and macOS/Linux.
 
 **Next action:** owner review, and a decision on the blocker options in READER.md. Report the OCR memory profile and cancel latency to PDFMegine.

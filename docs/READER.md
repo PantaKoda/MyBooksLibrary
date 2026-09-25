@@ -47,7 +47,15 @@ A canonical text of the observable results, compared by SHA-256:
 - every mapping (status, page, method, alternative pages);
 - the plan (readiness, blockers, nodes with destinations, omissions, promotions).
 
-Diagnostics, stop reasons, reason text, OCR counters and acquired page text are excluded. `tst_sdksnapshot` checks that shifting one or all destinations with unchanged counts changes the digest, and that transient fields do not.
+Diagnostics, stop reasons, reason text, OCR counters and acquired page text are excluded.
+
+The encoding is unambiguous:
+- every string is a quoted, escaped value (`"` and `\` escaped, control characters and line breaks as `\uXXXX`);
+- an absent optional is the bare word `null`;
+- records and lists are bracketed (`{...}`, `[...]`);
+- lines are built by concatenation, so document text is never used as a format string.
+
+`tst_sdksnapshot` checks that shifting one or all destinations with unchanged counts changes the digest, and that transient fields do not. It also checks that separator, absent-value, quote, backslash, line-break and `%N` cases cannot collide (PR #4 re-review).
 
 Fixtures (`tests/fixtures/make_fixtures.py`):
 - `title-page.pdf`: 3 text pages.
