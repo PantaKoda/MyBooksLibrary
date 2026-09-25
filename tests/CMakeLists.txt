@@ -6,7 +6,9 @@ function(mbl_add_test name)
     # qt_add_executable defaults to the Windows GUI subsystem; tests need console output.
     set_target_properties(${name} PROPERTIES WIN32_EXECUTABLE FALSE)
     target_link_libraries(${name} PRIVATE mbl_core Qt6::Test)
-    add_test(NAME ${name} COMMAND ${name})
+    # The Qt Test plain-text logger prints nothing on this Windows kit; JUnit XML to stdout does,
+    # so ctest --output-on-failure shows the failing assertion.
+    add_test(NAME ${name} COMMAND ${name} -o -,junitxml)
     if(WIN32 AND CMAKE_VERSION VERSION_GREATER_EQUAL 3.22)
         set_tests_properties(${name} PROPERTIES ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:${QT6_INSTALL_PREFIX}/${QT6_INSTALL_BINS}")
