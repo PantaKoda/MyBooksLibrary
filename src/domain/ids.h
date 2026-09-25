@@ -35,6 +35,7 @@ private:
 using BookId = Id<struct BookTag>;
 using AssetId = Id<struct AssetTag>;
 using RunId = Id<struct RunTag>;  // One metadata or TOC analysis run.
+using ImportId = Id<struct ImportTag>;  // One import operation.
 
 } // namespace mbl::domain
 

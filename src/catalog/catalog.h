@@ -19,7 +19,7 @@
 namespace mbl::catalog {
 
 // Registers an asset and its book, and indexes the book (file-name fallback
-// title). Fails with InvalidArgument if an asset with the same SHA-256 exists;
+// title). Fails with Duplicate if an asset with the same SHA-256 exists;
 // deduplication is decided by the caller using findBookBySha256().
 domain::Result<domain::BookId> registerBook(QSqlDatabase& db, const domain::NewBook& book);
 

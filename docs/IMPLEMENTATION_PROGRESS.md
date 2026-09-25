@@ -11,6 +11,22 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | M03 Import/library shell | InProgress: part 1 (A1 managed import) | `feat/m03-a1-managed-import` | See "M03" |
 | M04–M11 | NotStarted | | |
 
+## M03 — Import and library shell
+
+### Part 1: managed import (A1 + A2)
+
+**Touched paths:** `src/storage/`, `src/catalog/imports.*`, `src/catalog/catalog_internal.h`, `src/catalog/catalog.*` (insert shared, `Duplicate` code), `src/catalog/migrations.cpp` (v2), `src/domain/importing.h`, `src/domain/ids.h`, `src/domain/result.h`, `src/domain/codes.cpp`, `CMakeLists.txt`, `tests/storage/`, `tests/catalog/tst_migrations.cpp`, `docs/`.
+
+| Command | Result |
+| --- | --- |
+| Clean Debug and Release builds against SDK 0.2.0 + `ctest` | 8/8 passed in both; no `warning C…` |
+| `ctest --test-dir build\sdk020-debug --repeat until-fail:3` | Passed |
+| JUnit totals | TestImportService 15, TestMigrations 8; 0 failures |
+
+The first run had one failure in a test: a path compared relative to `files/` instead of the library root. The test was fixed; the behaviour was correct.
+
+**Not in this part:** GUI wiring, library-root configuration and the book list (part 2); restoring a trashed duplicate from the UI; page count at import (M04).
+
 ## SDK 0.2.0 update (2026-09-25)
 
 **Why:** PDFMegine released SDK **0.2.0** (tag `v0.2.0` = `93d9128`; OCR fix PR #2, merge `eeb977c`) in response to PDFMegine issue #1, which records the OCR memory and throughput findings from M01. Owners: integration and the A4 SDK boundary. Branch `chore/m01-sdk-0.2.0`.

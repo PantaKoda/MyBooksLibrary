@@ -136,3 +136,16 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
 - **Change:** `ReaderCheckView.qml` hosts `PdfMultiPageView` in a `Loader`. The check's default teardown deactivates the view, processes events for 200 ms, then destroys the document. `--qml-cycles` and `--qml-naive-teardown` allow stress runs.
 - **Why:** One package run crashed (`0xC0000005`) on a Qt Quick worker thread during that check's teardown. The hypothesis was that page-image loads were still using the document. 1,500 naive cycles did not reproduce it, so the hypothesis is unconfirmed.
 - **Assumptions:** The ordered teardown is a reasonable default but not a proven fix. The M06 reader adapter must own document lifetime explicitly and needs its own stress test with a visible window.
+
+## 2026-09-26 — M03 part 1: import protocol with recorded phases
+
+- **Change:** Added A1 `src/storage/` (`LibraryLayout`, `copyVerified`, `ImportService` with `recover()`), A2 `catalog/imports.*`, and migration 2 (`import_operations`). `registerBook` shares its insert with `completeImport` through `catalog_internal.h` and now reports `ErrorCode::Duplicate`. See STORAGE.md.
+- **Why:** AGENTS.md sections 1 and 5 require verified managed copies, unchanged originals, exact-SHA-256 deduplication, and recovery of interrupted operations without losing or duplicating files.
+- **Assumptions:**
+  - A same-filesystem `QFile::rename` is the install commit.
+  - A `QSaveFile` commit plus a re-read digest is the verification.
+  - A `copying` operation is abandoned on recovery rather than resumed, because its source may have changed. The user imports it again.
+  - Orphaned managed files are reported, never deleted.
+  - Files that don't contain `%PDF-` in their first KiB are refused before any record is made.
+  - Import runs on a worker thread; wiring it to the GUI is M03 part 2.
+- **Verified:** `tst_importservice` (15 cases, including a crash after each phase with a restart) and `tst_migrations` (v1 → v2 upgrade with data). ctest 8/8 in Debug and Release, and repeated 3 times.

@@ -1,5 +1,6 @@
 #include "catalog/catalog.h"
 
+#include "catalog/catalog_internal.h"
 #include "search/searchindex.h"
 
 #include <QDateTime>
@@ -13,31 +14,11 @@
 namespace mbl::catalog {
 
 using namespace mbl::domain;
+using detail::now;
+using detail::sqlError;
+using detail::Transaction;
 
-namespace {
-
-// Rolls back unless commit() succeeded.
-class Transaction {
-public:
-    explicit Transaction(QSqlDatabase& db) : m_db(db), m_active(db.transaction()) {}
-    ~Transaction()
-    {
-        if (m_active)
-            m_db.rollback();
-    }
-    bool begun() const { return m_active; }
-    bool commit()
-    {
-        if (!m_active || !m_db.commit())
-            return false;
-        m_active = false;
-        return true;
-    }
-
-private:
-    QSqlDatabase& m_db;
-    bool m_active;
-};
+namespace detail {
 
 QString now()
 {
@@ -53,6 +34,10 @@ Error sqlError(const QSqlDatabase& db, const QString& what)
 {
     return makeError(ErrorCode::Database, QStringLiteral("%1: %2").arg(what, db.lastError().text()));
 }
+
+} // namespace detail
+
+namespace {
 
 QVariant nullable(const std::optional<int>& v)
 {
@@ -512,20 +497,17 @@ Status setLifecycle(QSqlDatabase& db, const BookId& id, Lifecycle lifecycle)
 
 } // namespace
 
-Result<BookId> registerBook(QSqlDatabase& db, const NewBook& book)
+Result<BookId> detail::insertBook(QSqlDatabase& db, const NewBook& book)
 {
     const AssetRecord& a = book.asset;
     if (a.id.isNull() || a.sha256.size() != 64 || a.managedPath.isEmpty())
         return makeError(ErrorCode::InvalidArgument, QStringLiteral("Asset id, SHA-256 and managed path are required."));
 
-    Transaction tx(db);
-    if (!tx.begun())
-        return sqlError(db, QStringLiteral("begin"));
     auto existing = findBookBySha256(db, a.sha256);
     if (!existing)
         return existing.error();
     if (existing.value())
-        return makeError(ErrorCode::InvalidArgument, QStringLiteral("An asset with this SHA-256 is already registered."));
+        return makeError(ErrorCode::Duplicate, QStringLiteral("An asset with this SHA-256 is already registered."));
 
     const QString stamp = now();
     QSqlQuery q(db);
@@ -554,6 +536,18 @@ Result<BookId> registerBook(QSqlDatabase& db, const NewBook& book)
         return sqlError(q);
     if (auto s = refreshProjection(db, id); !s)
         return s.error();
+    return id;
+}
+
+
+Result<BookId> registerBook(QSqlDatabase& db, const NewBook& book)
+{
+    Transaction tx(db);
+    if (!tx.begun())
+        return sqlError(db, QStringLiteral("begin"));
+    auto id = detail::insertBook(db, book);
+    if (!id)
+        return id;
     if (!tx.commit())
         return sqlError(db, QStringLiteral("commit"));
     return id;

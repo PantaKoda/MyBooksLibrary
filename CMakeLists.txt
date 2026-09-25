@@ -36,6 +36,7 @@ qt_add_library(mbl_core STATIC
     src/domain/book.h
     src/domain/codes.cpp
     src/domain/ids.h
+    src/domain/importing.h
     src/domain/metadata.h
     src/domain/metadata.cpp
     src/domain/result.h
@@ -49,6 +50,9 @@ qt_add_library(mbl_core STATIC
     src/infrastructure/sqlitecapabilities.cpp
     src/catalog/catalog.h
     src/catalog/catalog.cpp
+    src/catalog/catalog_internal.h
+    src/catalog/imports.h
+    src/catalog/imports.cpp
     src/catalog/library.h
     src/catalog/library.cpp
     src/catalog/migrations.h
@@ -59,6 +63,12 @@ qt_add_library(mbl_core STATIC
     src/search/ftsquery.cpp
     src/search/searchindex.h
     src/search/searchindex.cpp
+    src/storage/filecopy.h
+    src/storage/filecopy.cpp
+    src/storage/importservice.h
+    src/storage/importservice.cpp
+    src/storage/librarylayout.h
+    src/storage/librarylayout.cpp
 )
 target_include_directories(mbl_core PUBLIC src)
 target_link_libraries(mbl_core PUBLIC Qt6::Sql)
