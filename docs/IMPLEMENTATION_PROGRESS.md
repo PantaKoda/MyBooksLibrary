@@ -8,7 +8,7 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | M01 Feasibility | Merged: part 1 [PR #2](https://github.com/PantaKoda/MyBooksLibrary/pull/2) (merge `f126ad0`); part 2 [PR #4](https://github.com/PantaKoda/MyBooksLibrary/pull/4) (merge `e9d8be2`) | `feat/m01-a3-fts5-probe`, `feat/m01-reader-qtpdf-coexistence` | Qt PDF coexists; OCR memory-pressure and Qt Quick teardown risks tracked in READER.md |
 | M02 Contracts/persistence | Merged | `feat/m02-a2-catalog-persistence` / [PR #3](https://github.com/PantaKoda/MyBooksLibrary/pull/3), merge `b643446` | See below |
 | SDK 0.2.0 update | Merged | `chore/m01-sdk-0.2.0` / [PR #5](https://github.com/PantaKoda/MyBooksLibrary/pull/5), merge `4f87975` | See "SDK 0.2.0 update" |
-| M03 Import/library shell | InProgress: part 1 (A1 managed import) | `feat/m03-a1-managed-import` | See "M03" |
+| M03 Import/library shell | Part 1 AwaitingReview | `feat/m03-a1-managed-import` / [PR #6](https://github.com/PantaKoda/MyBooksLibrary/pull/6) | See "M03" |
 | M04–M11 | NotStarted | | |
 
 ## M03 — Import and library shell
