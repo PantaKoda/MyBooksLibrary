@@ -43,3 +43,27 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
 - **Change:** None to behaviour. A test records the baseline: binding raw user text `C++` to `MATCH` is an FTS5 syntax error, while the quoted string `"HTTP/2"` is a valid phrase query.
 - **Why:** Binding values prevents SQL injection but not FTS5 syntax errors. A3 (M02/M06) must compile user queries into quoted FTS5 terms.
 - **Assumptions:** The escaping design (quoting, doubling `"`, prefix handling) belongs to A3 and is not decided here.
+
+## 2026-09-25 — M02: Domain contracts in `src/domain/`
+
+- **Change:** Added application value contracts: typed UUID IDs (`BookId`, `AssetId`, `RunId`), `Result`/`Status` with error codes, metadata (status per field, ordered contributors with roles, Auto/Value/Cleared overrides, `effectiveMetadata`), TOC entries (hierarchy and destination states, printed label kept apart from the zero-based page), book/asset/run identity, publish tickets, and search request/response types. Stable text codes for every stored enum live in `codes.cpp`.
+- **Why:** AGENTS.md section 6 requires contracts with stable IDs, revisions and explicit optionals before any views are wired.
+- **Assumptions:** Metadata evidence and candidates stay in the raw SDK report for now (`RunIdentity.reportPath`). Normalising them into rows is M04 work.
+
+## 2026-09-25 — M02: Database thread, library lock and migrations
+
+- **Change:** `infrastructure::DatabaseExecutor` owns one thread and one QSQLITE connection (WAL, foreign keys, busy timeout). `catalog::Library` adds a `QLockFile` writer lock and runs versioned migrations (`PRAGMA user_version`, one transaction per migration, refusing newer schemas).
+- **Why:** AGENTS.md section 6 requires one database thread, pass-by-copy values, foreign keys, versioned non-destructive migrations and a single-process writer lock.
+- **Assumptions:** `Library::open` blocks while migrating. The composition root (M03) must call it off the GUI thread. The executor's destructor waits for its thread; it runs only at library shutdown after queued work. The lock's stale time is 0, so a crashed process's lock is reclaimed as soon as its PID is gone.
+
+## 2026-09-25 — M02: Schema version 1 and transactional publication
+
+- **Change:** Tables for assets, books, metadata runs/contributors, overrides, TOC runs/entries, plus A3's FTS5 projections (see CATALOG.md). Publication verifies generation, lifecycle and source digest, then writes run, active pointer, revision and projection in one transaction. Trash bumps both generations.
+- **Why:** AGENTS.md sections 1 (rules 5–7), 6 and 7: states kept separate, every TOC entry kept, overrides preserved, stale or trashed results refused, and index changes sharing the catalog transaction.
+- **Assumptions:** A `known_parent` entry with a missing, self or cyclic parent is stored as `unknown` instead of rejecting the whole TOC. Rule 6 (keep every entry) outweighs rejecting the run. A resolved destination beyond a known page count is refused as invalid input.
+
+## 2026-09-25 — M02: Search projections and query compiler
+
+- **Change:** `search_books` and `search_toc` FTS5 tables use `unicode61 remove_diacritics 2 tokenchars '+#'`. `search::compileQuery` quotes every term, supports phrases and trailing-`*` prefixes, and treats operators as text. Ranking has two tiers and never compares ranks across indexes (see SEARCH.md).
+- **Why:** AGENTS.md section 7. The M01 test showed that raw user text breaks FTS5, and treating `+#` as token characters keeps `C++`/`C#` distinct from `C`.
+- **Assumptions:** Indexing the file-name fallback title helps find poorly named PDFs. It is shown with `displayTitleFromFileName` and never stored as metadata. Chapter hit details are copied into `search_toc` so that A3 queries do not read A2 tables.
