@@ -40,16 +40,16 @@ Before changing code:
 
 This instruction file supplies the application requirements. Installed headers determine actual SDK signatures. If an SDK version differs from the baseline, document the difference; do not invent an API or silently drop a product requirement.
 
-Reviewed baseline, 24 September 2026:
+Reviewed baseline, 24 September 2026; SDK baseline updated to 0.2.0 on 25 September 2026 (see `docs/IMPLEMENTATION_PROGRESS.md`, "SDK 0.2.0 update"):
 
 | Item | Existing value |
 | --- | --- |
 | Desktop repository / reviewed commit | `PantaKoda/MyBooksLibrary` / `bd48f85cd85cf16e9590d7820e449a4a07bc666c` |
-| Engine repository / reviewed commit | `PantaKoda/PDFMegine` / `4499b719d7adb71e5cc372bde88d47f66d8ffebf` |
+| Engine repository / SDK source | `PantaKoda/PDFMegine`, release tag `v0.2.0` = `93d91280e4177e61c5d8cef32c47f1a5b9a2ce1c` (OCR memory/throughput fix: PR #2, merge `eeb977c18dfa09c74edd57e3539f211b56ec395d`). The 24 September review was against `4499b719d7adb71e5cc372bde88d47f66d8ffebf` (SDK 0.1.0). |
 | Desktop state at review | Initial QML screen and working SDK CMake integration; catalog, search and processing UI not implemented |
 | Executable / QML URI | `appMyBooksLibrary` / `MyBooksLibrary` |
 | Language / documented kit | C++17 / Qt 6.11.2, Desktop MSVC2022 64bit, MSVC toolchain |
-| SDK package | `find_package(pdfbookmark 0.1 CONFIG REQUIRED)` |
+| SDK package | `find_package(pdfbookmark 0.2 CONFIG REQUIRED)`: SDK **0.2.0**. It adds `ocr_threads` to the metadata, analysis and text options, which changes their size, so switching SDKs requires a clean rebuild. |
 | Imported link target | `pdfbookmark::pdfbookmark` |
 | Public facade header | `<pdfbookmark/pdfbookmark.hpp>` |
 | Runtime deployment helper | `pdfbookmark_deploy_runtime(appMyBooksLibrary)` |

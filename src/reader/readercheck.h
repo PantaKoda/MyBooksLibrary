@@ -23,6 +23,9 @@ struct ReaderCheckOptions {
     bool requireOcr = false;  // OCR must complete, or SDK checks are NOT_EXERCISED.
     bool useModels = true;    // false: run the SDK without OCR models.
     bool qtControl = true;    // Run the Qt-only control for the SDK baseline's duration.
+    int ocrThreads = 0;       // SDK OCR threads; 0 = automatic.
+    int qmlCycles = 1;        // Create/destroy cycles of the QtQuick.Pdf view.
+    bool qmlNaiveTeardown = false; // Destroy the document with the view still active (diagnostic).
     int timeoutSeconds = 900;
 };
 

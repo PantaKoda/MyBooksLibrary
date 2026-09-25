@@ -47,6 +47,7 @@ SdkIdentity querySdkIdentity()
         identity.modelsFound = true;
         identity.detectorModel = fromSdkPath(models->detector);
     }
+    identity.ocrThreadsAuto = pdfbookmark::text::resolve_ocr_threads(0);
     return identity;
 }
 
@@ -67,6 +68,7 @@ PdfProbe probePdf(const QString& localPath, const std::atomic_bool* cancel, cons
 
     pdfbookmark::MetadataRunOptions options;
     options.models = modelsFor(probeOptions);
+    options.ocr_threads = probeOptions.ocrThreads;
     const auto report = pdfbookmark::extract_metadata(input, options,
                                                       pdfbookmark::RunControl{cancel});
     if (!report) {
@@ -94,6 +96,7 @@ AnalysisProbe probeAnalysis(const QString& localPath, const std::atomic_bool* ca
     AnalysisProbe probe;
     pdfbookmark::AnalysisOptions options;
     options.models = modelsFor(probeOptions);
+    options.ocr_threads = probeOptions.ocrThreads;
     options.plan.allow_partial = false;
     options.plan.flat_outline_for_unknown_hierarchy = false;
     options.plan.title_style = pdfbookmark::PlanPolicy::TitleStyle::AsPrinted;

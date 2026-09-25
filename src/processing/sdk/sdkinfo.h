@@ -15,12 +15,14 @@ struct SdkIdentity {
     QString loadedVersion;    // pdfbookmark::version() of the loaded library.
     bool modelsFound = false; // find_models() located the OCR models.
     QString detectorModel;    // Detector model path when found (diagnostics only).
+    int ocrThreadsAuto = 0;   // OCR threads the SDK uses for ocr_threads = 0 on this machine.
 };
 
 SdkIdentity querySdkIdentity();
 
 struct ProbeOptions {
     bool useModels = true;             // false: models = nullopt, so OCR is unavailable.
+    int ocrThreads = 0;                // OCR CPU threads (SDK 0.2); 0 = automatic.
     std::function<void()> onProgress;  // Called on the worker thread for each analysis progress callback.
 };
 

@@ -6,7 +6,7 @@
 | --- | --- |
 | Qt | 6.11.2, kit **Desktop Qt 6.11.2 MSVC2022 64bit**. MinGW cannot use the SDK's C++ API. |
 | Compiler | MSVC x64 (Visual Studio 2026), C++17 |
-| pdfbookmark SDK | 0.1.x, installed folder containing `include/`, `lib/cmake/pdfbookmark/`, `bin/`, `share/` |
+| pdfbookmark SDK | 0.2.x (`find_package(pdfbookmark 0.2)`), installed folder containing `include/`, `lib/cmake/pdfbookmark/`, `bin/`, `share/` |
 
 ## Telling CMake where the SDK is
 
@@ -16,6 +16,14 @@
 2. The `PDFBOOKMARK_SDK` environment variable. It is used whenever the cached value is empty, including after a configure that failed because nothing was set, so setting the variable and re-running configure in the same build folder works.
 
 Configuration fails with a clear message when neither is set. A nonempty cached value is never replaced by the environment variable; to switch SDKs in an existing build folder, pass `-DPDFBOOKMARK_SDK=...` again.
+
+## Switching SDK versions
+
+Install each SDK version in its own folder (for example `…\pdfbookmark-sdk\0.2.0\`) instead of overwriting the old one, so you can switch back. Then:
+
+1. Point `PDFBOOKMARK_SDK` at the new folder. In an existing build folder, pass `-DPDFBOOKMARK_SDK=…` again, or change it under Qt Creator's **Projects → Build → CMake → Current Configuration** and run CMake.
+2. **Rebuild from clean**: delete the build folder, or use Qt Creator's **Build → Clear CMake Configuration** and then **Rebuild All**. The C++ API passes option structs by value, and 0.2.0 changed their size. Objects compiled against older headers must not be linked with the new DLL.
+3. Check with `appMyBooksLibrary --sdk-check`: `sdk.header_version` and `sdk.loaded_version` must be equal.
 
 ## Qt Creator
 

@@ -7,7 +7,56 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | M00 Baseline | Merged | `feat/m00-baseline` / [PR #1](https://github.com/PantaKoda/MyBooksLibrary/pull/1), merge `46de94a` | See below |
 | M01 Feasibility | Part 1 Merged ([PR #2](https://github.com/PantaKoda/MyBooksLibrary/pull/2), merge `f126ad0`); part 2 AwaitingReview (review fixes applied) | Part 2: `feat/m01-reader-qtpdf-coexistence` / [PR #4](https://github.com/PantaKoda/MyBooksLibrary/pull/4) (draft) | Qt PDF available and coexisting in all corrected runs; OCR memory-pressure risk tracked in READER.md |
 | M02 Contracts/persistence | Merged | `feat/m02-a2-catalog-persistence` / [PR #3](https://github.com/PantaKoda/MyBooksLibrary/pull/3), merge `b643446` | See below |
+| SDK 0.2.0 update | AwaitingReview | `chore/m01-sdk-0.2.0` | See "SDK 0.2.0 update" |
 | M03–M11 | NotStarted | | |
+
+## SDK 0.2.0 update (2026-09-25)
+
+**Why:** PDFMegine released SDK **0.2.0** (tag `v0.2.0` = `93d9128`; OCR fix PR #2, merge `eeb977c`) in response to PDFMegine issue #1, which records the OCR memory and throughput findings from M01. Owners: integration and the A4 SDK boundary. Branch `chore/m01-sdk-0.2.0`.
+
+**Installed SDK identity**
+
+| Item | Value |
+| --- | --- |
+| Release asset | `pdfbookmark-sdk-0.2.0-win64.zip`, SHA-256 `728f5c5115e77082074e355621dfde810363e7fdc0f844fda578bcc9bdb374e0`, unpacked to `…\Dev\pdfbookmark-sdk\0.2.0\` (0.1.0 kept) |
+| Header / loaded version | `0.2.0` / `0.2.0` (Debug and Release) |
+| `pdfbookmark.dll` SHA-256 | `d71d094382b487a3ae78fbdac273a8bfd047268cd986a307f0bd7cb9d515283f` |
+| `pdfbookmarkd.dll` SHA-256 | `8cd0fa4ab476d06cf36e2303f68393b7155d824b01525b0cb3308b700f4a41a7` |
+| `pdfbookmark.hpp` SHA-256 | `39b8636f…bf62` (unchanged from 0.1.0) |
+| API change | `ocr_threads` in `MetadataRunOptions`, `AnalysisOptions`, `TextOptions` and `text::OpenOptions`, plus `text::resolve_ocr_threads()`. Option struct sizes changed, so a clean rebuild is required. |
+| Automatic OCR threads on this machine | 8 (`resolve_ocr_threads(0)`; Ryzen 9 5900X, 24 logical processors) |
+
+**Changes:** `find_package(pdfbookmark 0.2)`. `ProbeOptions.ocrThreads` and `SdkIdentity.ocrThreadsAuto` added (`--sdk-check` prints `sdk.ocr_threads_auto`). The harness gains `--ocr-threads N`, a GUI responsiveness measure (largest gap between event-loop turns), and a QML create/destroy stress option (`--qml-cycles N`, `--qml-naive-teardown`). The QML view now sits in a `Loader`, so it can be destroyed before its document. AGENTS.md baseline, CLAUDE.md SDK-brief import and BUILDING.md (switching SDKs) are updated.
+
+**Verification** (fresh build folders `build\sdk020-debug`, `build\sdk020-release` against the 0.2.0 SDK):
+
+| Command | Result |
+| --- | --- |
+| Clean Debug and Release builds + `ctest` | 7/7 passed in both; no `warning C…` |
+| `--sdk-check tests\fixtures\title-page.pdf` (Debug, Release) | header 0.2.0 = loaded 0.2.0; models found; title resolved |
+| `--reader-check title-page.pdf` / `contents-book.pdf --rounds 5` (Debug) | 8/8 PASS each |
+| E3 `image-only.pdf --require-ocr --no-models` (Release) | `sdk_alone=NOT_EXERCISED`, exit 1 |
+| E1 `--require-ocr --view churn` (Release) | 8/8 PASS |
+| E2 `--require-ocr --view persistent` (Release) | 8/8 PASS |
+| E4 `--require-ocr --view persistent --ocr-threads 4` (Release) | 8/8 PASS; digests equal to automatic threads |
+| Fresh `windeployqt` package against 0.2.0, clean environment: `--sdk-check`, `--sqlite-check`, `--reader-check contents-book.pdf --rounds 20` (25 repetitions), `--reader-check image-only.pdf --require-ocr --view persistent` | All exit 0; OCR 8/8 PASS with models, QML plugin and `Qt6PdfQuick.dll` from the package |
+| `--qml-cycles 300 --qml-naive-teardown`, 5 processes (Release) | 1,500/1,500 cycles, no crash |
+
+**Before and after** (`image-only.pdf`, 4 scanned pages, Release, same harness, same machine):
+
+| Measure | SDK 0.1.0 | SDK 0.2.0 |
+| --- | --- | --- |
+| Metadata + analysis with OCR (8 page OCRs), SDK alone | 151.5 s (~19 s/page) | **57.7 s** (~7.2 s/page); 81.1 s with `ocr_threads=4` |
+| Process private memory peak | 8,915 MB | **2,381 MB** |
+| System commit peak during OCR with viewing (limit 57,248 MB; ~43 GB before the run) | 51,875 MB | **46,525 MB** |
+| Cancellation during OCR (request to return) | 290 ms | **21–28 ms** |
+| GUI max gap between event-loop turns, persistent viewer: Qt only / during OCR | not measured | 4 ms / **10 ms** (auto threads); 10 ms / 7 ms (4 threads) |
+| GUI max gap, churn viewer (whole document per turn): Qt only / during OCR | not measured | 19 ms / 34 ms |
+| Crashes with viewing during OCR | 3/3 with the first harness; 0/2 later | 0/4 (E1, E2, E4, package) |
+
+**New observation (open, unexplained):** one package run of `--reader-check contents-book.pdf --rounds 20` (text only, no OCR) ended with `0xC0000005` on a **Qt Quick worker thread**. The stack was `Qt6Core` thread start → `Qt6Quick` → `Qt6Gui`, with no SDK module. It happened after `qml_pdf_module` passed, during teardown of that check. It did not recur in 50 further package runs or in 1,500 naive QML create/destroy cycles. It is recorded as an M06 reader-lifecycle risk (READER.md). The ordered teardown is kept as the default, but it is not proven to address it.
+
+**Next action:** owner review; then the PDFMegine issue #1 comment with these figures (drafted for owner approval); then M03.
 
 ## M02 — Contracts and persistence
 
