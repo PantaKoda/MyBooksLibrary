@@ -56,3 +56,22 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
 - **Change:** None in behaviour. The failure is documented with three options (upstream memory work, helper process, pause viewing during OCR).
 - **Why:** Choosing between them changes the architecture or the SDK. That is the owner's decision (AGENTS.md sections 3 and 12).
 - **Assumptions:** Import, catalog and search work (M02–M05) does not depend on the viewer and can continue.
+
+## 2026-09-25 — M01 review fixes (PR #4): trustworthy coexistence evidence
+
+- **Change:**
+  1. The SDK probes record model identity, OCR attempts and pages with completed OCR. `--require-ocr` turns zero completed OCR pages into NOT_EXERCISED. `--no-models` provides the missing-models case.
+  2. The QtQuick.Pdf import moved to the registered `qml/reader/ReaderCheckView.qml`.
+  3. Cancellation and shutdown use a progress-callback handshake, so the request is made during active work. Cancellation must be observed; otherwise the result is FAIL, or NOT_EXERCISED if the race was lost.
+  4. Rounds are compared by a semantic snapshot digest (`sdksnapshot.*`), not by counts.
+  5. A Qt-only control, a persistent-viewer mode, and process and system commit sampling were added.
+  6. The SDK boundary became the static library `mbl_sdk`, so it can be unit-tested (`tst_sdksnapshot`). Verdict rules live in `mbl_core` (`tst_checkverdict`).
+- **Why:** The review showed that the first harness could pass without exercising OCR or cancellation, compared only counts, and hid a QML import from deployment. It also asked for controls before any reader architecture is chosen.
+- **Assumptions:** NOT_EXERCISED counts as not passed. The snapshot excludes diagnostics and counters. The harness remains a diagnostic tool; product threading follows A4 (M04).
+- **Verified:** See READER.md, "With the corrected harness", and IMPLEMENTATION_PROGRESS.md (M01 part 2).
+
+## 2026-09-25 — M01: OCR and viewing reassessed as a memory-pressure risk
+
+- **Change:** The earlier "blocker" is reframed. With the corrected harness, OCR with churn and with persistent viewing both passed (0/2 crashes, against 3/3 earlier). System commit peaked at about 52 of 57.2 GB during OCR, while the Qt-only controls stayed at about 30 MB.
+- **Why:** The evidence points to SDK OCR memory pressure on the whole machine, not to a collision between the two PDFium copies. A helper process would not protect the viewer from that.
+- **Assumptions:** The cause of the earlier crashes is unproven (no commit data or dump at the time). The risk stays open and is tracked in READER.md. The primary recommendation is upstream OCR memory reduction.

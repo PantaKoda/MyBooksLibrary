@@ -2,7 +2,9 @@
 
 ## Modules
 
-Qt 6.11.2 msvc2022_64 now has Qt PDF: `Qt6Pdf`, `Qt6PdfQuick` and `Qt6PdfWidgets` (CMake packages and DLLs), plus the QML module `QtQuick.Pdf` (`PdfDocument`, `PdfMultiPageView`, `PdfScrollablePageView`, `PdfPageView`). The app links `Qt6::Pdf`. The QML module is loaded at runtime by the check below.
+Qt 6.11.2 msvc2022_64 now has Qt PDF: `Qt6Pdf`, `Qt6PdfQuick` and `Qt6PdfWidgets` (CMake packages and DLLs), plus the QML module `QtQuick.Pdf` (`PdfDocument`, `PdfMultiPageView`, `PdfScrollablePageView`, `PdfPageView`). The app links `Qt6::Pdf`.
+
+The QtQuick.Pdf import lives in the registered QML file `qml/reader/ReaderCheckView.qml`. `qmlimportscanner`, and therefore `windeployqt --qmldir .`, sees it there and deploys `Qt6PdfQuick.dll` and `qml/QtQuick/Pdf`. An import inside a C++ string would be invisible to the scanner.
 
 ## Two PDFium copies in one process
 
@@ -13,52 +15,79 @@ Qt 6.11.2 msvc2022_64 now has Qt PDF: `Qt6Pdf`, `Qt6PdfQuick` and `Qt6PdfWidgets
 
 The two copies have separate global state, so neither library's initialisation or internal locking covers the other. Qt's image plugin `imageformats/qpdf.dll` and the SDK's `qpdf30.dll` differ in name and location and do not collide.
 
-## `appMyBooksLibrary --reader-check <pdf> [<rounds>]`
+## `appMyBooksLibrary --reader-check`
 
-This runs without a window and prints `check.<name>=PASS|FAIL <detail>`. The exit code is the number of failures (3 if an SDK call exceeds 300 s). The SDK runs on a plain worker thread. The GUI thread never blocks on it: it keeps rendering and processing events.
+```
+appMyBooksLibrary --reader-check <pdf> [--rounds N] [--view churn|persistent|none]
+                  [--require-ocr] [--no-models] [--no-control] [--timeout S]
+```
+
+This runs without a window. It prints `check.<name>=PASS|FAIL|NOT_EXERCISED <detail>`, plus flushed `sample.<phase>` memory lines every 2 s during long phases, so the data survives a crash. The exit code is the number of checks that did not pass (2 for bad arguments, 3 if an SDK call times out). The SDK runs on a plain worker thread, and the GUI thread never blocks on it.
+
+**NOT_EXERCISED** means the scenario the check exists for did not happen. It is never a pass. The verdict rules are in `src/reader/checkverdict.*` and are unit-tested, including with an "ignores cancel" double.
 
 | Check | What it does |
 | --- | --- |
 | `qtpdf_render` | Loads the PDF with `QPdfDocument`, renders every page and records a digest per page. |
-| `sdk_alone` | `read_pdf_identity` + `extract_metadata` + `analyze` (AsPrinted, `allow_partial=false`, no flattening, models set) on the worker: the reference results. |
-| `concurrent_view_and_analysis` | Repeats the SDK work `rounds` times on the worker while the GUI thread repeatedly creates, loads, renders and destroys `QPdfDocument`s. Every SDK result and every page digest must equal the references. |
-| `cancel_while_viewing` | Starts analysis, sets the cancel flag while the viewer renders, and records how the call ended and how long after the request. |
-| `shutdown_during_analysis` | Destroys the viewer and requests cancel while analysis runs; the GUI thread keeps serving events until the worker returns. |
-| `qml_pdf_module` | Instantiates `PdfDocument` and `PdfMultiPageView` from `QtQuick.Pdf` and waits for `Ready`. |
-| `non_ascii_path` | Copies the PDF under `Βιβλία ü/Τίτλος ü.pdf`; Qt PDF renders identically and the SDK reports the same digest. |
+| `sdk_alone` | `read_pdf_identity` + `extract_metadata` + `analyze` (AsPrinted, `allow_partial=false`, no flattening) on the worker: the reference results. It records model identity, OCR attempts and **pages with completed OCR**. With `--require-ocr`, zero completed OCR pages gives NOT_EXERCISED and the run stops. |
+| `qt_only_control` | The same viewing workload for `rounds ×` the reference duration, without SDK work: separates viewer behaviour from coexistence. |
+| `concurrent_{churn,persistent}_view_and_sdk` / `sdk_rounds_without_view` | SDK rounds on the worker while the GUI thread views. `churn`: each turn loads, renders every page of, and closes a new `QPdfDocument`. `persistent`: one open document renders the next page each turn. Every round must match the reference **semantic snapshot** (next section), and every rendered page must match its reference digest. |
+| `cancel_while_viewing` | The worker pauses inside its first progress callback until the GUI thread has set the cancel flag, so the request is provably made during active analysis. PASS only when the SDK reports cancellation; normal completion after the request is FAIL; a lost race is NOT_EXERCISED. |
+| `shutdown_during_analysis` | Same handshake: the viewer is destroyed and cancel requested while analysis is active, and the GUI thread keeps serving events until the worker returns. |
+| `qml_pdf_module` | Creates `ReaderCheckView` (`PdfDocument` + `PdfMultiPageView`) and waits for `Ready`. Reports the QML import paths and the loaded `pdfquickplugin`/`Qt6PdfQuick` paths. |
+| `non_ascii_path` | Copies the PDF under `Βιβλία ü/Τίτλος ü.pdf`; Qt PDF renders identically and the SDK reports the same digest and metadata snapshot. |
+
+### Semantic snapshot (`src/processing/sdk/sdksnapshot.*`)
+
+A canonical text of the observable results, compared by SHA-256:
+- every metadata field's status and value, with ordered contributors and roles, and alternatives with their evidence pages;
+- the searched pages;
+- the analysis outcome, search and evidence pages, and the chosen candidate;
+- every parsed entry (ID, order, title, printed reference, hierarchy);
+- every mapping (status, page, method, alternative pages);
+- the plan (readiness, blockers, nodes with destinations, omissions, promotions).
+
+Diagnostics, stop reasons, reason text, OCR counters and acquired page text are excluded. `tst_sdksnapshot` checks that shifting one or all destinations with unchanged counts changes the digest, and that transient fields do not.
 
 Fixtures (`tests/fixtures/make_fixtures.py`):
 - `title-page.pdf`: 3 text pages.
 - `contents-book.pdf`: 27 text pages with a printed contents page. The SDK parses and resolves all 5 entries.
 - `image-only.pdf`: 4 scan-like pages with no text layer, which forces SDK page rendering and OCR.
 
-Results are recorded in IMPLEMENTATION_PROGRESS.md (M01 part 2).
+## Results
 
-## Results (2026-09-25, Windows 11, Ryzen 9 5900X, 32 GB RAM)
+Windows 11 Pro 10.0.26200, Ryzen 9 5900X, 32 GB RAM; system commit limit 57.2 GB. The machine's commit charge was 42–43 GB before each run because of other applications.
+
+### With the corrected harness (after review of `d07c0af`)
 
 | Run | Result |
 | --- | --- |
-| Debug, `title-page.pdf`, 3 rounds | 7/7 PASS |
-| Debug, `contents-book.pdf`, 10 rounds | 7/7 PASS. SDK: plan_ready, 5 parsed, 5 resolved, identical in every round. |
-| Release package outside the build tree (`windeployqt` + SDK runtime, `PATH` = System32 only), `contents-book.pdf`, 20 rounds | 7/7 PASS; cancellation observed (`cancelled`) |
-| Release, `image-only.pdf` (OCR), 2 rounds, `no-view` | 7/7 PASS. Rounds took 284 s and were identical; cancel honoured **18.9 s** after the request. |
-| Release, `image-only.pdf` (OCR), 1 round, viewing concurrently | **Process terminated, 3 of 3 runs**: exception `0xE0000008` on the **GUI thread inside `Qt6Pdf.dll`** during `QPdfDocument::render`, while process private memory was ~8.98 GB. |
+| Debug, `title-page.pdf --rounds 5` | 8/8 PASS; cancel observed 8 ms after the request, during active work |
+| Debug, `contents-book.pdf --rounds 5` | 8/8 PASS; identical semantic digests across rounds; cancel observed after 18 ms |
+| Release, `image-only.pdf --require-ocr --no-models` (E3) | `sdk_alone=NOT_EXERCISED` (4 pages OCR-skipped, `search_incomplete`), stops; exit 1 |
+| Release, `image-only.pdf --require-ocr --view churn` (E1) | **8/8 PASS**. OCR completed on 4/4 pages; reference run 151.5 s. Qt-only control: 13,001 load/render/close cycles over 151.5 s, process private peak **31 MB**. Concurrent: 10,438 cycles (41,752 pages) during OCR, 0 differing; semantic digests equal; process private peak **8,915 MB**, system commit peak **51,875 / 57,248 MB**, minimum available physical memory **2,674 MB**. Cancel observed 290 ms after the request. |
+| Release, `image-only.pdf --require-ocr --view persistent` (E2) | **8/8 PASS**. Control: 54,025 renders, peak 27 MB. Concurrent: 54,526 renders during OCR, 0 differing; process peak 8,916 MB, system commit peak 51,134 / 57,248 MB, min available physical 4,048 MB. Cancel observed after 294 ms. |
+| Fresh `windeployqt --release --qmldir .` package; `PATH`=System32 only; `QML_IMPORT_PATH`, `QML2_IMPORT_PATH`, `QT_PLUGIN_PATH` unset; `contents-book.pdf --rounds 20`, `--sqlite-check`, `--sdk-check` | 8/8 PASS, exit 0, exit 0. `pdfquickplugin.dll` and `Qt6PdfQuick.dll` loaded **from the package folder**; all import paths inside the package; models found in the package. |
 
-`0xE0000008` is the out-of-memory termination code used by Chromium's allocator, which PDFium uses: an allocation failed inside Qt PDF's embedded PDFium and the whole process was terminated. The SDK's own run completes on the same input when Qt PDF is idle.
+### Earlier runs with the first harness (`aca11ca`)
 
-### Memory profile of SDK OCR (Release, `image-only.pdf`, 4 pages, sampled every 3 s)
+`image-only.pdf`, 1 round, churn viewing during OCR, Release: the **process was terminated in 3 of 3 runs** with exception `0xE0000008` on the GUI thread inside `Qt6Pdf.dll` during `QPdfDocument::render`, at ~8.98 GB process private memory. `0xE0000008` is the out-of-memory termination code of the Chromium allocator that PDFium uses. The same OCR work without viewing passed. System commit was not recorded in those runs.
 
-- Private memory rises to about **4.5 GB** within seconds of the first OCR call and stays there between calls (likely resident OCR models).
-- During each `extract_metadata` / `analyze` call it peaks at about **8.9 GB**, then returns to about 4.5 GB.
-- Throughput is about 18 s per scanned page in both Debug and Release builds (similar numbers for a 12-page variant: 3 min 15 s in Release).
-- System commit was 37.7 GB of a 55.9 GB limit with the app not running. The exact failing allocation could not be observed from outside, because peaks between samples may be higher.
+### Memory profile of SDK OCR (`image-only.pdf`, 4 pages)
 
-## Blocker (recorded, not resolved)
+- Within each OCR-using call, process private memory rises to about 4.5 GB within seconds and then to about **8.9 GB**. It returns to tens of MB after the call. The earlier reading of "4.5 GB resident between calls" was a mid-call plateau.
+- On this machine that raises the **system** commit charge by about 9 GB, to about 51–52 GB of the 57.2 GB limit, and leaves as little as 2.7 GB of physical memory available.
+- Throughput is about 18 s per scanned page (151 s for metadata plus analysis of 4 pages).
 
-**Embedded Qt PDF viewing is not safe while SDK OCR runs in the same process on this machine.** In-app page navigation (M06) depends on it. Options for the owner:
+## Interpretation and remaining risk
 
-1. **Upstream (PDFMegine):** reduce and bound OCR memory (resident ~4.5 GB, peak ~8.9 GB for 4 pages), and check cancellation between smaller units of work (latency currently up to one OCR page, about 19 s). The SDK must not be edited here.
-2. **Application:** run SDK work in a separate helper process owned by A4, so its memory cannot take down the viewer. This changes the architecture (AGENTS.md prefers in-process modules) and needs owner approval.
-3. **Interim mitigation:** pause viewer rendering while an OCR job runs. This avoids the crash but blocks reading during processing.
+- **No evidence of a collision between the two PDFium copies.** Tens of thousands of renders ran during OCR with identical results, in both viewing patterns, and the Qt-only controls stayed flat.
+- **The earlier crashes are consistent with system memory pressure** from the SDK's OCR footprint: an allocation failed in whichever component asked at the wrong moment, and that was Qt PDF. This is not proven, because commit was not recorded when they happened and no dump was taken. The 3/3-then-0/2 pattern suggests a narrow margin that depends on what else is running.
+- **Risk to track (not solved here):** on a 32 GB machine with ordinary background load, one OCR job brings the system close to its commit limit. In-process viewing during OCR worked in these runs but has little headroom.
 
-Text-layer PDFs (no OCR) show no problem, including 20 concurrent rounds in the packaged build.
+Options for the owner, reassessed:
+1. **Upstream (PDFMegine):** reduce and bound OCR memory (about 9 GB peak for 4 pages at the default 300 dpi raster). This is the direct fix for the pressure.
+2. **Helper process for SDK work:** isolates SDK crashes from the viewer. It does **not** protect the viewer from system-wide memory pressure, so on its own it does not address this risk.
+3. **Pause viewing during OCR:** only a mitigation to verify. It avoids concurrent allocation in this process but not other processes' pressure.
+
+Not verified: Qt Quick rendering in a visible window (only type instantiation), long books with many OCR pages, lower-memory machines, and macOS/Linux.

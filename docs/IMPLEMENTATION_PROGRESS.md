@@ -5,7 +5,7 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | Step | Status | Branch / PR | Notes |
 | --- | --- | --- | --- |
 | M00 Baseline | Merged | `feat/m00-baseline` / [PR #1](https://github.com/PantaKoda/MyBooksLibrary/pull/1), merge `46de94a` | See below |
-| M01 Feasibility | Part 1 Merged ([PR #2](https://github.com/PantaKoda/MyBooksLibrary/pull/2), merge `f126ad0`); part 2 AwaitingReview with a **recorded blocker** | Part 2: `feat/m01-reader-qtpdf-coexistence` / [PR #4](https://github.com/PantaKoda/MyBooksLibrary/pull/4) (draft) | Qt PDF available; coexistence fails under SDK OCR memory load (see READER.md) |
+| M01 Feasibility | Part 1 Merged ([PR #2](https://github.com/PantaKoda/MyBooksLibrary/pull/2), merge `f126ad0`); part 2 AwaitingReview (review fixes applied) | Part 2: `feat/m01-reader-qtpdf-coexistence` / [PR #4](https://github.com/PantaKoda/MyBooksLibrary/pull/4) (draft) | Qt PDF available and coexisting in all corrected runs; OCR memory-pressure risk tracked in READER.md |
 | M02 Contracts/persistence | AwaitingReview (separate PR #3) | `feat/m02-a2-catalog-persistence` | Not on this branch |
 | M03–M11 | NotStarted | | |
 
@@ -44,7 +44,18 @@ The owner installed Qt PDF on 2026-09-25. **Touched paths:** `CMakeLists.txt`, `
 | `--reader-check image-only.pdf 2 no-view` (Release) | 7/7 PASS; cancel honoured after 18.9 s |
 | `--reader-check image-only.pdf 1` (Release), 3 runs | **Exit `0xE0000008`** every time, on the GUI thread in `Qt6Pdf.dll`, at ~8.98 GB private memory |
 
-**Blocker:** embedded viewing plus in-process SDK OCR is not safe; details and options are in READER.md. Not verified: Qt Quick rendering in a visible window (only instantiation was checked), and macOS/Linux.
+**Review fixes (PR #4, review of `d07c0af`):** four P2 findings fixed (OCR must really run, QML import visible to deployment, real cancellation, semantic comparison), plus the controls the reviewer asked for.
+
+| Command | Result |
+| --- | --- |
+| Debug build + ctest (branch before merging `main`) | 3/3 passed: `tst_sqlitecapabilities`, `tst_checkverdict` (9 cases), `tst_sdksnapshot` (8 cases, including a real missing-models analysis giving NOT_EXERCISED) |
+| `--reader-check title-page.pdf --rounds 5`, `contents-book.pdf --rounds 5` (Debug) | 8/8 PASS each; cancellation observed during active work (8 ms, 18 ms) |
+| E3 `image-only.pdf --require-ocr --no-models` (Release) | `sdk_alone=NOT_EXERCISED`; exit 1 |
+| E1 `image-only.pdf --require-ocr --view churn` (Release) | 8/8 PASS; 10,438 cycles during OCR; process peak 8,915 MB; system commit peak 51,875/57,248 MB |
+| E2 `image-only.pdf --require-ocr --view persistent` (Release) | 8/8 PASS; 54,526 renders during OCR; system commit peak 51,134/57,248 MB |
+| Fresh `windeployqt --qmldir .` package, clean `PATH`/QML/plugin environment | 8/8 PASS; QtQuick.Pdf plugin and `Qt6PdfQuick.dll` loaded from the package |
+
+**Risk (not a proven blocker):** earlier runs crashed 3/3 (`0xE0000008` in `Qt6Pdf.dll`); the corrected runs passed 0/2 crashes near the system commit limit. Details and options are in READER.md. Not verified: Qt Quick rendering in a visible window (only instantiation was checked), and macOS/Linux.
 
 **Next action:** owner review, and a decision on the blocker options in READER.md. Report the OCR memory profile and cancel latency to PDFMegine.
 

@@ -33,19 +33,33 @@ endif()
 
 # Application code without the GUI or the SDK, shared by the app and the tests.
 qt_add_library(mbl_core STATIC
+    src/infrastructure/memorystats.h
+    src/infrastructure/memorystats.cpp
     src/infrastructure/sqlitecapabilities.h
     src/infrastructure/sqlitecapabilities.cpp
+    src/reader/checkverdict.h
+    src/reader/checkverdict.cpp
 )
 target_include_directories(mbl_core PUBLIC src)
 target_link_libraries(mbl_core PUBLIC Qt6::Sql)
 if(MSVC)
     target_compile_options(mbl_core PUBLIC /utf-8)   # UTF-8 string literals
 endif()
+if(WIN32)
+    target_link_libraries(mbl_core PRIVATE psapi)
+endif()
+
+# The production SDK boundary. SDK headers and types stay behind it.
+qt_add_library(mbl_sdk STATIC
+    src/processing/sdk/sdkinfo.h
+    src/processing/sdk/sdkinfo.cpp
+    src/processing/sdk/sdksnapshot.h
+    src/processing/sdk/sdksnapshot.cpp
+)
+target_link_libraries(mbl_sdk PUBLIC mbl_core pdfbookmark::pdfbookmark)
 
 qt_add_executable(appMyBooksLibrary
     main.cpp
-    src/processing/sdk/sdkinfo.h
-    src/processing/sdk/sdkinfo.cpp
     src/reader/readercheck.h
     src/reader/readercheck.cpp
 )
@@ -54,6 +68,7 @@ qt_add_qml_module(appMyBooksLibrary
     URI MyBooksLibrary
     QML_FILES
         Main.qml
+        qml/reader/ReaderCheckView.qml
 )
 
 set_target_properties(appMyBooksLibrary PROPERTIES
@@ -64,7 +79,7 @@ set_target_properties(appMyBooksLibrary PROPERTIES
 )
 
 target_link_libraries(appMyBooksLibrary
-    PRIVATE Qt6::Quick Qt6::Pdf mbl_core pdfbookmark::pdfbookmark
+    PRIVATE Qt6::Quick Qt6::Pdf mbl_core mbl_sdk
 )
 
 # Copies pdfbookmark.dll, its dependency DLLs and the OCR models next to the .exe

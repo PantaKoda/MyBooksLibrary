@@ -5,10 +5,12 @@
 //                                            Exit 0 on success, 1 on an SDK error.
 //   appMyBooksLibrary --sqlite-check         no window: probe FTS5 through the QSQLITE driver.
 //                                            Exit 0 when search prerequisites are met, 1 otherwise.
-//   appMyBooksLibrary --reader-check <pdf> [<rounds> [no-view]]
+//   appMyBooksLibrary --reader-check <pdf> [--rounds N] [--view churn|persistent|none]
+//                                     [--require-ocr] [--no-models] [--no-control] [--timeout S]
 //                                            no window: Qt PDF availability and coexistence with
-//                                            concurrent SDK work. Exit = number of failed checks
-//                                            (3 if the SDK worker times out).
+//                                            concurrent SDK work (docs/READER.md). Exit = number
+//                                            of checks not passed; 2 for bad arguments; 3 if the
+//                                            SDK worker times out.
 //                                            The exe is a GUI-subsystem app on Windows, so redirect
 //                                            or pipe stdout to see the output.
 #include "infrastructure/sqlitecapabilities.h"
@@ -99,11 +101,33 @@ int main(int argc, char *argv[])
         const QStringList args = QCoreApplication::arguments();
         mbl::reader::ReaderCheckOptions options;
         options.pdfPath = args.at(2);
-        if (args.size() > 3)
-            options.rounds = qMax(1, args.at(3).toInt());
-        if (args.size() > 4 && args.at(4) == QLatin1String("no-view"))
-            options.viewDuringRounds = false;
         QTextStream out(stdout);
+        for (qsizetype i = 3; i < args.size(); ++i) {
+            const QString a = args.at(i);
+            const QString next = args.value(i + 1);
+            if (a == QLatin1String("--rounds") && next.toInt() > 0) {
+                options.rounds = next.toInt();
+                ++i;
+            } else if (a == QLatin1String("--view") && (next == QLatin1String("churn") || next == QLatin1String("persistent")
+                                                       || next == QLatin1String("none"))) {
+                options.view = next == QLatin1String("churn")        ? mbl::reader::ViewMode::Churn
+                               : next == QLatin1String("persistent") ? mbl::reader::ViewMode::Persistent
+                                                                     : mbl::reader::ViewMode::None;
+                ++i;
+            } else if (a == QLatin1String("--timeout") && next.toInt() > 0) {
+                options.timeoutSeconds = next.toInt();
+                ++i;
+            } else if (a == QLatin1String("--require-ocr")) {
+                options.requireOcr = true;
+            } else if (a == QLatin1String("--no-models")) {
+                options.useModels = false;
+            } else if (a == QLatin1String("--no-control")) {
+                options.qtControl = false;
+            } else {
+                out << "unknown or incomplete argument: " << a << Qt::endl;
+                return 2;
+            }
+        }
         return mbl::reader::runReaderCheck(options, out);
     }
 

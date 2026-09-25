@@ -10,16 +10,25 @@
 
 namespace mbl::reader {
 
-struct ReaderCheckOptions {
-    QString pdfPath;       // Local path of a readable PDF.
-    int rounds = 3;        // SDK iterations run concurrently with viewing.
-    bool viewDuringRounds = true;  // false: repeat the SDK rounds without viewing (isolation run).
-    int timeoutSeconds = 300;
+enum class ViewMode {
+    Churn,       // Each GUI turn loads, renders every page of, and closes a new QPdfDocument.
+    Persistent,  // One open QPdfDocument renders the next page each GUI turn.
+    None,        // No viewing while the SDK rounds run (isolation).
 };
 
-// Runs every check, prints "check.<name>=PASS|FAIL ..." lines and returns
-// the number of failed checks. Requires a QGuiApplication; call from its
-// thread (the GUI thread).
+struct ReaderCheckOptions {
+    QString pdfPath;          // Local path of a readable PDF.
+    int rounds = 3;           // SDK rounds run concurrently with viewing.
+    ViewMode view = ViewMode::Churn;
+    bool requireOcr = false;  // OCR must complete, or SDK checks are NOT_EXERCISED.
+    bool useModels = true;    // false: run the SDK without OCR models.
+    bool qtControl = true;    // Run the Qt-only control for the SDK baseline's duration.
+    int timeoutSeconds = 900;
+};
+
+// Runs the checks, prints "check.<name>=PASS|FAIL|NOT_EXERCISED ..." lines
+// (plus "sample." memory lines during long phases) and returns the number of
+// checks that did not pass. Requires a QGuiApplication; call from its thread.
 int runReaderCheck(const ReaderCheckOptions& options, QTextStream& out);
 
 } // namespace mbl::reader
