@@ -6,8 +6,53 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | --- | --- | --- | --- |
 | M00 Baseline | Merged | `feat/m00-baseline` / [PR #1](https://github.com/PantaKoda/MyBooksLibrary/pull/1), merge `46de94a` | See below |
 | M01 Feasibility | Part 1 Merged ([PR #2](https://github.com/PantaKoda/MyBooksLibrary/pull/2), merge `f126ad0`); part 2 AwaitingReview (review fixes applied) | Part 2: `feat/m01-reader-qtpdf-coexistence` / [PR #4](https://github.com/PantaKoda/MyBooksLibrary/pull/4) (draft) | Qt PDF available and coexisting in all corrected runs; OCR memory-pressure risk tracked in READER.md |
-| M02 Contracts/persistence | AwaitingReview (separate PR #3) | `feat/m02-a2-catalog-persistence` | Not on this branch |
+| M02 Contracts/persistence | Merged | `feat/m02-a2-catalog-persistence` / [PR #3](https://github.com/PantaKoda/MyBooksLibrary/pull/3), merge `b643446` | See below |
 | M03–M11 | NotStarted | | |
+
+## M02 — Contracts and persistence
+
+**Owners:** A2 (catalog, migrations, library lock), A3 foundation (projections, query compiler), infrastructure (database executor), domain contracts.
+
+**Touched paths:** `CMakeLists.txt`, `src/domain/`, `src/infrastructure/databaseexecutor.*`, `src/catalog/`, `src/search/`, `tests/CMakeLists.txt`, `tests/infrastructure/tst_databaseexecutor.cpp`, `tests/search/`, `tests/catalog/`, `docs/`.
+
+| Command (in `vcvars64`; Qt `bin` on `PATH` for direct runs) | Result |
+| --- | --- |
+| `qt-cmake … -B build\cli-debug -Wno-dev` + `cmake --build build\cli-debug` | Builds with no `warning C…` lines in the log |
+| `ctest --test-dir build\cli-debug --output-on-failure` | 5/5 test executables passed |
+| `ctest --test-dir build\cli-debug --repeat until-fail:5` | 5/5 passed on every repetition |
+| Per-executable JUnit totals | `TestSqliteCapabilities` 4, `TestDatabaseExecutor` 7, `TestFtsQuery` 34, `TestMigrations` 7, `TestCatalog` 17; 0 failures |
+| `appMyBooksLibrary.exe --sqlite-check` / `--sdk-check tests\fixtures\title-page.pdf` | Exit 0 / exit 0 (no regression) |
+
+**Behaviour covered by tests:**
+- Executor: tasks run on its own thread and in order; exceptions are delivered; foreign keys are enabled and the persistent journal mode is left untouched (the library enables WAL after its schema check, since the PR #3 review); open failures are reported; the connection is removed on destruction.
+- Migrations: a fresh library reaches the latest version; reopening is idempotent; a newer schema is refused unchanged; a failing migration rolls back (including DDL); a non-consecutive list is rejected.
+- Catalog:
+  - a second open is locked, and works again after release;
+  - a registered book is searchable by its file-name fallback;
+  - duplicate SHA-256 is rejected;
+  - Auto/Value/Cleared overrides and their search effects;
+  - Cleared survives a rerun;
+  - Ambiguous is not auto-accepted;
+  - stale and wrong-source results are rejected, and metadata and TOC generations are independent;
+  - every TOC entry is kept, with page 0, labels, child-before-parent, a missing parent downgraded to Unknown, and a cycle broken;
+  - a resolved hit opens its page, an unresolved hit offers only the source TOC page, and an omitted entry is still searchable;
+  - `C++`/`C`/`C#`/`HTTP/2`, diacritics, prefix and operator text;
+  - two-tier ranking with a bounded chapter list and pagination with the generation echo;
+  - a failed TOC publication leaves no index rows and keeps the old TOC and metadata;
+  - trash/restore races;
+  - index rebuild after damage;
+  - Greek and non-ASCII records survive a restart.
+
+**Review fixes (PR #3, review of `0c2b420`):** three P2 findings were fixed, covering the TOC outcome, per-book title lookups and WAL before the schema check (see DECISIONS.md).
+
+| Check | Result |
+| --- | --- |
+| `ctest --test-dir build\cli-debug --output-on-failure` | 5/5 passed; `--repeat until-fail:3` passed |
+| JUnit totals | DatabaseExecutor 7, Migrations 7, Catalog 19 (two new cases), 0 failures |
+| Old code for the three fixes restored temporarily (`git stash` of `library.cpp`, `databaseexecutor.cpp`, `catalog.cpp`) | `enablesForeignKeysWithoutPersistentChanges`, `newerSchemaIsRefusedUnchanged` and `tocOutcomeRoundTripsAndMismatchIsRejected` fail; with the fixes restored, all pass |
+| `manyContentsOnlyMatchesUseOneTitleRead` | 401 matches, first page correct, search 14 ms (Debug) |
+
+**Not covered in this step:** no GUI or composition-root use yet (M03); no managed files; SDK results are not yet normalised into these contracts (M04/M05); no crash-in-the-middle test for the filesystem side (A1, M03).
 
 ## M01 — Feasibility
 

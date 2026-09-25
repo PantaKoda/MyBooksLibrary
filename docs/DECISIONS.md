@@ -75,3 +75,45 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
 - **Change:** The earlier "blocker" is reframed. With the corrected harness, OCR with churn and with persistent viewing both passed (0/2 crashes, against 3/3 earlier). System commit peaked at about 52 of 57.2 GB during OCR, while the Qt-only controls stayed at about 30 MB.
 - **Why:** The evidence points to SDK OCR memory pressure on the whole machine, not to a collision between the two PDFium copies. A helper process would not protect the viewer from that.
 - **Assumptions:** The cause of the earlier crashes is unproven (no commit data or dump at the time). The risk stays open and is tracked in READER.md. The primary recommendation is upstream OCR memory reduction.
+
+## 2026-09-25 — M02: Domain contracts in `src/domain/`
+
+- **Change:** Added application value contracts: typed UUID IDs (`BookId`, `AssetId`, `RunId`), `Result`/`Status` with error codes, metadata (status per field, ordered contributors with roles, Auto/Value/Cleared overrides, `effectiveMetadata`), TOC entries (hierarchy and destination states, printed label kept apart from the zero-based page), book/asset/run identity, publish tickets, and search request/response types. Stable text codes for every stored enum live in `codes.cpp`.
+- **Why:** AGENTS.md section 6 requires contracts with stable IDs, revisions and explicit optionals before any views are wired.
+- **Assumptions:** Metadata evidence and candidates stay in the raw SDK report for now (`RunIdentity.reportPath`). Normalising them into rows is M04 work.
+
+## 2026-09-25 — M02: Database thread, library lock and migrations
+
+- **Change:** `infrastructure::DatabaseExecutor` owns one thread and one QSQLITE connection (WAL, foreign keys, busy timeout). `catalog::Library` adds a `QLockFile` writer lock and runs versioned migrations (`PRAGMA user_version`, one transaction per migration, refusing newer schemas).
+- **Why:** AGENTS.md section 6 requires one database thread, pass-by-copy values, foreign keys, versioned non-destructive migrations and a single-process writer lock.
+- **Assumptions:** `Library::open` blocks while migrating. The composition root (M03) must call it off the GUI thread. The executor's destructor waits for its thread; it runs only at library shutdown after queued work. The lock's stale time is 0, so a crashed process's lock is reclaimed as soon as its PID is gone.
+
+## 2026-09-25 — M02: Schema version 1 and transactional publication
+
+- **Change:** Tables for assets, books, metadata runs/contributors, overrides, TOC runs/entries, plus A3's FTS5 projections (see CATALOG.md). Publication verifies generation, lifecycle and source digest, then writes run, active pointer, revision and projection in one transaction. Trash bumps both generations.
+- **Why:** AGENTS.md sections 1 (rules 5–7), 6 and 7: states kept separate, every TOC entry kept, overrides preserved, stale or trashed results refused, and index changes sharing the catalog transaction.
+- **Assumptions:** A `known_parent` entry with a missing, self or cyclic parent is stored as `unknown` instead of rejecting the whole TOC. Rule 6 (keep every entry) outweighs rejecting the run. A resolved destination beyond a known page count is refused as invalid input.
+
+## 2026-09-25 — M02: Search projections and query compiler
+
+- **Change:** `search_books` and `search_toc` FTS5 tables use `unicode61 remove_diacritics 2 tokenchars '+#'`. `search::compileQuery` quotes every term, supports phrases and trailing-`*` prefixes, and treats operators as text. Ranking has two tiers and never compares ranks across indexes (see SEARCH.md).
+- **Why:** AGENTS.md section 7. The M01 test showed that raw user text breaks FTS5, and treating `+#` as token characters keeps `C++`/`C#` distinct from `C`.
+- **Assumptions:** Indexing the file-name fallback title helps find poorly named PDFs. It is shown with `displayTitleFromFileName` and never stored as metadata. Chapter hit details are copied into `search_toc` so that A3 queries do not read A2 tables.
+
+## 2026-09-25 — M02 review fixes (PR #3)
+
+- **Change:**
+  1. `publishToc` rejects `TocAnalysis.outcome` ≠ `RunIdentity.outcome` instead of silently storing only the run's value.
+  2. Search reads display titles for contents-only matches in one pass over `search_books`, instead of one lookup per book.
+  3. `DatabaseExecutor` no longer sets `journal_mode`. `Library::open` runs the read-only `checkCompatible` first, then enables WAL, then migrates.
+- **Why:** Review findings on PR #3:
+  1. The partial or no-TOC outcome could be lost.
+  2. The lookup was O(books × matches) on the only database thread, because `book_id` is UNINDEXED in FTS5.
+  3. WAL mode is persistent, so a refused newer catalog was being modified, contrary to the refusal guarantee.
+- **Assumptions:** A single table read per search is acceptable at the expected library sizes (400 contents-only matches: 14 ms in Debug). An indexed book-to-rowid projection can replace it if profiling shows a need.
+- **Verified:** These regression tests fail on the previous code and pass now:
+  - `enablesForeignKeysWithoutPersistentChanges`;
+  - `newerSchemaIsRefusedUnchanged` (DELETE-mode catalog stays byte-identical, with no `-wal`/`-shm` files);
+  - `tocOutcomeRoundTripsAndMismatchIsRejected` (including after restart).
+
+  `manyContentsOnlyMatchesUseOneTitleRead` (400 books) checks results, order and pagination and logs the elapsed time. It does not count scans or assert latency, so it would also pass on the previous, slower implementation. The fix itself was verified by code inspection and the 14 ms measurement.

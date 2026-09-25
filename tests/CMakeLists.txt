@@ -16,6 +16,10 @@ function(mbl_add_test name)
 endfunction()
 
 mbl_add_test(tst_sqlitecapabilities infrastructure/tst_sqlitecapabilities.cpp)
+mbl_add_test(tst_databaseexecutor infrastructure/tst_databaseexecutor.cpp)
+mbl_add_test(tst_ftsquery search/tst_ftsquery.cpp)
+mbl_add_test(tst_migrations catalog/tst_migrations.cpp)
+mbl_add_test(tst_catalog catalog/tst_catalog.cpp)
 mbl_add_test(tst_checkverdict reader/tst_checkverdict.cpp)
 
 # Links the SDK: runs next to the app, whose build deploys the SDK runtime there;
