@@ -5,7 +5,7 @@ project(MyBooksLibrary VERSION 0.1 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Quick Sql)
+find_package(Qt6 REQUIRED COMPONENTS Quick Sql Pdf)
 
 # --- pdfbookmark SDK ---
 # Set PDFBOOKMARK_SDK as a cache variable (-DPDFBOOKMARK_SDK=..., a CMakeUserPresets.json,
@@ -43,6 +43,8 @@ qt_add_library(mbl_core STATIC
     src/domain/toc.h
     src/infrastructure/databaseexecutor.h
     src/infrastructure/databaseexecutor.cpp
+    src/infrastructure/memorystats.h
+    src/infrastructure/memorystats.cpp
     src/infrastructure/sqlitecapabilities.h
     src/infrastructure/sqlitecapabilities.cpp
     src/catalog/catalog.h
@@ -51,6 +53,8 @@ qt_add_library(mbl_core STATIC
     src/catalog/library.cpp
     src/catalog/migrations.h
     src/catalog/migrations.cpp
+    src/reader/checkverdict.h
+    src/reader/checkverdict.cpp
     src/search/ftsquery.h
     src/search/ftsquery.cpp
     src/search/searchindex.h
@@ -61,17 +65,30 @@ target_link_libraries(mbl_core PUBLIC Qt6::Sql)
 if(MSVC)
     target_compile_options(mbl_core PUBLIC /utf-8)   # UTF-8 string literals
 endif()
+if(WIN32)
+    target_link_libraries(mbl_core PRIVATE psapi)
+endif()
+
+# The production SDK boundary. SDK headers and types stay behind it.
+qt_add_library(mbl_sdk STATIC
+    src/processing/sdk/sdkinfo.h
+    src/processing/sdk/sdkinfo.cpp
+    src/processing/sdk/sdksnapshot.h
+    src/processing/sdk/sdksnapshot.cpp
+)
+target_link_libraries(mbl_sdk PUBLIC mbl_core pdfbookmark::pdfbookmark)
 
 qt_add_executable(appMyBooksLibrary
     main.cpp
-    src/processing/sdk/sdkinfo.h
-    src/processing/sdk/sdkinfo.cpp
+    src/reader/readercheck.h
+    src/reader/readercheck.cpp
 )
 
 qt_add_qml_module(appMyBooksLibrary
     URI MyBooksLibrary
     QML_FILES
         Main.qml
+        qml/reader/ReaderCheckView.qml
 )
 
 set_target_properties(appMyBooksLibrary PROPERTIES
@@ -82,7 +99,7 @@ set_target_properties(appMyBooksLibrary PROPERTIES
 )
 
 target_link_libraries(appMyBooksLibrary
-    PRIVATE Qt6::Quick mbl_core pdfbookmark::pdfbookmark
+    PRIVATE Qt6::Quick Qt6::Pdf mbl_core mbl_sdk
 )
 
 # Copies pdfbookmark.dll, its dependency DLLs and the OCR models next to the .exe

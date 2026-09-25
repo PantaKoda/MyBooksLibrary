@@ -20,3 +20,11 @@ mbl_add_test(tst_databaseexecutor infrastructure/tst_databaseexecutor.cpp)
 mbl_add_test(tst_ftsquery search/tst_ftsquery.cpp)
 mbl_add_test(tst_migrations catalog/tst_migrations.cpp)
 mbl_add_test(tst_catalog catalog/tst_catalog.cpp)
+mbl_add_test(tst_checkverdict reader/tst_checkverdict.cpp)
+
+# Links the SDK: runs next to the app, whose build deploys the SDK runtime there;
+# deploying again for this target keeps it runnable on its own.
+mbl_add_test(tst_sdksnapshot processing/tst_sdksnapshot.cpp)
+target_link_libraries(tst_sdksnapshot PRIVATE mbl_sdk)
+pdfbookmark_deploy_runtime(tst_sdksnapshot)
+target_compile_definitions(tst_sdksnapshot PRIVATE MBL_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")

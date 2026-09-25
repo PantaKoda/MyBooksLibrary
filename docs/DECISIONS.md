@@ -44,6 +44,44 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
 - **Why:** Binding values prevents SQL injection but not FTS5 syntax errors. A3 (M02/M06) must compile user queries into quoted FTS5 terms.
 - **Assumptions:** The escaping design (quoting, doubling `"`, prefix handling) belongs to A3 and is not decided here.
 
+## 2026-09-25 — M01: Qt PDF linked; reader coexistence harness
+
+- **Change:** The app links `Qt6::Pdf`. `appMyBooksLibrary --reader-check <pdf> [<rounds> [no-view]]` (`src/reader/readercheck.*`) checks Qt PDF rendering, the `QtQuick.Pdf` QML module, and coexistence with concurrent SDK metadata and analysis. It covers identical results, cancellation, destroying the viewer during analysis, and non-ASCII paths. On Windows, a diagnostics-only vectored exception handler prints the code, thread and module stack of fatal native exceptions. `sdkinfo` gains `probeAnalysis()` with the automatic-analysis policy. Two fixtures were added: `contents-book.pdf` (printed TOC) and `image-only.pdf` (forces OCR).
+- **Why:** AGENTS.md section 9 requires actual coexistence evidence because both libraries embed PDFium.
+- **Assumptions:** The harness uses a plain `std::thread`, not the A4 worker design (M04). It never blocks the GUI thread on the worker; on timeout it exits with code 3. The exception handler is a diagnostic and does not recover from anything.
+- **Verified:** See READER.md. Text PDFs pass everywhere, including the packaged build. OCR with concurrent viewing terminates the process in Qt PDF's allocator (`0xE0000008`), which is recorded as a blocker.
+
+## 2026-09-25 — M01: Coexistence blocker, not worked around
+
+- **Change:** None in behaviour. The failure is documented with three options (upstream memory work, helper process, pause viewing during OCR).
+- **Why:** Choosing between them changes the architecture or the SDK. That is the owner's decision (AGENTS.md sections 3 and 12).
+- **Assumptions:** Import, catalog and search work (M02–M05) does not depend on the viewer and can continue.
+
+## 2026-09-25 — M01 review fixes (PR #4): trustworthy coexistence evidence
+
+- **Change:**
+  1. The SDK probes record model identity, OCR attempts and pages with completed OCR. `--require-ocr` turns zero completed OCR pages into NOT_EXERCISED. `--no-models` provides the missing-models case.
+  2. The QtQuick.Pdf import moved to the registered `qml/reader/ReaderCheckView.qml`.
+  3. Cancellation and shutdown use a progress-callback handshake, so the request is made during active work. Cancellation must be observed; otherwise the result is FAIL, or NOT_EXERCISED if the race was lost.
+  4. Rounds are compared by a semantic snapshot digest (`sdksnapshot.*`), not by counts.
+  5. A Qt-only control, a persistent-viewer mode, and process and system commit sampling were added.
+  6. The SDK boundary became the static library `mbl_sdk`, so it can be unit-tested (`tst_sdksnapshot`). Verdict rules live in `mbl_core` (`tst_checkverdict`).
+- **Why:** The review showed that the first harness could pass without exercising OCR or cancellation, compared only counts, and hid a QML import from deployment. It also asked for controls before any reader architecture is chosen.
+- **Assumptions:** NOT_EXERCISED counts as not passed. The snapshot excludes diagnostics and counters. The harness remains a diagnostic tool; product threading follows A4 (M04).
+- **Verified:** See READER.md, "With the corrected harness", and IMPLEMENTATION_PROGRESS.md (M01 part 2).
+
+## 2026-09-25 — M01: OCR and viewing reassessed as a memory-pressure risk
+
+- **Change:** The earlier "blocker" is reframed. With the corrected harness, OCR with churn and with persistent viewing both passed (0/2 crashes, against 3/3 earlier). System commit peaked at about 52 of 57.2 GB during OCR, while the Qt-only controls stayed at about 30 MB.
+- **Why:** The evidence points to SDK OCR memory pressure on the whole machine, not to a collision between the two PDFium copies. A helper process would not protect the viewer from that.
+- **Assumptions:** The cause of the earlier crashes is unproven (no commit data or dump at the time). The risk stays open and is tracked in READER.md. The primary recommendation is upstream OCR memory reduction.
+
+## 2026-09-25 — M01 re-review fix (PR #4): unambiguous snapshot encoding
+
+- **Change:** `sdksnapshot.cpp` encodes strings as quoted, escaped values, absent optionals as `null`, and composites in brackets. It builds lines by concatenation instead of chained `QString::arg`.
+- **Why:** Re-review of `bd61dc0` found that `TitleValue{"A|B","C"}` and `{"A","B|C"}`, and a missing subtitle and the text `-`, encoded identically, so a changed field could pass the semantic comparison. Contributor separators and line breaks had the same weakness. Chained `arg()` would also re-substitute `%N` inside document text.
+- **Verified:** The new `encodingHasNoCollisions` test fails on the previous encoding (at the reviewer's example) and passes now. ctest 7/7.
+
 ## 2026-09-25 — M02: Domain contracts in `src/domain/`
 
 - **Change:** Added application value contracts: typed UUID IDs (`BookId`, `AssetId`, `RunId`), `Result`/`Status` with error codes, metadata (status per field, ordered contributors with roles, Auto/Value/Cleared overrides, `effectiveMetadata`), TOC entries (hierarchy and destination states, printed label kept apart from the zero-based page), book/asset/run identity, publish tickets, and search request/response types. Stable text codes for every stored enum live in `codes.cpp`.
