@@ -14,7 +14,7 @@ class TestDatabaseExecutor : public QObject {
 
 private slots:
     void runsOnItsOwnThreadInOrder();
-    void enablesForeignKeysAndWal();
+    void enablesForeignKeysWithoutPersistentChanges();
     void deliversExceptions();
     void reportsOpenFailure();
     void closesConnectionOnDestruction();
@@ -41,7 +41,9 @@ void TestDatabaseExecutor::runsOnItsOwnThreadInOrder()
     }
 }
 
-void TestDatabaseExecutor::enablesForeignKeysAndWal()
+// Journal mode is persistent, so the executor must not change it; the
+// library owner does so only after checking the schema (see tst_migrations).
+void TestDatabaseExecutor::enablesForeignKeysWithoutPersistentChanges()
 {
     QTemporaryDir dir;
     QString error;
@@ -57,7 +59,7 @@ void TestDatabaseExecutor::enablesForeignKeysAndWal()
         return qMakePair(fk, q.value(0).toString());
     }).result();
     QCOMPARE(pragmas.first, 1);
-    QCOMPARE(pragmas.second, QStringLiteral("wal"));
+    QCOMPARE(pragmas.second, QStringLiteral("delete"));
 }
 
 void TestDatabaseExecutor::deliversExceptions()

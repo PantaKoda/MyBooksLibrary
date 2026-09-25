@@ -37,7 +37,7 @@ Hits are grouped by book:
 1. **Tier 0**: the book's metadata matched. Ordered by the metadata `bm25` (title weighted 10, contributors 4). Ties go to books that also match in contents, by their best chapter rank.
 2. **Tier 1**: only contents matched. Ordered by the **best** chapter `bm25`.
 
-Ranks from the two indexes are never compared with each other. Each TOC entry is its own FTS row, so a long TOC gains nothing from having many matches. Remaining ties are ordered by display title, then book ID.
+Display titles of contents-only books come from **one** read of `search_books` per search. `book_id` is an UNINDEXED FTS column, so a per-book equality lookup would scan the table once per matching book. Ranks from the two indexes are never compared with each other. Each TOC entry is its own FTS row, so a long TOC gains nothing from having many matches. Remaining ties are ordered by display title, then book ID.
 
 Each book lists at most `chapterHitsPerBook` chapter hits (best first) and reports `totalChapterMatches`. Results are paginated by book (`offset`, `limit`). `SearchRequest.generation` is echoed in the response so that callers can drop stale responses (debouncing is a presentation concern, M06).
 

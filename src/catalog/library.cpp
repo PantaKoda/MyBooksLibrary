@@ -3,6 +3,8 @@
 #include "catalog/migrations.h"
 
 #include <QDir>
+#include <QSqlError>
+#include <QSqlQuery>
 
 namespace mbl::catalog {
 
@@ -50,6 +52,21 @@ domain::Result<std::unique_ptr<Library>> Library::open(const QString& rootDir)
     const Migrated migrated = library->m_executor
                                   ->post([](QSqlDatabase& db) {
                                       Migrated m;
+                                      // Refuse an unsupported catalog before
+                                      // any persistent change (WAL is stored
+                                      // in the file).
+                                      m.status = checkCompatible(db);
+                                      if (!m.status)
+                                          return m;
+                                      QSqlQuery wal(db);
+                                      if (!wal.exec(QStringLiteral("PRAGMA journal_mode = WAL")) || !wal.next()
+                                          || wal.value(0).toString().compare(QLatin1String("wal"), Qt::CaseInsensitive) != 0) {
+                                          m.status = makeError(ErrorCode::Database,
+                                                               QStringLiteral("Cannot enable WAL journaling: %1")
+                                                                   .arg(wal.lastError().text()));
+                                          return m;
+                                      }
+                                      wal.finish();
                                       m.status = migrate(db);
                                       m.version = mbl::catalog::schemaVersion(db);
                                       return m;

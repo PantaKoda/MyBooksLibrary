@@ -19,8 +19,9 @@ namespace mbl::infrastructure {
 
 class DatabaseExecutor {
 public:
-    // Starts the thread and opens `databasePath` on it with foreign keys on,
-    // WAL journaling and a busy timeout. Returns nullptr and sets `error`
+    // Starts the thread and opens `databasePath` on it with foreign keys on
+    // and a busy timeout. Nothing is written to the file; persistent settings
+    // such as the journal mode are left to the caller. Returns nullptr and sets `error`
     // when the connection cannot be opened.
     static std::unique_ptr<DatabaseExecutor> open(const QString& databasePath, QString* error);
 

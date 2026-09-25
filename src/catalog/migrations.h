@@ -25,6 +25,10 @@ int latestSchemaVersion();
 // Reads PRAGMA user_version, or -1 on error.
 int schemaVersion(QSqlDatabase& db);
 
+// Read-only check that this application can open the catalog: fails with
+// SchemaTooNew for a newer schema. Writes nothing.
+domain::Status checkCompatible(QSqlDatabase& db, const QList<Migration>& migrations = catalogMigrations());
+
 // Applies each pending migration in its own transaction. A failing migration
 // is rolled back and leaves the catalog at the previous version; nothing is
 // recreated or discarded. A catalog newer than `migrations` is refused

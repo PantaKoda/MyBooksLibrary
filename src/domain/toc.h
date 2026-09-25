@@ -27,7 +27,7 @@ struct TocEntry {
 
 // Normalised result of one TOC analysis run.
 struct TocAnalysis {
-    QString outcome;          // SDK outcome name, e.g. "plan_ready", "no_toc_found_in_search".
+    QString outcome;          // SDK outcome name, e.g. "plan_ready"; must equal RunIdentity::outcome.
     bool planReady = false;   // Stored separately from entry coverage.
     QList<TocEntry> entries;  // All parsed entries, joined to mappings by entry ID.
 };

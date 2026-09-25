@@ -4,11 +4,11 @@
 
 | Path | Owner | Purpose |
 | --- | --- | --- |
-| `library.sqlite` (+ `-wal`, `-shm`) | A2 | Catalog. WAL journaling, `foreign_keys = ON`, `busy_timeout = 5000`. |
+| `library.sqlite` (+ `-wal`, `-shm`) | A2 | Catalog. `foreign_keys = ON` and `busy_timeout = 5000` per connection; WAL journaling (persistent) is enabled only after the schema check. |
 | `library.lock` | A2 | Single-process writer lock (`QLockFile`, stale only when the owning process is gone). |
 | `files/`, `reports/`, `derivatives/`, `staging/`, `cache/` | A1 | Managed files (M03 onward). The catalog stores their paths relative to the root. |
 
-`catalog::Library::open(root)` creates the folder, takes the lock, opens the catalog on the database thread and applies migrations. A second open of the same root, in this or another process, fails with `LibraryLocked`. Destroying the `Library` closes the connection and then releases the lock.
+`catalog::Library::open(root)` creates the folder, takes the lock and opens the catalog on the database thread. It then checks the schema read-only (`checkCompatible`), enables WAL and applies migrations. The executor itself changes nothing persistent. An unsupported newer catalog is therefore refused before any write, and its file stays byte-identical. A second open of the same root, in this or another process, fails with `LibraryLocked`. Destroying the `Library` closes the connection and then releases the lock.
 
 ## Threading
 
@@ -38,6 +38,7 @@ Migrations live in `catalog/migrations.cpp`. `PRAGMA user_version` records the a
 ## Publication rules
 
 - `requestMetadataRun` / `requestTocRun` increment that component's generation and return a `PublishTicket` (book, generation, asset SHA-256).
+- `publishToc` requires `TocAnalysis.outcome == RunIdentity.outcome` (otherwise `InvalidArgument`). The outcome is stored once and read back unchanged.
 - `publishMetadata` / `publishToc` succeed only when all of these hold: the ticket's generation is current (`StaleGeneration` otherwise), the book is not trashed (`Trashed`), and the ticket's and run's digests equal the asset's (`SourceMismatch`). The new run, the active-run pointer, the revision bump and the search projection are written in **one transaction**.
 - Metadata and TOC generations are independent, so neither publication disturbs the other component or the user's overrides.
 - A TOC `known_parent` entry whose parent is missing, itself or part of a cycle is stored as `unknown`; no parent is invented. Parents may appear after their children.

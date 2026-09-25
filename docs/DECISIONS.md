@@ -67,3 +67,20 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
 - **Change:** `search_books` and `search_toc` FTS5 tables use `unicode61 remove_diacritics 2 tokenchars '+#'`. `search::compileQuery` quotes every term, supports phrases and trailing-`*` prefixes, and treats operators as text. Ranking has two tiers and never compares ranks across indexes (see SEARCH.md).
 - **Why:** AGENTS.md section 7. The M01 test showed that raw user text breaks FTS5, and treating `+#` as token characters keeps `C++`/`C#` distinct from `C`.
 - **Assumptions:** Indexing the file-name fallback title helps find poorly named PDFs. It is shown with `displayTitleFromFileName` and never stored as metadata. Chapter hit details are copied into `search_toc` so that A3 queries do not read A2 tables.
+
+## 2026-09-25 — M02 review fixes (PR #3)
+
+- **Change:**
+  1. `publishToc` rejects `TocAnalysis.outcome` ≠ `RunIdentity.outcome` instead of silently storing only the run's value.
+  2. Search reads display titles for contents-only matches in one pass over `search_books`, instead of one lookup per book.
+  3. `DatabaseExecutor` no longer sets `journal_mode`. `Library::open` runs the read-only `checkCompatible` first, then enables WAL, then migrates.
+- **Why:** Review findings on PR #3:
+  1. The partial or no-TOC outcome could be lost.
+  2. The lookup was O(books × matches) on the only database thread, because `book_id` is UNINDEXED in FTS5.
+  3. WAL mode is persistent, so a refused newer catalog was being modified, contrary to the refusal guarantee.
+- **Assumptions:** A single table read per search is acceptable at the expected library sizes (400 contents-only matches: 14 ms in Debug). An indexed book-to-rowid projection can replace it if profiling shows a need.
+- **Verified:** New regression tests fail on the previous code and pass now:
+  - `enablesForeignKeysWithoutPersistentChanges`;
+  - `newerSchemaIsRefusedUnchanged` (DELETE-mode catalog stays byte-identical, with no `-wal`/`-shm` files);
+  - `tocOutcomeRoundTripsAndMismatchIsRejected` (including after restart);
+  - `manyContentsOnlyMatchesUseOneTitleRead` (400 books; order and titles checked).

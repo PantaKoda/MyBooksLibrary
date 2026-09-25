@@ -37,6 +37,8 @@ domain::Result<domain::RunId> publishMetadata(QSqlDatabase& db, const domain::Pu
                                               const domain::RunIdentity& run,
                                               const domain::ExtractedMetadata& metadata);
 
+// `toc.outcome` must equal `run.outcome` (InvalidArgument otherwise); it is
+// stored once and read back as TocAnalysis::outcome.
 // Keeps every entry. A KnownParent entry whose parent is missing, itself or
 // part of a cycle is stored as Unknown rather than given an invented parent.
 domain::Result<domain::RunId> publishToc(QSqlDatabase& db, const domain::PublishTicket& ticket,

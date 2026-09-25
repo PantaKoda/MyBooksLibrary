@@ -27,9 +27,11 @@ std::unique_ptr<DatabaseExecutor> DatabaseExecutor::open(const QString& database
         if (!db.open())
             return QStringLiteral("Cannot open %1: %2").arg(databasePath, db.lastError().text());
         QSqlQuery query(db);
+        // Connection-scoped settings only. Anything persisted in the file
+        // (such as journal_mode) is the owner's decision after it has
+        // checked that it supports the file (see catalog::Library::open).
         const char* pragmas[] = {
             "PRAGMA foreign_keys = ON",
-            "PRAGMA journal_mode = WAL",
             "PRAGMA synchronous = NORMAL",
             "PRAGMA busy_timeout = 5000",
         };

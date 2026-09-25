@@ -147,7 +147,7 @@ int schemaVersion(QSqlDatabase& db)
     return query.value(0).toInt();
 }
 
-domain::Status migrate(QSqlDatabase& db, const QList<Migration>& migrations)
+domain::Status checkCompatible(QSqlDatabase& db, const QList<Migration>& migrations)
 {
     const int current = schemaVersion(db);
     if (current < 0)
@@ -161,6 +161,14 @@ domain::Status migrate(QSqlDatabase& db, const QList<Migration>& migrations)
                              .arg(current)
                              .arg(latest));
     }
+    return domain::Done{};
+}
+
+domain::Status migrate(QSqlDatabase& db, const QList<Migration>& migrations)
+{
+    if (auto compatible = checkCompatible(db, migrations); !compatible)
+        return compatible;
+    const int current = schemaVersion(db);
 
     int expected = 1;
     for (const Migration& migration : migrations) {

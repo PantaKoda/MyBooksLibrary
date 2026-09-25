@@ -5,6 +5,7 @@
 #include "search/searchindex.h"
 
 #include <QCryptographicHash>
+#include <QElapsedTimer>
 #include <QSqlQuery>
 #include <QTemporaryDir>
 #include <QTest>
@@ -94,6 +95,8 @@ private slots:
     void trashAndRestore();
     void rebuildMatchesCatalog();
     void recordsSurviveRestart();
+    void tocOutcomeRoundTripsAndMismatchIsRejected();
+    void manyContentsOnlyMatchesUseOneTitleRead();
 
 private:
     template <typename Task>
@@ -161,7 +164,7 @@ RunId TestCatalog::publishToc(const BookId& book, const QList<TocEntry>& entries
         if (!ticket)
             return ticket.error();
         TocAnalysis toc{QStringLiteral("analysis_partial"), false, entries};
-        return catalog::publishToc(d, ticket.value(), runFor(ticket.value()), toc);
+        return catalog::publishToc(d, ticket.value(), runFor(ticket.value(), toc.outcome), toc);
     });
     if (!result)
         qFatal("publishToc: %s", qPrintable(result.error().message));
@@ -348,7 +351,7 @@ void TestCatalog::staleAndMismatchedResultsAreRejected()
         auto meta = catalog::requestMetadataRun(d, id).value();
         auto toc = catalog::requestTocRun(d, id).value();
         auto m = catalog::publishMetadata(d, meta, runFor(meta), resolvedTitle(QStringLiteral("Meta")));
-        auto t = catalog::publishToc(d, toc, runFor(toc), TocAnalysis{QStringLiteral("x"), false, {}});
+        auto t = catalog::publishToc(d, toc, runFor(toc), TocAnalysis{QStringLiteral("complete"), false, {}});
         return m.ok() && t.ok();
     });
     QVERIFY(both);
@@ -390,7 +393,7 @@ void TestCatalog::tocKeepsEveryEntryAndHierarchyState()
     // A resolved destination beyond the document is refused.
     auto beyond = db([id](QSqlDatabase& d) {
         auto t = catalog::requestTocRun(d, id).value();
-        TocAnalysis toc{QStringLiteral("x"), false,
+        TocAnalysis toc{QStringLiteral("complete"), false,
                         {resolved(entry(QStringLiteral("z"), 0, QStringLiteral("Z")), 100, QStringLiteral("9"))}};
         return catalog::publishToc(d, t, runFor(t), toc);
     });
@@ -498,7 +501,7 @@ void TestCatalog::metadataSurvivesFailedTocPublication()
     // Duplicate entry IDs violate a constraint mid-transaction.
     auto failed = db([id](QSqlDatabase& d) {
         auto t = catalog::requestTocRun(d, id).value();
-        TocAnalysis toc{QStringLiteral("x"), false,
+        TocAnalysis toc{QStringLiteral("complete"), false,
                         {entry(QStringLiteral("d"), 0, QStringLiteral("Replication")),
                          entry(QStringLiteral("d"), 1, QStringLiteral("Duplicate"))}};
         return catalog::publishToc(d, t, runFor(t), toc);
@@ -531,7 +534,7 @@ void TestCatalog::trashAndRestore()
     // A late completion cannot publish into a trashed book...
     auto late = db([pending](QSqlDatabase& d) {
         return catalog::publishToc(d, pending, runFor(pending),
-                                   TocAnalysis{QStringLiteral("x"), false, {entry(QStringLiteral("l"), 0, QStringLiteral("Late"))}});
+                                   TocAnalysis{QStringLiteral("complete"), false, {entry(QStringLiteral("l"), 0, QStringLiteral("Late"))}});
     });
     QCOMPARE(late.error().code, ErrorCode::Trashed);
     auto request = db([id](QSqlDatabase& d) { return catalog::requestMetadataRun(d, id); });
@@ -542,7 +545,7 @@ void TestCatalog::trashAndRestore()
     // ...nor after restore, because trashing invalidated its generation.
     late = db([pending](QSqlDatabase& d) {
         return catalog::publishToc(d, pending, runFor(pending),
-                                   TocAnalysis{QStringLiteral("x"), false, {entry(QStringLiteral("l"), 0, QStringLiteral("Late"))}});
+                                   TocAnalysis{QStringLiteral("complete"), false, {entry(QStringLiteral("l"), 0, QStringLiteral("Late"))}});
     });
     QCOMPARE(late.error().code, ErrorCode::StaleGeneration);
     QCOMPARE(find(QStringLiteral("late")).books.size(), 0);
@@ -606,6 +609,95 @@ void TestCatalog::recordsSurviveRestart()
     QCOMPARE(after.value().metadataGeneration, before.metadataGeneration);
     QCOMPARE(find(QStringLiteral("πρωτόκολλα")).books.size(), 1);
     QCOMPARE(find(QStringLiteral("δίκτυα"), SearchScope::Titles).books.size(), 1);
+}
+
+void TestCatalog::tocOutcomeRoundTripsAndMismatchIsRejected()
+{
+    const BookId id = addBook(QStringLiteral("outcome.pdf"));
+    const RunId first = publishToc(id, {entry(QStringLiteral("p"), 0, QStringLiteral("Partial Entry"))});
+
+    const auto check = [&](const char* when) {
+        auto details = db([id](QSqlDatabase& d) { return catalog::bookDetails(d, id); });
+        QVERIFY2(details, when);
+        QCOMPARE(details.value().toc->outcome, QStringLiteral("analysis_partial"));
+        QVERIFY(!details.value().toc->planReady);
+    };
+    check("before restart");
+
+    // Inconsistent outcomes are refused, and nothing is stored.
+    auto mismatch = db([id](QSqlDatabase& d) {
+        auto t = catalog::requestTocRun(d, id).value();
+        TocAnalysis toc{QStringLiteral("plan_ready"), true, {entry(QStringLiteral("q"), 0, QStringLiteral("Other"))}};
+        return catalog::publishToc(d, t, runFor(t, QStringLiteral("analysis_partial")), toc);
+    });
+    QVERIFY(!mismatch);
+    QCOMPARE(mismatch.error().code, ErrorCode::InvalidArgument);
+    QVERIFY(mismatch.error().message.contains(QStringLiteral("differs")));
+    const int runs = db([](QSqlDatabase& d) {
+        QSqlQuery q(d);
+        q.exec(QStringLiteral("SELECT count(*) FROM toc_runs"));
+        q.next();
+        return q.value(0).toInt();
+    });
+    QCOMPARE(runs, 1);
+    QCOMPARE(find(QStringLiteral("other")).books.size(), 0);
+
+    m_library.reset();  // Restart.
+    auto reopened = Library::open(m_dir->path());
+    QVERIFY(reopened);
+    m_library = std::move(reopened.value());
+    check("after restart");
+    Q_UNUSED(first);
+}
+
+void TestCatalog::manyContentsOnlyMatchesUseOneTitleRead()
+{
+    const BookId titled = addBook(QStringLiteral("zz-titled.pdf"));
+    publishMetadata(titled, resolvedTitle(QStringLiteral("Kernel Internals")));
+    const int books = 400;
+    // Register and publish in one database task to keep the setup fast.
+    const bool setup = db([books](QSqlDatabase& d) {
+        for (int i = 0; i < books; ++i) {
+            const NewBook b = newBook(QStringLiteral("book-%1.pdf").arg(i, 3, 10, QLatin1Char('0')));
+            auto id = catalog::registerBook(d, b);
+            if (!id)
+                return false;
+            auto t = catalog::requestTocRun(d, id.value()).value();
+            TocAnalysis toc{QStringLiteral("complete"), false,
+                            {entry(QStringLiteral("k"), 0, QStringLiteral("Kernel Scheduling"))}};
+            if (!catalog::publishToc(d, t, runFor(t), toc))
+                return false;
+        }
+        return true;
+    });
+    QVERIFY(setup);
+
+    QElapsedTimer timer;
+    timer.start();
+    SearchRequest request;
+    request.text = QStringLiteral("kernel");
+    request.limit = 10;
+    auto page = db([request](QSqlDatabase& d) { return search::search(d, request); });
+    const qint64 elapsed = timer.elapsed();
+    qInfo("search over %d contents-only matches took %lld ms", books, elapsed);
+    QVERIFY(page);
+    QCOMPARE(page.value().totalBooks, books + 1);
+    QCOMPARE(page.value().books.size(), 10);
+    QCOMPARE(page.value().books[0].book, titled);  // Tier 0 first.
+    QCOMPARE(page.value().books[0].tier, 0);
+    // Equal chapter ranks fall back to display-title order; titles come from the bulk read.
+    for (int i = 1; i < 10; ++i) {
+        QCOMPARE(page.value().books[i].tier, 1);
+        QCOMPARE(page.value().books[i].displayTitle, QStringLiteral("book-%1").arg(i - 1, 3, 10, QLatin1Char('0')));
+    }
+
+    request.scope = SearchScope::Contents;
+    request.offset = 395;
+    auto tail = db([request](QSqlDatabase& d) { return search::search(d, request); });
+    QVERIFY(tail);
+    QCOMPARE(tail.value().totalBooks, books);  // The titled book has no chapters.
+    QCOMPARE(tail.value().books.size(), 5);
+    QCOMPARE(tail.value().books.last().displayTitle, QStringLiteral("book-399"));
 }
 
 QTEST_GUILESS_MAIN(TestCatalog)

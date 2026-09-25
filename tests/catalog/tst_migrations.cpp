@@ -3,6 +3,7 @@
 #include "catalog/migrations.h"
 
 #include <QSqlDatabase>
+#include <QFile>
 #include <QSqlQuery>
 #include <QTemporaryDir>
 #include <QTest>
@@ -55,6 +56,13 @@ void TestMigrations::freshLibraryReachesLatest()
     QVERIFY2(library, library ? "" : qPrintable(library.error().message));
     QCOMPARE(library.value()->schemaVersion(), latestSchemaVersion());
     QVERIFY(latestSchemaVersion() >= 1);
+    const QString mode = library.value()->run([](QSqlDatabase& db) {
+        QSqlQuery q(db);
+        q.exec(QStringLiteral("PRAGMA journal_mode"));
+        q.next();
+        return q.value(0).toString();
+    }).result();
+    QCOMPARE(mode, QStringLiteral("wal"));  // Enabled for supported catalogs.
 }
 
 void TestMigrations::reopeningIsIdempotent()
@@ -66,24 +74,41 @@ void TestMigrations::reopeningIsIdempotent()
     QCOMPARE(again.value()->schemaVersion(), latestSchemaVersion());
 }
 
+// Starts from a closed catalog in DELETE journal mode, as a newer
+// application might leave it, and checks that refusal writes nothing.
 void TestMigrations::newerSchemaIsRefusedUnchanged()
 {
     QTemporaryDir dir;
-    { QVERIFY(Library::open(dir.path())); }
     const QString path = dir.filePath(QLatin1StringView(Library::kCatalogFileName));
     withConnection(path, [](QSqlDatabase& db) {
         QSqlQuery q(db);
+        QVERIFY(q.exec(QStringLiteral("PRAGMA journal_mode = DELETE")));
+        QVERIFY(q.exec(QStringLiteral("CREATE TABLE books (id TEXT PRIMARY KEY, future_column TEXT)")));
+        QVERIFY(q.exec(QStringLiteral("INSERT INTO books VALUES ('b1', 'from the future')")));
         QVERIFY(q.exec(QStringLiteral("PRAGMA user_version = 999")));
     });
+    const auto fileBytes = [&] {
+        QFile f(path);
+        return f.open(QIODevice::ReadOnly) ? f.readAll() : QByteArray();
+    };
+    const QByteArray before = fileBytes();
+    QVERIFY(!before.isEmpty());
 
     auto refused = Library::open(dir.path());
     QVERIFY(!refused);
     QCOMPARE(refused.error().code, ErrorCode::SchemaTooNew);
     QVERIFY(refused.error().message.contains(QStringLiteral("999")));
 
+    QCOMPARE(fileBytes(), before);  // Byte-identical: no journal-mode or schema change.
+    QVERIFY(!QFile::exists(path + QStringLiteral("-wal")));
+    QVERIFY(!QFile::exists(path + QStringLiteral("-shm")));
     withConnection(path, [](QSqlDatabase& db) {
         QCOMPARE(schemaVersion(db), 999);
-        QVERIFY(tableExists(db, QStringLiteral("books")));
+        QSqlQuery q(db);
+        QVERIFY(q.exec(QStringLiteral("PRAGMA journal_mode")) && q.next());
+        QCOMPARE(q.value(0).toString(), QStringLiteral("delete"));
+        QVERIFY(q.exec(QStringLiteral("SELECT future_column FROM books")) && q.next());
+        QCOMPARE(q.value(0).toString(), QStringLiteral("from the future"));
     });
 }
 

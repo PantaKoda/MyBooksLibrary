@@ -193,21 +193,25 @@ domain::Result<domain::SearchResponse> search(QSqlDatabase& db, const domain::Se
         }
     }
 
-    // Display titles for contents-only matches.
-    QSqlQuery titleQuery(db);
-    titleQuery.prepare(QStringLiteral("SELECT display_title FROM search_books WHERE book_id = ?"));
+    // Display titles for contents-only matches: one read of the book
+    // projection. book_id is UNINDEXED, so a per-book equality lookup would
+    // scan the table once per matching book.
+    const bool needTitles = std::any_of(groups.cbegin(), groups.cend(),
+                                        [](const Group& g) { return !g.hit.metadataMatch; });
+    if (needTitles) {
+        QSqlQuery titles(db);
+        if (!titles.exec(QStringLiteral("SELECT book_id, display_title FROM search_books")))
+            return sqlFailure(titles);
+        while (titles.next()) {
+            const auto it = groups.find(titles.value(0).toString());
+            if (it != groups.end() && !it->hit.metadataMatch)
+                it->hit.displayTitle = titles.value(1).toString();
+        }
+    }
     QList<Group> ordered;
     ordered.reserve(groups.size());
-    for (auto it = groups.begin(); it != groups.end(); ++it) {
-        Group& group = it.value();
+    for (Group& group : groups) {
         group.hit.tier = group.hit.metadataMatch ? 0 : 1;
-        if (!group.hit.metadataMatch) {
-            titleQuery.addBindValue(it.key());
-            if (!titleQuery.exec())
-                return sqlFailure(titleQuery);
-            if (titleQuery.next())
-                group.hit.displayTitle = titleQuery.value(0).toString();
-        }
         ordered << group;
     }
 

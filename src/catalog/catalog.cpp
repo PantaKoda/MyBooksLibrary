@@ -658,6 +658,14 @@ Result<RunId> publishToc(QSqlDatabase& db, const PublishTicket& ticket, const Ru
         return row.error();
     const std::optional<int> pageCount = row.value().asset.pageCount;
 
+    // The run identity is the one stored outcome; a differing analysis value
+    // is a caller error, not something to choose between silently.
+    if (toc.outcome != run.outcome) {
+        return makeError(ErrorCode::InvalidArgument,
+                         QStringLiteral("TOC outcome \"%1\" differs from the run outcome \"%2\".")
+                             .arg(toc.outcome, run.outcome));
+    }
+
     for (const TocEntry& e : toc.entries) {
         if (e.sdkEntryId.isEmpty())
             return makeError(ErrorCode::InvalidArgument, QStringLiteral("A TOC entry has no SDK entry ID."));
