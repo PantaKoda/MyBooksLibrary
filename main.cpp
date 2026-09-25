@@ -7,6 +7,7 @@
 //                                            Exit 0 when search prerequisites are met, 1 otherwise.
 //   appMyBooksLibrary --reader-check <pdf> [--rounds N] [--view churn|persistent|none]
 //                                     [--require-ocr] [--no-models] [--no-control] [--timeout S]
+//                                     [--ocr-threads N] [--qml-cycles N] [--qml-naive-teardown]
 //                                            no window: Qt PDF availability and coexistence with
 //                                            concurrent SDK work (docs/READER.md). Exit = number
 //                                            of checks not passed; 2 for bad arguments; 3 if the
@@ -36,7 +37,8 @@ int sdkCheck()
     const mbl::sdk::SdkIdentity sdk = mbl::sdk::querySdkIdentity();
     out << "sdk.header_version=" << sdk.headerVersion << Qt::endl
         << "sdk.loaded_version=" << sdk.loadedVersion << Qt::endl
-        << "sdk.models_found=" << (sdk.modelsFound ? "true" : "false") << Qt::endl;
+        << "sdk.models_found=" << (sdk.modelsFound ? "true" : "false") << Qt::endl
+        << "sdk.ocr_threads_auto=" << sdk.ocrThreadsAuto << Qt::endl;
     if (sdk.modelsFound)
         out << "sdk.detector_model=" << sdk.detectorModel << Qt::endl;
     if (sdk.headerVersion != sdk.loadedVersion)
@@ -113,6 +115,14 @@ int main(int argc, char *argv[])
                 options.view = next == QLatin1String("churn")        ? mbl::reader::ViewMode::Churn
                                : next == QLatin1String("persistent") ? mbl::reader::ViewMode::Persistent
                                                                      : mbl::reader::ViewMode::None;
+                ++i;
+            } else if (a == QLatin1String("--qml-cycles") && next.toInt() > 0) {
+                options.qmlCycles = next.toInt();
+                ++i;
+            } else if (a == QLatin1String("--qml-naive-teardown")) {
+                options.qmlNaiveTeardown = true;
+            } else if (a == QLatin1String("--ocr-threads") && next.toInt() > 0) {
+                options.ocrThreads = next.toInt();
                 ++i;
             } else if (a == QLatin1String("--timeout") && next.toInt() > 0) {
                 options.timeoutSeconds = next.toInt();

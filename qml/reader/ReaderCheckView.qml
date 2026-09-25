@@ -10,6 +10,9 @@ Item {
     required property url sourceUrl
     readonly property int status: document.status
     readonly property int pageCount: document.pageCount
+    // Set to false to destroy the view (and its page loads) before the
+    // document is destroyed; see "Teardown" in docs/READER.md.
+    property bool viewActive: true
 
     width: 400
     height: 600
@@ -19,8 +22,13 @@ Item {
         source: root.sourceUrl
     }
 
-    PdfMultiPageView {
+    Loader {
         anchors.fill: parent
-        document: document
+        active: root.viewActive
+        sourceComponent: Component {
+            PdfMultiPageView {
+                document: document
+            }
+        }
     }
 }

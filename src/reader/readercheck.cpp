@@ -19,6 +19,7 @@
 #include <QThread>
 #include <QUrl>
 
+#include <algorithm>
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
@@ -87,12 +88,29 @@ private:
     MemoryPeaks m_peaks;
 };
 
+// Largest interval between consecutive GUI event-loop turns: how long the
+// GUI thread was unable to process input while a phase ran.
+struct TurnGaps {
+    qint64 maxGapMs = 0;
+    qint64 turns = 0;
+    QElapsedTimer sinceLast;
+
+    void turn()
+    {
+        if (sinceLast.isValid())
+            maxGapMs = std::max(maxGapMs, sinceLast.elapsed());
+        sinceLast.start();
+        ++turns;
+    }
+    QString text() const { return QStringLiteral("GUI max turn gap %1 ms over %2 turns").arg(maxGapMs).arg(turns); }
+};
+
 // Runs `work` on a plain worker thread while the GUI thread keeps running
 // `whileRunning` and processing events. Never blocks the GUI thread on the
 // worker. On timeout the harness process exits with code 3, because the
 // still-running worker may reference this stack frame.
 bool runOnWorker(const std::function<void()>& work, const std::function<void()>& whileRunning, int timeoutMs,
-                 MemoryTrace* trace = nullptr)
+                 MemoryTrace* trace = nullptr, TurnGaps* gaps = nullptr)
 {
     auto done = std::make_shared<std::atomic_bool>(false);
     std::thread worker([work, done] {
@@ -102,6 +120,8 @@ bool runOnWorker(const std::function<void()>& work, const std::function<void()>&
     QElapsedTimer timer;
     timer.start();
     while (!done->load()) {
+        if (gaps)
+            gaps->turn();
         if (whileRunning)
             whileRunning();
         if (trace)
@@ -350,9 +370,12 @@ int runReaderCheck(const ReaderCheckOptions& options, QTextStream& out)
 #endif
     const int timeoutMs = options.timeoutSeconds * 1000;
     const QString path = options.pdfPath;
-    const sdk::ProbeOptions probeOptions{options.useModels, {}};
+    sdk::ProbeOptions probeOptions;
+    probeOptions.useModels = options.useModels;
+    probeOptions.ocrThreads = options.ocrThreads;
     out << "config view=" << viewName(options.view) << " rounds=" << options.rounds
-        << " require_ocr=" << options.requireOcr << " models=" << options.useModels << Qt::endl;
+        << " require_ocr=" << options.requireOcr << " models=" << options.useModels
+        << " ocr_threads=" << options.ocrThreads << Qt::endl;
 
     // 1. Qt PDF alone: load and render every page.
     phase(out, "qtpdf_render");
@@ -399,18 +422,20 @@ int runReaderCheck(const ReaderCheckOptions& options, QTextStream& out)
         phase(out, "qt_only_control");
         MemoryTrace trace(out, "qt_only_control");
         Viewer viewer(options.view, path, baselineRender);
+        TurnGaps gaps;
         QElapsedTimer timer;
         timer.start();
         while (timer.elapsed() < aloneMs * options.rounds) {
+            gaps.turn();
             viewer.turn();
             trace.tick();
             QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
         }
         r.report("qt_only_control", viewer.clean(),
-                 QStringLiteral("view=%1 for %2 ms: %3; %4")
+                 QStringLiteral("view=%1 for %2 ms: %3; %4; %5")
                      .arg(QLatin1StringView(viewName(options.view)))
                      .arg(timer.elapsed())
-                     .arg(viewer.summary(), peaksText(trace.peaks())));
+                     .arg(viewer.summary(), gaps.text(), peaksText(trace.peaks())));
     }
 
     // 4. Concurrent: SDK rounds on the worker while the GUI thread views.
@@ -419,6 +444,7 @@ int runReaderCheck(const ReaderCheckOptions& options, QTextStream& out)
         MemoryTrace trace(out, "concurrent");
         QList<SdkRound> rounds;
         Viewer viewer(options.view, path, baselineRender);
+        TurnGaps gaps;
         QElapsedTimer timer;
         timer.start();
         runOnWorker(
@@ -427,7 +453,7 @@ int runReaderCheck(const ReaderCheckOptions& options, QTextStream& out)
                     rounds << runSdk(path, &noCancel, probeOptions);
             },
             options.view == ViewMode::None ? std::function<void()>() : std::function<void()>([&] { viewer.turn(); }),
-            timeoutMs, &trace);
+            timeoutMs, &trace, &gaps);
         int differing = 0, ocrMissing = 0;
         QString difference;
         for (const SdkRound& round : rounds) {
@@ -448,14 +474,14 @@ int runReaderCheck(const ReaderCheckOptions& options, QTextStream& out)
                                 : (differing == 0 && rounds.size() == options.rounds && viewer.clean()) ? Verdict::Pass
                                                                                                         : Verdict::Fail;
         r.report(name, verdict,
-                 QStringLiteral("%1 SDK rounds (%2 semantically differing%3, %4 without completed OCR); %5; %6 ms; %7")
+                 QStringLiteral("%1 SDK rounds (%2 semantically differing%3, %4 without completed OCR); %5; %6 ms; %7; %8")
                      .arg(rounds.size())
                      .arg(differing)
                      .arg(difference.isEmpty() ? QString() : QStringLiteral(", first: ") + difference)
                      .arg(ocrMissing)
                      .arg(viewer.summary())
                      .arg(timer.elapsed())
-                     .arg(peaksText(trace.peaks())));
+                     .arg(gaps.text(), peaksText(trace.peaks())));
     }
 
     // 5. Cancellation while viewing. The worker pauses inside its first
@@ -560,33 +586,64 @@ int runReaderCheck(const ReaderCheckOptions& options, QTextStream& out)
     }
 
     // 7. Qt Quick PDF module, from the registered qml/reader/ReaderCheckView.qml.
+    //    PdfMultiPageView loads page images on Qt Quick's loader thread from the
+    //    PdfDocument. The ordered teardown destroys the view first and lets
+    //    pending loads settle before the document goes; the naive one does not.
     {
         phase(out, "qml_pdf_module");
-        QQmlEngine engine;
-        QQmlComponent component(&engine, QStringLiteral("MyBooksLibrary"), QStringLiteral("ReaderCheckView"));
-        std::unique_ptr<QObject> root(component.isReady()
-                                          ? component.createWithInitialProperties(
-                                                {{QStringLiteral("sourceUrl"), QUrl::fromLocalFile(path)}})
-                                          : nullptr);
+        int completed = 0;
         QString detail;
-        bool pass = false;
-        if (!root) {
-            detail = component.errorString().simplified();
-        } else {
+        bool pass = true;
+        QElapsedTimer total;
+        total.start();
+        for (int cycle = 0; cycle < options.qmlCycles && pass; ++cycle) {
+            QQmlEngine engine;
+            QQmlComponent component(&engine, QStringLiteral("MyBooksLibrary"), QStringLiteral("ReaderCheckView"));
+            std::unique_ptr<QObject> root(component.isReady()
+                                              ? component.createWithInitialProperties(
+                                                    {{QStringLiteral("sourceUrl"), QUrl::fromLocalFile(path)}})
+                                              : nullptr);
+            if (!root) {
+                pass = false;
+                detail = component.errorString().simplified();
+                break;
+            }
             QElapsedTimer timer;
             timer.start();
             while (root->property("status").toInt() != int(QPdfDocument::Status::Ready) && timer.elapsed() < 5000)
                 QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
             const int pages = root->property("pageCount").toInt();
             pass = root->property("status").toInt() == int(QPdfDocument::Status::Ready) && pages > 0;
+            // Let the view request page images so teardown races with real loads.
+            timer.restart();
+            while (timer.elapsed() < 30)
+                QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
+            if (!options.qmlNaiveTeardown) {
+                root->setProperty("viewActive", false);
+                timer.restart();
+                while (timer.elapsed() < 200)
+                    QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+            }
             detail = QStringLiteral("PdfDocument status %1, %2 pages").arg(root->property("status").toInt()).arg(pages);
+            root.reset();
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+            if (pass)
+                ++completed;
         }
+        detail += QStringLiteral("; %1/%2 create/destroy cycles with %3 teardown in %4 ms")
+                      .arg(completed)
+                      .arg(options.qmlCycles)
+                      .arg(options.qmlNaiveTeardown ? QStringLiteral("naive") : QStringLiteral("ordered"))
+                      .arg(total.elapsed());
 #ifdef Q_OS_WIN
         detail += QStringLiteral("; pdfquickplugin: %1; Qt6PdfQuick: %2")
                       .arg(loadedModulePath({L"pdfquickplugin.dll", L"pdfquickplugind.dll"}),
                            loadedModulePath({L"Qt6PdfQuick.dll", L"Qt6PdfQuickd.dll"}));
 #endif
-        detail += QStringLiteral("; import paths: %1").arg(engine.importPathList().join(u';'));
+        {
+            QQmlEngine engine;
+            detail += QStringLiteral("; import paths: %1").arg(engine.importPathList().join(u';'));
+        }
         r.report("qml_pdf_module", pass, detail);
     }
 

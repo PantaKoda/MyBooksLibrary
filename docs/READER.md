@@ -99,3 +99,26 @@ Options for the owner, reassessed:
 3. **Pause viewing during OCR:** only a mitigation to verify. It avoids concurrent allocation in this process but not other processes' pressure.
 
 Not verified: Qt Quick rendering in a visible window (only type instantiation), long books with many OCR pages, lower-memory machines, and macOS/Linux.
+
+## SDK 0.2.0 re-verification (2026-09-25)
+
+All checks were repeated against SDK 0.2.0. The full before and after table is in IMPLEMENTATION_PROGRESS.md, "SDK 0.2.0 update".
+
+- The same 4-page OCR workload is 2.6× faster (57.7 s against 151.5 s) and peaks at 2.4 GB instead of 8.9 GB.
+- System commit during OCR with viewing peaked at 46.5 of 57.2 GB (51.9 before).
+- Cancellation took 21–28 ms.
+- Viewing during OCR passed in every run: churn, persistent, 4 OCR threads, and the package.
+
+With about 11 GB of commit headroom left, the **memory-pressure risk above is much reduced but not eliminated**. It grows with larger pages and with other applications running. The SDK brief now documents about 2.3 GB and 7 s per page at 300 dpi as observed peaks, not limits.
+
+### GUI responsiveness
+
+`TurnGaps` records the largest interval between GUI event-loop turns.
+- Persistent viewer rendering one page per turn: 4 ms on its own, 10 ms during OCR with automatic threads (8), 7 ms with `--ocr-threads 4`. With 4 threads, OCR took 81 s instead of 58 s.
+- Churn viewer (a whole document per turn): 19 ms on its own, 34 ms during OCR.
+
+### Teardown and an unexplained Qt Quick crash
+
+In one package run (text PDF, no OCR), the process ended with `0xC0000005` on a Qt Quick worker thread during teardown of `qml_pdf_module`. The stack was Qt6Core thread start → Qt6Quick → Qt6Gui, with no SDK module. It did not recur in 50 further package runs or in 1,500 naive create/destroy cycles (`--qml-cycles 300 --qml-naive-teardown`, 5 processes).
+
+The check now destroys the view before its document (a `Loader` in `ReaderCheckView.qml`), but that is not a proven fix. **M06 must own document lifetime explicitly and stress-test opening and closing books in a visible window.**

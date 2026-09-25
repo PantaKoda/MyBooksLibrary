@@ -123,3 +123,16 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - `tocOutcomeRoundTripsAndMismatchIsRejected` (including after restart).
 
   `manyContentsOnlyMatchesUseOneTitleRead` (400 books) checks results, order and pagination and logs the elapsed time. It does not count scans or assert latency, so it would also pass on the previous, slower implementation. The fix itself was verified by code inspection and the 14 ms measurement.
+
+## 2026-09-25 — SDK baseline moves to pdfbookmark 0.2.0
+
+- **Change:** `find_package(pdfbookmark 0.2 CONFIG REQUIRED)`. AGENTS.md records SDK 0.2.0 (tag `v0.2.0` = `93d9128`, fix PR #2 `eeb977c`). The probes expose `ocr_threads` (default 0 = automatic). The SDK is installed side by side under `…\pdfbookmark-sdk\<version>\`.
+- **Why:** 0.2.0 fixes the OCR memory and throughput problem found in M01 (PDFMegine issue #1). The probes set `ocr_threads`, which 0.1 headers lack. Requiring 0.2 also stops a build folder from silently staying on the old SDK, whose option structs have a different size.
+- **Assumptions:** Automatic OCR threads (8 here) stay the default. `ocr_threads=4` kept the GUI slightly smoother (7 ms against 10 ms maximum turn gap) but made OCR about 40% slower, so choosing it is left to the M04 job design. Existing build folders, including the owner's Qt Creator folder, must point at the new SDK and be rebuilt from clean.
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, "SDK 0.2.0 update".
+
+## 2026-09-25 — Reader check: view destroyed before its document; unexplained Qt Quick crash recorded
+
+- **Change:** `ReaderCheckView.qml` hosts `PdfMultiPageView` in a `Loader`. The check's default teardown deactivates the view, processes events for 200 ms, then destroys the document. `--qml-cycles` and `--qml-naive-teardown` allow stress runs.
+- **Why:** One package run crashed (`0xC0000005`) on a Qt Quick worker thread during that check's teardown. The hypothesis was that page-image loads were still using the document. 1,500 naive cycles did not reproduce it, so the hypothesis is unconfirmed.
+- **Assumptions:** The ordered teardown is a reasonable default but not a proven fix. The M06 reader adapter must own document lifetime explicitly and needs its own stress test with a visible window.
