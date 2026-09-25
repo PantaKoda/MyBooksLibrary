@@ -5,7 +5,7 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | Step | Status | Branch / PR | Notes |
 | --- | --- | --- | --- |
 | M00 Baseline | Merged | `feat/m00-baseline` / [PR #1](https://github.com/PantaKoda/MyBooksLibrary/pull/1), merge `46de94a` | See below |
-| M01 Feasibility | Part 1 Merged ([PR #2](https://github.com/PantaKoda/MyBooksLibrary/pull/2), merge `f126ad0`); part 2 AwaitingReview with a **recorded blocker** | Part 2: `feat/m01-reader-qtpdf-coexistence` | Qt PDF available; coexistence fails under SDK OCR memory load (see READER.md) |
+| M01 Feasibility | Part 1 Merged ([PR #2](https://github.com/PantaKoda/MyBooksLibrary/pull/2), merge `f126ad0`); part 2 AwaitingReview with a **recorded blocker** | Part 2: `feat/m01-reader-qtpdf-coexistence` / [PR #4](https://github.com/PantaKoda/MyBooksLibrary/pull/4) (draft) | Qt PDF available; coexistence fails under SDK OCR memory load (see READER.md) |
 | M02 Contracts/persistence | AwaitingReview (separate PR #3) | `feat/m02-a2-catalog-persistence` | Not on this branch |
 | M03–M11 | NotStarted | | |
 
