@@ -23,3 +23,23 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
 - **Change:** `tests/fixtures/make_fixtures.py` (standard library only) generates `title-page.pdf`, which is committed. `.gitignore` keeps ignoring `*.pdf` except `tests/fixtures/*.pdf`.
 - **Why:** Checks need a real PDF without committing personal books or adding a PDF-generation dependency.
 - **Assumptions:** Python 3 is available to regenerate fixtures. Regeneration is deterministic (SHA-256 `26f29980…0d195f`).
+
+## 2026-09-24 — M01: FTS5 feasibility probe through QSQLITE
+
+- **Change:** Added `src/infrastructure/sqlitecapabilities.{h,cpp}`, the `--sqlite-check` app mode and `tests/infrastructure/tst_sqlitecapabilities`. The probe opens a private in-memory QSQLITE connection. It creates a temporary FTS5 table with `unicode61 remove_diacritics 2`, inserts rows and checks `MATCH`, `bm25()`, diacritic folding and prefix queries.
+- **Why:** AGENTS.md section 7 requires proving FTS5 through the actual driver, because the version string is not enough. The probe is reusable later as a startup capability check.
+- **Assumptions:** The Qt 6.11.2 msvc2022_64 QSQLITE plugin bundles its own SQLite (3.53.4, `ENABLE_FTS5`), so no separate SQLite dependency is needed.
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, M01.
+
+## 2026-09-24 — M01: `mbl_core` static library and the test layout
+
+- **Change:** Non-GUI, non-SDK application code builds into the static library `mbl_core` (links `Qt6::Sql`, exports the `src/` include path and `/utf-8`). The app and the tests link it. `tests/CMakeLists.txt` provides `mbl_add_test()`: a console-subsystem Qt Test executable registered with CTest, with Qt's `bin` prepended to `PATH`. The `MBL_BUILD_TESTS` option is ON by default.
+- **Why:** AGENTS.md section 3 asks for ordinary internal library targets, and the tests must exercise the same code as the app without the SDK DLLs.
+- **Assumptions:** The SDK boundary (`src/processing/sdk/`) stays in the app target for now. If it needs tests, it will get its own target that links the SDK.
+- **Removed:** The app target's own `src` include path and `/utf-8` option; both are now inherited from `mbl_core`.
+
+## 2026-09-24 — M01: FTS5 query syntax must be escaped (input for A3)
+
+- **Change:** None to behaviour. A test records the baseline: binding raw user text `C++` to `MATCH` is an FTS5 syntax error, while the quoted string `"HTTP/2"` is a valid phrase query.
+- **Why:** Binding values prevents SQL injection but not FTS5 syntax errors. A3 (M02/M06) must compile user queries into quoted FTS5 terms.
+- **Assumptions:** The escaping design (quoting, doubling `"`, prefix handling) belongs to A3 and is not decided here.
