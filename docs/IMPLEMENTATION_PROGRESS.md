@@ -7,7 +7,7 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | M00 Baseline | Merged | `feat/m00-baseline` / [PR #1](https://github.com/PantaKoda/MyBooksLibrary/pull/1), merge `46de94a` | See below |
 | M01 Feasibility | Part 1 Merged ([PR #2](https://github.com/PantaKoda/MyBooksLibrary/pull/2), merge `f126ad0`); part 2 AwaitingReview (review fixes applied) | Part 2: `feat/m01-reader-qtpdf-coexistence` / [PR #4](https://github.com/PantaKoda/MyBooksLibrary/pull/4) (draft) | Qt PDF available and coexisting in all corrected runs; OCR memory-pressure risk tracked in READER.md |
 | M02 Contracts/persistence | Merged | `feat/m02-a2-catalog-persistence` / [PR #3](https://github.com/PantaKoda/MyBooksLibrary/pull/3), merge `b643446` | See below |
-| SDK 0.2.0 update | AwaitingReview | `chore/m01-sdk-0.2.0` | See "SDK 0.2.0 update" |
+| SDK 0.2.0 update | AwaitingReview | `chore/m01-sdk-0.2.0` / [PR #5](https://github.com/PantaKoda/MyBooksLibrary/pull/5) | See "SDK 0.2.0 update" |
 | M03–M11 | NotStarted | | |
 
 ## SDK 0.2.0 update (2026-09-25)
