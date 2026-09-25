@@ -5,8 +5,9 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | Step | Status | Branch / PR | Notes |
 | --- | --- | --- | --- |
 | M00 Baseline | Merged | `feat/m00-baseline` / [PR #1](https://github.com/PantaKoda/MyBooksLibrary/pull/1), merge `46de94a` | See below |
-| M01 Feasibility | InProgress (part 1 of 2 AwaitingReview; part 2 Blocked) | Part 1: `feat/m01-a3-fts5-probe` / [PR #2](https://github.com/PantaKoda/MyBooksLibrary/pull/2) | FTS5 part verified locally. Qt PDF part blocked: module not installed |
-| M02–M11 | NotStarted | | |
+| M01 Feasibility | Part 1 Merged ([PR #2](https://github.com/PantaKoda/MyBooksLibrary/pull/2), merge `f126ad0`); part 2 AwaitingReview with a **recorded blocker** | Part 2: `feat/m01-reader-qtpdf-coexistence` | Qt PDF available; coexistence fails under SDK OCR memory load (see READER.md) |
+| M02 Contracts/persistence | AwaitingReview (separate PR #3) | `feat/m02-a2-catalog-persistence` | Not on this branch |
+| M03–M11 | NotStarted | | |
 
 ## M01 — Feasibility
 
@@ -29,9 +30,23 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 
 **Review fix (PR #2, P3):** `mbl_add_test()` now registers tests with `-o -,junitxml`. To verify, I temporarily added a failing `QCOMPARE(caps.sqliteVersion, "deliberate-failure")`. `ctest --output-on-failure -V` reported `Failed` and printed the `<failure>` element with `Actual "3.53.4"` / `Expected "deliberate-failure"`. After restoring the test (no diff left), ctest passed 1/1 with the command `tst_sqlitecapabilities.exe "-o" "-,junitxml"`.
 
-### Part 2: Qt PDF availability and coexistence (reader) — Blocked
+### Part 2: Qt PDF availability and coexistence (reader)
 
-`C:\Qt\6.11.2\msvc2022_64` has no `Qt6Pdf` module (`lib/cmake/Qt6Pdf` and `bin/Qt6Pdf*.dll` are absent). Installing it through the Qt Maintenance Tool needs owner approval. Independent work (M02) can continue meanwhile.
+The owner installed Qt PDF on 2026-09-25. **Touched paths:** `CMakeLists.txt`, `main.cpp`, `src/processing/sdk/sdkinfo.*`, `src/reader/`, `tests/fixtures/`, `docs/`.
+
+| Command | Result |
+| --- | --- |
+| Debug and Release builds (`qt-cmake` + `cmake --build`, `-Wno-dev`) | No `warning C…`; ctest 1/1 passed on this branch |
+| `dumpbin /dependents` / `/exports` | `Qt6Pdf.dll` embeds PDFium (imports no `pdfium.dll`); the SDK uses its own `pdfium.dll` |
+| `--reader-check title-page.pdf 3` (Debug) | 7/7 PASS |
+| `--reader-check contents-book.pdf 10` (Debug) | 7/7 PASS |
+| Packaged Release (`windeployqt --release --qmldir`, SDK DLLs and models; `PATH` = System32), `--reader-check contents-book.pdf 20`, `--sqlite-check`, `--sdk-check` | 7/7 PASS; exit 0; exit 0 |
+| `--reader-check image-only.pdf 2 no-view` (Release) | 7/7 PASS; cancel honoured after 18.9 s |
+| `--reader-check image-only.pdf 1` (Release), 3 runs | **Exit `0xE0000008`** every time, on the GUI thread in `Qt6Pdf.dll`, at ~8.98 GB private memory |
+
+**Blocker:** embedded viewing plus in-process SDK OCR is not safe; details and options are in READER.md. Not verified: Qt Quick rendering in a visible window (only instantiation was checked), and macOS/Linux.
+
+**Next action:** owner review, and a decision on the blocker options in READER.md. Report the OCR memory profile and cancel latency to PDFMegine.
 
 ## M00 — Baseline
 
@@ -83,7 +98,7 @@ The Qt Creator build folder was not rebuilt in this step. CI is not configured.
 ### Findings
 
 - **SDK deploy-script warning (report to PDFMegine):** Every build prints a CMake dev warning from `lib/cmake/pdfbookmark/pdfbookmarkDeployRuntime.cmake:12`: "Invalid escape sequence `\.`" in the regex `/pdfbookmarkd?\.dll$`, under policy CMP0010. Deployment still succeeds. The SDK is read-only here, so this needs a fix upstream.
-- **Qt PDF is not installed** in `C:\Qt\6.11.2\msvc2022_64` (no `Qt6Pdf*`). M01 needs it; installing it requires owner approval through the Qt Maintenance Tool.
+- **Qt PDF is not installed** in `C:\Qt\6.11.2\msvc2022_64` (no `Qt6Pdf*`). M01 needs it; installing it requires owner approval through the Qt Maintenance Tool. *(Resolved 2026-09-25: the owner installed Qt PDF; see M01 part 2.)*
 - **QSQLITE is present** (`plugins/sqldrivers/qsqlite.dll`). The FTS5 probe is part of M01.
 - Outside Qt Creator, Qt DLLs must be on `PATH` to run the executable. This will be addressed by packaging (M10).
 

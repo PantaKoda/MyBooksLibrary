@@ -5,10 +5,15 @@
 //                                            Exit 0 on success, 1 on an SDK error.
 //   appMyBooksLibrary --sqlite-check         no window: probe FTS5 through the QSQLITE driver.
 //                                            Exit 0 when search prerequisites are met, 1 otherwise.
+//   appMyBooksLibrary --reader-check <pdf> [<rounds> [no-view]]
+//                                            no window: Qt PDF availability and coexistence with
+//                                            concurrent SDK work. Exit = number of failed checks
+//                                            (3 if the SDK worker times out).
 //                                            The exe is a GUI-subsystem app on Windows, so redirect
 //                                            or pipe stdout to see the output.
 #include "infrastructure/sqlitecapabilities.h"
 #include "processing/sdk/sdkinfo.h"
+#include "reader/readercheck.h"
 
 #include <QCoreApplication>
 #include <QGuiApplication>
@@ -87,6 +92,19 @@ int main(int argc, char *argv[])
     if (argc >= 2 && std::strcmp(argv[1], "--sqlite-check") == 0) {
         QCoreApplication app(argc, argv);
         return sqliteCheck();
+    }
+
+    if (argc >= 3 && std::strcmp(argv[1], "--reader-check") == 0) {
+        QGuiApplication app(argc, argv);
+        const QStringList args = QCoreApplication::arguments();
+        mbl::reader::ReaderCheckOptions options;
+        options.pdfPath = args.at(2);
+        if (args.size() > 3)
+            options.rounds = qMax(1, args.at(3).toInt());
+        if (args.size() > 4 && args.at(4) == QLatin1String("no-view"))
+            options.viewDuringRounds = false;
+        QTextStream out(stdout);
+        return mbl::reader::runReaderCheck(options, out);
     }
 
     QGuiApplication app(argc, argv);

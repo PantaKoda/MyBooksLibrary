@@ -78,4 +78,38 @@ PdfProbe probePdf(const QString& localPath, const std::atomic_bool* cancel)
     return probe;
 }
 
+AnalysisProbe probeAnalysis(const QString& localPath, const std::atomic_bool* cancel)
+{
+    AnalysisProbe probe;
+    pdfbookmark::AnalysisOptions options;
+    options.models = pdfbookmark::find_models();
+    options.plan.allow_partial = false;
+    options.plan.flat_outline_for_unknown_hierarchy = false;
+    options.plan.title_style = pdfbookmark::PlanPolicy::TitleStyle::AsPrinted;
+
+    int callbacks = 0;
+    const auto report = pdfbookmark::analyze(toSdkPath(localPath), options, pdfbookmark::RunControl{cancel},
+                                             [&callbacks](const pdfbookmark::AnalysisProgress&) { ++callbacks; });
+    probe.progressCallbacks = callbacks;
+    if (!report) {
+        probe.error = QString::fromStdString(report.error().message);
+        probe.cancelledError = report.error().code == pdfbookmark::ErrorCode::Cancelled;
+        return probe;
+    }
+    const auto& r = report.value();
+    probe.outcome = QString::fromUtf8(pdfbookmark::outcome_name(r.outcome));
+    if (r.parsed)
+        probe.parsedEntries = int(r.parsed->entries.size());
+    if (r.mapping) {
+        for (const auto& entry : r.mapping->entries) {
+            if (entry.status == pdfbookmark::mapping::MappingStatus::Resolved)
+                ++probe.resolvedEntries;
+        }
+    }
+    probe.planReady = r.plan.ready;
+    probe.pagesAcquired = int(r.pages.size());
+    probe.ok = true;
+    return probe;
+}
+
 } // namespace mbl::sdk

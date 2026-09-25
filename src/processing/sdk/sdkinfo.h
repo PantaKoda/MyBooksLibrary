@@ -34,4 +34,21 @@ struct PdfProbe {
 // located models. Never call on the GUI thread. `cancel` must outlive the call.
 PdfProbe probePdf(const QString& localPath, const std::atomic_bool* cancel);
 
+struct AnalysisProbe {
+    bool ok = false;
+    QString error;             // SDK error message when !ok (includes cancellation errors).
+    bool cancelledError = false; // The SDK returned ErrorCode::Cancelled.
+    QString outcome;           // outcome_name(), e.g. "plan_ready".
+    int parsedEntries = 0;     // All parsed TOC entries (0 when none were parsed).
+    int resolvedEntries = 0;   // Mapping entries with status Resolved.
+    bool planReady = false;
+    int pagesAcquired = 0;
+    int progressCallbacks = 0; // Progress callbacks received on the worker thread.
+};
+
+// Blocking: runs analyze() with automatic acquisition, located models,
+// AsPrinted titles, allow_partial = false and no flattening. Never call on
+// the GUI thread. `cancel` must outlive the call.
+AnalysisProbe probeAnalysis(const QString& localPath, const std::atomic_bool* cancel);
+
 } // namespace mbl::sdk

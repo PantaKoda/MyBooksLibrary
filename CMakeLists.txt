@@ -5,7 +5,7 @@ project(MyBooksLibrary VERSION 0.1 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Quick Sql)
+find_package(Qt6 REQUIRED COMPONENTS Quick Sql Pdf)
 
 # --- pdfbookmark SDK ---
 # Set PDFBOOKMARK_SDK as a cache variable (-DPDFBOOKMARK_SDK=..., a CMakeUserPresets.json,
@@ -46,6 +46,8 @@ qt_add_executable(appMyBooksLibrary
     main.cpp
     src/processing/sdk/sdkinfo.h
     src/processing/sdk/sdkinfo.cpp
+    src/reader/readercheck.h
+    src/reader/readercheck.cpp
 )
 
 qt_add_qml_module(appMyBooksLibrary
@@ -62,7 +64,7 @@ set_target_properties(appMyBooksLibrary PROPERTIES
 )
 
 target_link_libraries(appMyBooksLibrary
-    PRIVATE Qt6::Quick mbl_core pdfbookmark::pdfbookmark
+    PRIVATE Qt6::Quick Qt6::Pdf mbl_core pdfbookmark::pdfbookmark
 )
 
 # Copies pdfbookmark.dll, its dependency DLLs and the OCR models next to the .exe

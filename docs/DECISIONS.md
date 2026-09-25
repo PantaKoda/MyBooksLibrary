@@ -43,3 +43,16 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
 - **Change:** None to behaviour. A test records the baseline: binding raw user text `C++` to `MATCH` is an FTS5 syntax error, while the quoted string `"HTTP/2"` is a valid phrase query.
 - **Why:** Binding values prevents SQL injection but not FTS5 syntax errors. A3 (M02/M06) must compile user queries into quoted FTS5 terms.
 - **Assumptions:** The escaping design (quoting, doubling `"`, prefix handling) belongs to A3 and is not decided here.
+
+## 2026-09-25 — M01: Qt PDF linked; reader coexistence harness
+
+- **Change:** The app links `Qt6::Pdf`. `appMyBooksLibrary --reader-check <pdf> [<rounds> [no-view]]` (`src/reader/readercheck.*`) checks Qt PDF rendering, the `QtQuick.Pdf` QML module, and coexistence with concurrent SDK metadata and analysis. It covers identical results, cancellation, destroying the viewer during analysis, and non-ASCII paths. On Windows, a diagnostics-only vectored exception handler prints the code, thread and module stack of fatal native exceptions. `sdkinfo` gains `probeAnalysis()` with the automatic-analysis policy. Two fixtures were added: `contents-book.pdf` (printed TOC) and `image-only.pdf` (forces OCR).
+- **Why:** AGENTS.md section 9 requires actual coexistence evidence because both libraries embed PDFium.
+- **Assumptions:** The harness uses a plain `std::thread`, not the A4 worker design (M04). It never blocks the GUI thread on the worker; on timeout it exits with code 3. The exception handler is a diagnostic and does not recover from anything.
+- **Verified:** See READER.md. Text PDFs pass everywhere, including the packaged build. OCR with concurrent viewing terminates the process in Qt PDF's allocator (`0xE0000008`), which is recorded as a blocker.
+
+## 2026-09-25 — M01: Coexistence blocker, not worked around
+
+- **Change:** None in behaviour. The failure is documented with three options (upstream memory work, helper process, pause viewing during OCR).
+- **Why:** Choosing between them changes the architecture or the SDK. That is the owner's decision (AGENTS.md sections 3 and 12).
+- **Assumptions:** Import, catalog and search work (M02–M05) does not depend on the viewer and can continue.
