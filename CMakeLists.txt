@@ -33,8 +33,28 @@ endif()
 
 # Application code without the GUI or the SDK, shared by the app and the tests.
 qt_add_library(mbl_core STATIC
+    src/domain/book.h
+    src/domain/codes.cpp
+    src/domain/ids.h
+    src/domain/metadata.h
+    src/domain/metadata.cpp
+    src/domain/result.h
+    src/domain/search.h
+    src/domain/toc.h
+    src/infrastructure/databaseexecutor.h
+    src/infrastructure/databaseexecutor.cpp
     src/infrastructure/sqlitecapabilities.h
     src/infrastructure/sqlitecapabilities.cpp
+    src/catalog/catalog.h
+    src/catalog/catalog.cpp
+    src/catalog/library.h
+    src/catalog/library.cpp
+    src/catalog/migrations.h
+    src/catalog/migrations.cpp
+    src/search/ftsquery.h
+    src/search/ftsquery.cpp
+    src/search/searchindex.h
+    src/search/searchindex.cpp
 )
 target_include_directories(mbl_core PUBLIC src)
 target_link_libraries(mbl_core PUBLIC Qt6::Sql)
