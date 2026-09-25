@@ -75,6 +75,7 @@ private slots:
     void titleParentAndPlanChangesDiffer();
     void transientFieldsAreIgnored();
     void metadataChangesDiffer();
+    void encodingHasNoCollisions();
     void withoutModelsOcrIsNotExercised();
 };
 
@@ -157,6 +158,54 @@ void TestSdkSnapshot::metadataChangesDiffer()
     auto subtitle = metadataReport();
     subtitle.result.title.value->subtitle.reset();
     QVERIFY(metadataSnapshot(subtitle) != base);
+}
+
+// Regressions for the PR #4 re-review: separators, absent values and line
+// breaks inside document text must not make different results encode alike.
+void TestSdkSnapshot::encodingHasNoCollisions()
+{
+    const auto withTitle = [](std::string title, std::optional<std::string> subtitle) {
+        auto r = metadataReport();
+        r.result.title.value = pb::metadata::TitleValue{std::move(title), std::move(subtitle)};
+        return metadataSnapshot(r);
+    };
+    // The reviewer's example.
+    QVERIFY(withTitle("A|B", std::string("C")) != withTitle("A", std::string("B|C")));
+    // An absent subtitle is not the text "-" or "null".
+    QVERIFY(withTitle("T", std::nullopt) != withTitle("T", std::string("-")));
+    QVERIFY(withTitle("T", std::nullopt) != withTitle("T", std::string("null")));
+    QVERIFY(withTitle("T", std::nullopt) != withTitle("T", std::string("")));
+    // Quotes and backslashes are escaped distinctly.
+    QVERIFY(withTitle("a\"b", std::nullopt) != withTitle("a\\\"b", std::nullopt));
+    QVERIFY(withTitle("a\\", std::string("b")) != withTitle("a", std::string("\b")));
+
+    // One contributor whose name contains the old separators vs two contributors.
+    auto one = metadataReport();
+    one.result.contributors.value = std::vector<pb::metadata::Contributor>{
+        {"A(author);B", pb::metadata::ContributorRole::Author}};
+    auto two = metadataReport();
+    two.result.contributors.value = std::vector<pb::metadata::Contributor>{
+        {"A", pb::metadata::ContributorRole::Author}, {"B", pb::metadata::ContributorRole::Author}};
+    QVERIFY(metadataSnapshot(one) != metadataSnapshot(two));
+
+    // A line break in a title cannot forge another snapshot line.
+    const auto base = fiveEntryReport();
+    auto injected = base;
+    injected.parsed->entries[0].title = "Chapter 0\nentry=\"e9\" order=9";
+    const QString snapshot = analysisSnapshot(injected);
+    QCOMPARE(snapshot.count(u'\n'), analysisSnapshot(base).count(u'\n'));
+    QVERIFY(snapshot.contains(QStringLiteral("\u000a")));
+
+    // Placeholder-like text is kept literally, not treated as a format string.
+    auto percent = base;
+    percent.parsed->entries[1].title = "%2 and %3";
+    QVERIFY(analysisSnapshot(percent).contains(QStringLiteral("title=\"%2 and %3\"")));
+
+    // An absent printed reference is not the literal text "null".
+    auto printed = base;
+    printed.parsed->entries[2].printed_reference = pb::parsing::PrintedReference{};
+    printed.parsed->entries[2].printed_reference->literal = "null";
+    QVERIFY(analysisSnapshot(printed) != analysisSnapshot(base));
 }
 
 // A real analysis of the scan-like fixture without models: the report is
