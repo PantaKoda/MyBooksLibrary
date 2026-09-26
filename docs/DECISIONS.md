@@ -180,3 +180,10 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - aqtinstall comes from a pinned main-branch commit (`076e165`), because release 3.3.0 cannot read Qt 6.11's per-architecture repository layout. Switch to 3.4.0 or later when released.
   - The OCR coexistence runs stay local because of run time.
 - **Verified:** Runs 36252774137 (failed at the Qt install: aqtinstall 3.3.0) and 36252887138 (passed in 3.6 minutes, 8/8 tests, smoke checks passed; re-run passed in 2.5 minutes with both caches hit).
+
+## 2026-09-26 — `scripts/verify.ps1` shared by local verification and CI; Orca workflow adopted
+
+- **Change:** The owner's AGENTS.md section 13 edits are committed verbatim (Orca/Codex review rounds, merge authorization, `.pr-notes/` drafts). A separate commit reconciles them with hosted CI: `verify.ps1` runs locally and in CI, PR verification includes the CI run link, and merging also requires `build-and-test` to pass on the reviewed head. `scripts/verify.ps1` is the single entry point (text checks, build, `ctest`, smoke checks), and CI now runs it instead of separate steps, which also removed `ilammy/msvc-dev-cmd`.
+- **Why:** The owner wants both hosted CI and local verification by implementer and reviewer, and the review workflow needs one command whose result means the same everywhere.
+- **Assumptions:** CI verifies GitHub's merge-test commit for a PR (`refs/pull/N/merge`), which the script prints. The `orca` CLI is not available in this session, so review rounds are started from an Orca-hosted session.
+- **Verified:** Locally, `pwsh scripts/verify.ps1 -SdkDir …\0.2.0 -Clean` gave `VERIFY PASSED` in 39 s, and a bad `-SdkDir` gave `VERIFY FAILED`, exit 1. In CI, run 36253866960 at head `50fb8f3` (merge commit `5fae0b9`) passed in 1 min 48 s.
