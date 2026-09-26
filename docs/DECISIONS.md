@@ -164,3 +164,9 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   4. `SET NULL` contradicted the `registered` CHECK.
 - **Assumptions:** Migration 2 was edited in place because it is unreleased (PR #6 not merged). Import history blocks permanent deletion of its book until M08 decides how history is kept or removed. An install failure during a live import still closes the operation, because the external original is available to import again.
 - **Verified:** `tst_importservice` 18 cases. Mutations: the old constraint fails both duplicate tests and the crash-recovery cases that reach a duplicate close; "remove stage before install" fails both new recovery tests. ctest 8/8 in Debug and Release, and repeated 3 times in each.
+
+## 2026-09-26 — M03 re-review fix (PR #6): unreadable is not damaged
+
+- **Change:** `storage::checkDigest` returns Missing, Match, Mismatch or Unreadable. Recovery defers (keeps files and the `verified` phase) when no copy is confirmed good and one could not be read. It fails an operation only when both copies are confirmed missing or mismatched, and never replaces an unreadable destination.
+- **Why:** Re-review of `e12e5dc`: `sha256OfFile` returning nullopt on an open or read error was treated as a digest mismatch. A transient sharing or I/O failure could therefore delete the only verified copy and close the import as Failed.
+- **Verified:** `recoveryDefersUnreadableCopy` (staged-only and installed-only rows; Windows `FILE_SHARE_DELETE`-only lock) fails on the previous `importservice.cpp` and passes now. `tst_importservice` 21 cases; ctest 8/8 in Debug and Release, and repeated 3 times in each.

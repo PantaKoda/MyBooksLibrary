@@ -14,6 +14,13 @@
 #include <QTemporaryDir>
 #include <QTest>
 
+#ifdef Q_OS_WIN
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
+#  include <windows.h>
+#endif
+
 using namespace mbl::domain;
 using namespace mbl::storage;
 using mbl::catalog::Library;
@@ -42,6 +49,44 @@ Original snapshot(const QString& path)
 {
     return {shaOf(path), stampOf(path)};
 }
+
+// Holds a file open so that other opens for reading fail with a sharing
+// violation while deletion stays allowed (FILE_SHARE_DELETE only): a
+// transient "unreadable, not damaged" state.
+class ReadDenyingLock {
+public:
+    explicit ReadDenyingLock(const QString& path)
+    {
+#ifdef Q_OS_WIN
+        m_handle = CreateFileW(reinterpret_cast<LPCWSTR>(QDir::toNativeSeparators(path).utf16()), GENERIC_READ,
+                               FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+#else
+        Q_UNUSED(path);
+#endif
+    }
+    ~ReadDenyingLock() { release(); }
+    bool held() const
+    {
+#ifdef Q_OS_WIN
+        return m_handle != INVALID_HANDLE_VALUE;
+#else
+        return false;
+#endif
+    }
+    void release()
+    {
+#ifdef Q_OS_WIN
+        if (m_handle != INVALID_HANDLE_VALUE)
+            CloseHandle(m_handle);
+        m_handle = INVALID_HANDLE_VALUE;
+#endif
+    }
+
+private:
+#ifdef Q_OS_WIN
+    HANDLE m_handle = INVALID_HANDLE_VALUE;
+#endif
+};
 
 QStringList filesUnder(const QString& dir)
 {
@@ -76,6 +121,9 @@ private slots:
     void recoveryKeepsVerifiedStageWhenInstallFails();
     void recoveryReplacesWrongDigestDestinationWithGoodStage();
     void commitMoveNeverOverwrites();
+    void checkDigestDistinguishesUnreadable();
+    void recoveryDefersUnreadableCopy_data();
+    void recoveryDefersUnreadableCopy();
 
 private:
     QString external(const QString& name, const QString& from = fixture("title-page.pdf"));
@@ -507,6 +555,81 @@ void TestImportService::commitMoveNeverOverwrites()
     QVERIFY2(commitMove(a, b, &error), qPrintable(error));
     QVERIFY(!QFile::exists(a));
     QVERIFY(QFile::exists(b));
+}
+
+void TestImportService::checkDigestDistinguishesUnreadable()
+{
+    const QString path = external(QStringLiteral("digest.pdf"));
+    const QString sha = shaOf(path);
+    QCOMPARE(checkDigest(path, sha), DigestCheck::Match);
+    QCOMPARE(checkDigest(path, QString(64, u'0')), DigestCheck::Mismatch);
+    QCOMPARE(checkDigest(path + QStringLiteral(".missing"), sha), DigestCheck::Missing);
+    QCOMPARE(checkDigest(m_outside->path(), sha), DigestCheck::Unreadable);  // A folder, not a file.
+#ifdef Q_OS_WIN
+    ReadDenyingLock lock(path);
+    QVERIFY(lock.held());
+    QCOMPARE(checkDigest(path, sha), DigestCheck::Unreadable);
+    lock.release();
+    QCOMPARE(checkDigest(path, sha), DigestCheck::Match);
+#endif
+}
+
+void TestImportService::recoveryDefersUnreadableCopy_data()
+{
+    QTest::addColumn<int>("stage");
+    QTest::newRow("staged copy only") << int(ImportStage::VerifiedRecorded);
+    QTest::newRow("installed copy only") << int(ImportStage::Installed);
+}
+
+// A copy that cannot be read is not a damaged copy: recovery must keep the
+// file and the Verified phase, and complete once the file is readable again.
+void TestImportService::recoveryDefersUnreadableCopy()
+{
+#ifndef Q_OS_WIN
+    QSKIP("Needs Windows share modes to make a file unreadable but deletable.");
+#else
+    QFETCH(int, stage);
+    const QString source = external(QStringLiteral("locked.pdf"));
+    const QString sha = shaOf(source);
+    m_service->setCrashHook([stage](ImportStage s) { return int(s) == stage; });
+    const ImportResult r = m_service->importFile(source);
+    QCOMPARE(r.outcome, Outcome::Interrupted);
+    restart();
+    const ImportOperation op =
+        db([id = *r.operation](QSqlDatabase& d) { return catalog::importOperation(d, id); }).value();
+    const QString only = m_service->layout().absolute(
+        stage == int(ImportStage::Installed) ? LibraryLayout::managedSourcePath(*op.assetId)
+                                             : LibraryLayout::stagedSourcePath(op.id));
+    QCOMPARE(shaOf(only), sha);
+
+    {
+        ReadDenyingLock lock(only);
+        QVERIFY(lock.held());
+        for (int attempt = 0; attempt < 2; ++attempt) {
+            const RecoveryReport report = m_service->recover();
+            QCOMPARE(report.deferred, 1);
+            QCOMPARE(report.failed + report.registered + report.removedUnreferencedFiles, 0);
+            auto stored = db([id = op.id](QSqlDatabase& d) { return catalog::importOperation(d, id); });
+            QCOMPARE(stored.value().phase, ImportPhase::Verified);  // Still recoverable.
+        }
+    }  // Lock released: had the file been deleted while shared, it would now be gone.
+
+    QVERIFY(QFile::exists(only));
+    QCOMPARE(shaOf(only), sha);
+    const RecoveryReport report = m_service->recover();
+    QCOMPARE(report.registered, 1);
+    QCOMPARE(report.deferred, 0);
+    QCOMPARE(bookCount(), 1);
+    auto details = db([id = op.id](QSqlDatabase& d) -> Result<BookDetails> {
+        auto o = catalog::importOperation(d, id);
+        if (!o)
+            return o.error();
+        return catalog::bookDetails(d, *o.value().book);
+    });
+    QVERIFY(details);
+    QCOMPARE(shaOf(m_service->layout().absolute(details.value().asset.managedPath)), sha);
+    QVERIFY(filesUnder(m_service->layout().absolute(QStringLiteral("staging"))).isEmpty());
+#endif
 }
 
 QTEST_GUILESS_MAIN(TestImportService)

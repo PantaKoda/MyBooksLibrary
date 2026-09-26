@@ -47,9 +47,10 @@ Filesystem changes and SQLite commits are not one atomic transaction, so every p
 | `verified`, and a book now has the same SHA-256 | Close as **duplicate** first; then remove this operation's installed copy (only if no asset references it) and its staging. |
 | `verified`, managed copy present with the right digest | Register it; then remove staging. |
 | `verified`, staged copy present with the right digest | Remove a wrong-digest file at the destination if no asset references it. Install with `commitMove`, then register, then remove staging. If installation or registration fails, the operation **stays open** (`deferred`) with the verified stage kept, and the next recovery retries. |
-| `verified`, neither copy intact | The verified bytes are gone: close as **failed** and remove the unusable leftovers. |
+| `verified`, no copy confirmed good, and a copy **could not be read** (sharing violation, permission, I/O error) | Keep every file and the `verified` phase (`deferred`). An unreadable file is not evidence of damage. |
+| `verified`, both copies confirmed **missing or mismatched** | The verified bytes are gone: close as **failed** and remove the confirmed-bad leftovers. |
 
-The verified staged copy is deleted only after a good installed copy exists, or after the bytes turn out to be catalogued already.
+`storage::checkDigest` classifies each copy as missing, match, mismatch or unreadable. Only a confirmed mismatch or absence counts against a copy. A destination that cannot be read is never replaced. The verified staged copy is deleted only after a good installed copy exists, or after the bytes turn out to be catalogued already.
 
 Afterwards, staging folders that belong to no open operation are removed, since they never hold catalogued files. Managed files that no asset references and no open operation claims are **reported only** (`RecoveryReport::orphanedManagedFiles`); they are never deleted automatically.
 
@@ -69,4 +70,6 @@ Afterwards, staging folders that belong to no open operation are removed, since 
 - orphans reported but kept, and stray staging removed;
 - a failed installation during recovery (a file blocking the asset folder, then a failing move) keeps the verified stage and the open operation across repeated recoveries, then completes once the obstacle is gone;
 - a wrong-digest file at the destination is replaced by the verified stage;
-- `commitMove` refuses an existing target.
+- `commitMove` refuses an existing target;
+- `checkDigest` distinguishes missing, match, mismatch and unreadable (a folder, and on Windows a file held open with `FILE_SHARE_DELETE` only);
+- recovery with the only copy (staged, or installed) held unreadable but deletable: deferred twice with the `verified` phase kept and the file surviving the lock's release, then registered with the original bytes once readable (Windows).

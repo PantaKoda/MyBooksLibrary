@@ -59,6 +59,12 @@ bool commitMove(const QString& from, const QString& to, QString* error);
 // (the format tolerates leading bytes). A cheap guard, not a validation.
 bool looksLikePdf(const QString& path);
 
+// What is known about a file that should hold bytes with a given digest.
+// Unreadable (open, read or permission error) is not evidence of damage:
+// callers must not delete or give up on bytes they could not read.
+enum class DigestCheck { Missing, Match, Mismatch, Unreadable };
+DigestCheck checkDigest(const QString& path, const QString& expectedSha256);
+
 // Lower-case hex SHA-256 of a file, or nullopt if it cannot be read or `cancel` is set.
 std::optional<QString> sha256OfFile(const QString& path, const std::atomic_bool* cancel = nullptr);
 

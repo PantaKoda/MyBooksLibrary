@@ -299,11 +299,26 @@ RecoveryReport ImportService::recover()
             continue;
         }
 
-        const bool managedGood = QFile::exists(managed) && sha256OfFile(managed) == sha;
-        const bool stagedGood = QFile::exists(staged) && sha256OfFile(staged) == sha;
+        // Missing, matching, mismatching and unreadable are distinct: only a
+        // confirmed absence or mismatch is evidence against a copy.
+        const DigestCheck managedCheck = checkDigest(managed, sha);
+        const DigestCheck stagedCheck = checkDigest(staged, sha);
+        const bool managedGood = managedCheck == DigestCheck::Match;
+        const bool stagedGood = stagedCheck == DigestCheck::Match;
+        if (!managedGood && !stagedGood
+            && (managedCheck == DigestCheck::Unreadable || stagedCheck == DigestCheck::Unreadable)) {
+            // No verified copy could be confirmed, and one could not be read:
+            // keep every file and the Verified phase; retry next time.
+            report.notes << QStringLiteral("kept %1 open: a copy could not be read (%2 managed, %3 staged)")
+                                .arg(id.toString())
+                                .arg(managedCheck == DigestCheck::Unreadable ? QStringLiteral("unreadable") : QStringLiteral("not usable"))
+                                .arg(stagedCheck == DigestCheck::Unreadable ? QStringLiteral("unreadable") : QStringLiteral("not usable"));
+            ++report.deferred;
+            continue;
+        }
         if (!managedGood && !stagedGood) {
-            // Neither copy holds the verified bytes; they are unusable.
-            if (QFile::exists(managed) && removeIfUnreferenced(managedRelative))
+            // Both copies are confirmed missing or mismatched: the verified bytes are gone.
+            if (managedCheck == DigestCheck::Mismatch && removeIfUnreferenced(managedRelative))
                 ++report.removedUnreferencedFiles;
             removeStaging(id);
             if (close(ImportPhase::Failed,
@@ -316,9 +331,16 @@ RecoveryReport ImportService::recover()
             continue;
         }
         if (!managedGood) {
-            // A wrong-digest file at the destination is never catalogued (the
-            // asset ID is reserved, not registered); replace it with the good stage.
-            if (QFile::exists(managed)) {
+            // Only the stage is confirmed good. A destination that could not be
+            // read is left alone; a confirmed wrong-digest one is never
+            // catalogued (the asset ID is reserved, not registered), so it is
+            // replaced by the good stage.
+            if (managedCheck == DigestCheck::Unreadable) {
+                report.notes << QStringLiteral("kept %1 open: cannot read %2").arg(id.toString(), managedRelative);
+                ++report.deferred;
+                continue;
+            }
+            if (managedCheck == DigestCheck::Mismatch) {
                 if (!removeIfUnreferenced(managedRelative)) {
                     report.notes << QStringLiteral("kept %1 open: cannot clear %2").arg(id.toString(), managedRelative);
                     ++report.deferred;

@@ -73,6 +73,19 @@ bool commitMove(const QString& from, const QString& to, QString* error)
 #endif
 }
 
+DigestCheck checkDigest(const QString& path, const QString& expectedSha256)
+{
+    const QFileInfo info(path);
+    if (!info.exists())
+        return DigestCheck::Missing;
+    if (!info.isFile())
+        return DigestCheck::Unreadable;
+    const auto digest = sha256OfFile(path);
+    if (!digest)
+        return DigestCheck::Unreadable;
+    return digest->compare(expectedSha256, Qt::CaseInsensitive) == 0 ? DigestCheck::Match : DigestCheck::Mismatch;
+}
+
 bool looksLikePdf(const QString& path)
 {
     QFile file(path);
