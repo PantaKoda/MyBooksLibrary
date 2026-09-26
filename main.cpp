@@ -1,5 +1,9 @@
 // appMyBooksLibrary
-//   appMyBooksLibrary                        the window (Main.qml)
+//   appMyBooksLibrary [--library <dir>]      the window (Main.qml) on the library folder from
+//                                            --library, MYBOOKSLIBRARY_ROOT or the default
+//                                            (src/app/libraryroot.h).
+//                     [--import <pdf>]...    development: import files once the library is open
+//                     [--screenshot <png>]   development: save the window when idle, then quit
 //   appMyBooksLibrary --sdk-check [<pdf>]    no window: print the pdfbookmark SDK identity and,
 //                                            with a PDF, its identity and extracted title.
 //                                            Exit 0 on success, 1 on an SDK error.
@@ -14,17 +18,26 @@
 //                                            SDK worker times out.
 //                                            The exe is a GUI-subsystem app on Windows, so redirect
 //                                            or pipe stdout to see the output.
+#include "app/libraryroot.h"
 #include "infrastructure/sqlitecapabilities.h"
 #include "processing/sdk/sdkinfo.h"
+#include "presentation/librarycontroller.h"
 #include "reader/readercheck.h"
 
 #include <QCoreApplication>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
+#include <QQmlExtensionPlugin>
+#include <QQuickWindow>
 #include <QTextStream>
+#include <QTimer>
 
 #include <atomic>
 #include <cstring>
+#include <functional>
+#include <memory>
+
+Q_IMPORT_QML_PLUGIN(MyBooksLibrary_PresentationPlugin)
 
 namespace {
 
@@ -142,7 +155,12 @@ int main(int argc, char *argv[])
     }
 
     QGuiApplication app(argc, argv);
+    QCoreApplication::setOrganizationName(QStringLiteral("MyBooksLibrary"));
+    QCoreApplication::setApplicationName(QStringLiteral("MyBooksLibrary"));
+    const QStringList args = QCoreApplication::arguments();
 
+    // Composition root: the library session and its window.
+    mbl::presentation::LibraryController library;
     QQmlApplicationEngine engine;
     QObject::connect(
         &engine,
@@ -150,7 +168,42 @@ int main(int argc, char *argv[])
         &app,
         []() { QCoreApplication::exit(-1); },
         Qt::QueuedConnection);
+    engine.setInitialProperties({{QStringLiteral("library"), QVariant::fromValue<QObject*>(&library)}});
     engine.loadFromModule("MyBooksLibrary", "Main");
+    if (engine.rootObjects().isEmpty())
+        return -1;
+
+    const mbl::app::LibraryRoot root = mbl::app::resolveLibraryRoot(args);
+    library.open(root.path);
+
+    // Development smoke mode: --import <pdf> (repeatable) queues files once the
+    // library is ready; --screenshot <png> saves the window when idle and quits.
+    QStringList imports;
+    QString screenshot;
+    for (qsizetype i = 1; i + 1 < args.size(); ++i) {
+        if (args.at(i) == QLatin1String("--import"))
+            imports << args.at(i + 1);
+        else if (args.at(i) == QLatin1String("--screenshot"))
+            screenshot = args.at(i + 1);
+    }
+    if (!imports.isEmpty())
+        library.importFiles(imports);  // Queued until the library is ready.
+    if (!screenshot.isEmpty()) {
+        auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().constFirst());
+        auto trySave = std::make_shared<std::function<void()>>();
+        *trySave = [&library, window, screenshot, trySave] {
+            if (library.busy() || library.opening()) {
+                QTimer::singleShot(200, *trySave);
+                return;
+            }
+            QTimer::singleShot(500, [window, screenshot] {  // Let the view settle.
+                const bool saved = window && window->grabWindow().save(screenshot);
+                QTextStream(stdout) << "screenshot=" << (saved ? screenshot : QStringLiteral("FAILED")) << Qt::endl;
+                QCoreApplication::exit(saved ? 0 : 1);
+            });
+        };
+        QTimer::singleShot(300, *trySave);
+    }
 
     return QGuiApplication::exec();
 }

@@ -79,6 +79,24 @@ if(WIN32)
     target_link_libraries(mbl_core PRIVATE psapi)
 endif()
 
+# Presentation (GUI-owned models and controllers) and the composition helpers.
+qt_add_library(mbl_presentation STATIC
+    src/app/libraryroot.h
+    src/app/libraryroot.cpp
+    src/presentation/booklistmodel.h
+    src/presentation/booklistmodel.cpp
+    src/presentation/librarycontroller.h
+    src/presentation/librarycontroller.cpp
+)
+qt_add_qml_module(mbl_presentation
+    URI MyBooksLibrary.Presentation
+    VERSION 1.0
+    OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/MyBooksLibrary/Presentation
+)
+target_link_libraries(mbl_presentation PUBLIC mbl_core Qt6::Core Qt6::Qml)
+# qmltyperegistrar includes registered headers by bare file name.
+target_include_directories(mbl_presentation PRIVATE src/presentation)
+
 # The production SDK boundary. SDK headers and types stay behind it.
 qt_add_library(mbl_sdk STATIC
     src/processing/sdk/sdkinfo.h
@@ -109,7 +127,7 @@ set_target_properties(appMyBooksLibrary PROPERTIES
 )
 
 target_link_libraries(appMyBooksLibrary
-    PRIVATE Qt6::Quick Qt6::Pdf mbl_core mbl_sdk
+    PRIVATE Qt6::Quick Qt6::Pdf mbl_core mbl_presentation mbl_presentationplugin mbl_sdk
 )
 
 # Copies pdfbookmark.dll, its dependency DLLs and the OCR models next to the .exe

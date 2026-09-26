@@ -201,3 +201,18 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
 - **Change:** `verify.ps1` configures with `-DMBL_BUILD_TESTS=ON` and runs `ctest --no-tests=error`. `-Clean` normalizes the build path and deletes only a folder under `<repo>\build\` or an outside folder whose `CMakeCache.txt` names this repository as its source; the repository, its ancestors, other repository folders, and the SDK and Qt folders are refused before any step runs. It deletes with `-LiteralPath`. The new `-ValidateOnly` switch stops after that check. `tools/test_verify_guards.ps1` exercises the guard against a disposable fake repository with sentinel files, and `verify.ps1` runs it, so CI covers it.
 - **Why:** PR #8 review: a reused build folder configured with `MBL_BUILD_TESTS=OFF` let `verify.ps1` print `VERIFY PASSED` with no tests, because `ctest` exits 0 when it finds none. `-Clean` would also recursively delete any `-BuildDir`, including the repository or the SDK.
 - **Verified:** The guard tests pass (9 refused, 3 cleaned); with the guard call removed they fail. A build folder configured with `MBL_BUILD_TESTS=OFF` and then passed to `verify.ps1` ran all 8 tests, and its cache read `ON` afterwards. On an empty test folder `ctest` exits 0 without `--no-tests=error` and 8 with it.
+
+## 2026-09-26 — M03 part 2: composition root and library window
+
+- **Change:**
+  - `main.cpp` is the composition root. It resolves the library folder (`--library`, then `MYBOOKSLIBRARY_ROOT`, then `AppLocalDataLocation/Library`), creates `presentation::LibraryController` and passes it to `Main.qml` as a required property.
+  - The controller opens the library, runs `ImportService::recover()` and imports files on a one-thread `QThreadPool`. Results reach the GUI only through queued invocations and `QFuture::then(this, …)`.
+  - `Main.qml` is replaced by the list-first library window. See UI.md.
+  - `mbl_presentation` is a static QML module (`MyBooksLibrary.Presentation`), with `Q_IMPORT_QML_PLUGIN` in `main.cpp`.
+  - The development options `--import` and `--screenshot` drive smoke runs.
+- **Why:** The M03 gate requires a usable book list. AGENTS.md sections 1 (rule 9), 3 and 9 require a small composition root, no work in QML or on the GUI thread, GUI-thread model updates and a responsive close.
+- **Assumptions:**
+  - One worker thread serves opening, recovery and imports. SDK jobs get their own worker in M04, and file copying stays bounded separately.
+  - Closing waits for the controller to become idle after cancelling. Cancellation is checked between 1 MiB chunks.
+  - The library folder's default location is not yet configurable in the UI. The organization and application names are both "MyBooksLibrary".
+- **Removed:** The Qt Creator template content of `Main.qml`.

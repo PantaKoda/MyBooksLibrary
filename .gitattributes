@@ -1,2 +1,4 @@
 # PDFs are byte-offset sensitive: never convert line endings
 *.pdf binary
+# Images are binary
+*.png binary

@@ -8,10 +8,26 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | M01 Feasibility | Merged: part 1 [PR #2](https://github.com/PantaKoda/MyBooksLibrary/pull/2) (merge `f126ad0`); part 2 [PR #4](https://github.com/PantaKoda/MyBooksLibrary/pull/4) (merge `e9d8be2`) | `feat/m01-a3-fts5-probe`, `feat/m01-reader-qtpdf-coexistence` | Qt PDF coexists; OCR memory-pressure and Qt Quick teardown risks tracked in READER.md |
 | M02 Contracts/persistence | Merged | `feat/m02-a2-catalog-persistence` / [PR #3](https://github.com/PantaKoda/MyBooksLibrary/pull/3), merge `b643446` | See below |
 | SDK 0.2.0 update | Merged | `chore/m01-sdk-0.2.0` / [PR #5](https://github.com/PantaKoda/MyBooksLibrary/pull/5), merge `4f87975` | See "SDK 0.2.0 update" |
-| M03 Import/library shell | Part 1 AwaitingReview | `feat/m03-a1-managed-import` / [PR #6](https://github.com/PantaKoda/MyBooksLibrary/pull/6) | See "M03" |
+| M03 Import/library shell | Part 1 Merged ([PR #6](https://github.com/PantaKoda/MyBooksLibrary/pull/6), merge `515ff43`); part 2 AwaitingReview ([PR #7](https://github.com/PantaKoda/MyBooksLibrary/pull/7)) | `feat/m03-a1-managed-import`; `feat/m03-presentation-library-shell` | See "M03" |
 | M04–M11 | NotStarted | | |
 
 ## M03 — Import and library shell
+
+### Part 2: composition root and library window (presentation)
+
+**Touched paths:** `main.cpp`, `Main.qml`, `src/app/`, `src/presentation/`, `CMakeLists.txt`, `tests/presentation/`, `tests/CMakeLists.txt`, `docs/` (UI.md, BUILDING.md, images).
+
+| Command | Result |
+| --- | --- |
+| Debug and Release builds + `ctest` | 9/9 in both; no `warning C…`; `--repeat until-fail:3` passed in both |
+| `tst_librarycontroller` | 10 cases, 0 failures:<br>- opens off the GUI thread with GUI-thread model updates;<br>- imports, lists and survives a restart, with Greek file names;<br>- duplicates and a non-PDF are reported;<br>- files queued while opening get imported;<br>- cancel drops the queue and the session keeps working;<br>- startup recovery completes an interrupted import;<br>- a second session on the same library fails;<br>- library-root resolution |
+| `qmllint -I build\sdk020-debug Main.qml` | No warnings (typed `LibraryController` via the `MyBooksLibrary.Presentation` module) |
+| `appMyBooksLibrary --library <tmp> --screenshot …` (Debug and Release) | Window opens; the empty state is shown; exit 0 |
+| `… --import <two PDFs, one Greek name> --import <duplicate> --screenshot …` | "2 imported, 1 already in the library."; the list shows both, with "From the file name" |
+| Close (WM_CLOSE via `Process.CloseMainWindow`) during a 600 MB import | Exited in 128 ms with code 0; responding throughout; `files/` and `staging/` empty; operation `cancelled`; original unchanged (SHA-256 and modification time) |
+| Fresh `windeployqt --qmldir .` package, clean `PATH`/QML environment, `--import contents-book.pdf --screenshot` | Exit 0; `QtQuick/Dialogs` and `QtQuick/Pdf` deployed |
+
+**Not verified:** interactive use of the native file dialog and drag-and-drop (scripted runs use `--import`); keyboard-only operation beyond list navigation; screen readers.
 
 ### Part 1: managed import (A1 + A2)
 
