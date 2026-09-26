@@ -313,7 +313,7 @@ At each handoff, state what changed and which subsystem owns it, what actually p
 
 ## 13. GitHub workflow — one implementation step, one feature branch, one PR
 
-The owner requires reviewable changes through GitHub. The normal sequence is **branch → implementation → tests and self-review → commit/push → PR, local verification and CI → automated independent review → fixes → merge after a passing review**. Do not commit or push implementation changes directly to `main`, and do not silently combine several milestones into one PR.
+The owner requires reviewable changes through GitHub. The normal sequence is **branch → implementation → tests and self-review → commit/push → PR and CI → automated independent review → fixes → merge after a passing review**. Do not commit or push implementation changes directly to `main`, and do not silently combine several milestones into one PR.
 
 For assigned implementation work, creating its branch, committing the scoped changes, pushing that branch, opening/updating its PR, starting its automated review and merging it under the conditions in "Merge authorization" below are part of the requested workflow; do not ask for permission again for each routine action. This does not authorize releases, unrelated changes or repository-settings changes.
 
@@ -328,8 +328,8 @@ For assigned implementation work, creating its branch, committing the scoped cha
 
 5. Implement only the assigned step. Add or update focused behavior tests for its risks, using section 12. For application-code changes, build the affected application configuration; exercise changed UI behavior in a smoke test. Documentation-only changes need relevant document checks, not unrelated OCR runs.
 6. Inspect the full diff, including untracked files. Run formatting/whitespace checks, review error and cancellation paths where affected, and verify that no SDK binaries/models, personal PDFs, credentials or machine-specific paths enter the commit. Stage only intended files; do not sweep unrelated work into a commit.
-7. Record exact commands and observed results, then commit coherent changes and push the feature branch to the intended repository. Open one PR targeting `main` after local checks pass. If necessary validation cannot run locally, or a known blocker remains, open a **draft PR** with that limitation; do not label it ready or tested prematurely.
-8. **One verification entry point, run in two places.** `scripts/verify.ps1` is the repository's single verification entry point: text and whitespace checks, build of the affected configuration, tests and application smoke checks, exiting non-zero on any failure. Run it locally ("local verification"). Hosted CI (`.github/workflows/ci.yml`, job **`build-and-test`**, a required check) runs the same script on every PR head and on `main`. Do not add, rename, remove or weaken workflows, jobs or checks without the owner's explicit request. Tie evidence to the current PR head commit; an earlier passing run does not validate later changes. A check that was skipped, not run, or could not run is not passing. Report local results as "local verification" and CI results with their run link; never describe one as the other.
+7. Record exact commands and observed results, then commit coherent changes and push the feature branch to the intended repository. Open one PR targeting `main` after local checks pass. If necessary validation can run only in CI, or a known blocker remains, open a **draft PR** with that limitation; do not label it ready or tested prematurely.
+8. Run the relevant CI checks and inspect failures. Tie evidence to the current PR head commit, or its corresponding merge-test commit; an earlier green run does not validate later changes. Missing, skipped or cancelled checks are not passing checks. If CI is not configured or lacks an authorized SDK/Qt artifact, report the gap and provide actual local evidence without claiming CI passed. Add/reuse a reproducible build/test workflow when its dependencies are available and authorized.
 9. Update progress and the PR description, post the PR intro comment and start the automated review (see "Automated independent review"). An open PR is **AwaitingReview**, not a completed/merged milestone.
 
 Every PR description must contain:
@@ -338,7 +338,7 @@ Every PR description must contain:
 | --- | --- |
 | Purpose and scope | Concrete problem, milestone/step, owning subsystem(s), resulting behavior |
 | Contracts and data | Changed public application contracts, migrations, compatibility and recovery implications; say when none apply |
-| Verification | Exact build/test/smoke commands, results, tested platform/kit/SDK, the head SHA the local verification ran on, and the CI run link for that head |
+| Verification | Exact build/test/smoke commands, results, tested platform/kit/SDK, and CI run links where available |
 | UI evidence | Screenshots or a short recording for visible behavior changes, when executable locally |
 | Remaining limits | Known blockers, unverified platforms/behavior and follow-up work |
 
@@ -350,25 +350,20 @@ Plain goal: no PR is merged until a second, independent agent has reviewed its c
 
 The reviewer is a separate Orca orchestration worker running **GPT-6-Astra at ultra effort** through the Codex CLI. It works only from the repository and the PR, never from the implementation agent's private conversation, so the PR description and comments must contain all the context it needs.
 
+**Setup (once per work session).** Before the first review, confirm `orca status --json` reports `runtimeReachable: true`, and create the Run that collects reviewer replies: `orca orchestration run-create --objective "Implement assigned steps; every PR gets an independent review before merge" --json`. Reuse this Run for later PRs in the same session. If `check` reports no bound Run, run `orca skills get orchestration --full` and follow its binding instructions; do not guess.
+
 **Start a review round** (round R, starting at 1) after the PR is open and its head commit is pushed:
 
 1. Record the head SHA: `gh pr view <N> --json headRefOid --jq .headRefOid`.
-2. Post the implementer comment for this round with `gh pr comment`. Round 1: "🛠️ Implementer — ready for review round 1 at `<SHA>`", with a short summary of what changed, why, how it was tested and what is risky. Later rounds: the fix-reply comment described under "Corrections".
-3. Create the task and start the reviewer:
-   - `orca orchestration task-create --task-title "Review PR #<N> round <R>" --spec "<reviewer instructions, with N, R and SHA filled in>" --json`
-   - `orca orchestration worker-start --task <taskId> --agent codex --model gpt-6-astra --effort ultra --worktree new-child --name review-pr-<N>-r<R> --json`
-   - Check `launch.effective` in the receipt. If the model or effort differs from what was requested, do not continue; report it to the owner.
-4. Wait for the verdict: `orca orchestration check --wait --types worker_done,escalation,question --timeout-ms 1800000 --json`, then ack the delivery. Answer reviewer questions that you can answer from the repository; escalate the rest to the owner. On timeout, inspect the worker with `worker-show` / `worker-read` before assuming failure.
-5. After the verdict, release the worker with `orca orchestration worker-release --dispatch <dispatchId> --json`.
-
-**Reviewer instructions** (put these in the task spec):
-
-> You are the independent reviewer for PR #N, review round R, head commit SHA. Do not merge, push, commit to the PR branch, edit the PR description, or change repository settings.
-> 1. Read the PR description and comments (`gh pr view N --comments`) and the diff (`gh pr diff N`). Check out the PR in your own worktree (`gh pr checkout N`) and confirm the head is SHA; if it is not, report `failed` with the reason.
-> 2. Read the relevant surrounding code and the repository's CLAUDE.md. In your own worktree, at SHA, run `scripts/verify.ps1` yourself; do not rely on the implementer's reported results. Record the exact command, exit code, and a short summary of the output. If the script is missing or cannot run, say so and treat it as a blocking finding.
-> 3. Review the diff and surrounding code for: correctness, subsystem boundaries, PDF/source protection, persistence/recovery, threading/lifetimes, search/navigation correctness, error and cancellation paths, security, and test evidence.
-> 4. Write the review to a UTF-8 file and post it with `gh pr comment N --body-file <file>`. The first line must be exactly `🤖 Review round R — Verdict: MERGE` or `🤖 Review round R — Verdict: CHANGES_REQUESTED`. Then state the reviewed commit SHA, your own local verification result (command, exit code, platform), any other checks you ran, and any checks you could not run. List each finding as: severity (blocking / non-blocking), file:line, concrete behavior, reproduction or rationale, suggested fix, and the missing test if relevant. Give MERGE only when there are no blocking findings.
-> 5. Report back exactly once, even on failure: `orca orchestration send --type worker_done --subject "PR #N round R: <VERDICT>" --body "<reviewed SHA, blocking count, one-line summary per blocking finding>" --task-id <taskId> --dispatch-id <dispatchId> --outcome succeeded --json`. Use `--outcome failed` if you could not complete the review, with the reason in the body.
+2. Post the implementer comment for this round with `gh pr comment <N> --body-file <file>`. Round 1: "🛠️ Implementer — ready for review round 1 at `<SHA>`", with a short summary of what changed, why, how it was tested and what is risky. Later rounds: the fix-reply comment described under "Corrections".
+3. Create the task with a **one-line** spec (the full reviewer instructions live in `docs/agents/pr-reviewer.md`, so no multiline text goes through the shell):
+   `orca orchestration task-create --task-title "Review PR #<N> round <R>" --spec "Independent review of PR #<N>, round <R>, head <SHA>. Follow docs/agents/pr-reviewer.md exactly." --json`
+4. Start the reviewer:
+   `orca orchestration worker-start --task <taskId> --agent codex --model gpt-6-astra --effort ultra --worktree new-child --name review-pr-<N>-r<R> --json`
+   Check `launch.effective` in the receipt. If the model or effort differs from what was requested, stop the worker and report it to the owner.
+5. Wait for the verdict **in short blocks**, because a single shell command in the agent's terminal may be cut off after a few minutes: run `orca orchestration check --wait --types worker_done,escalation,question --timeout-ms 540000 --json` repeatedly (up to about 6 times, ~54 minutes total). Process every message in the delivery, then ack it with `--ack <deliveryId>` on the next `check`. Between waits, `orca orchestration worker-show --dispatch <dispatchId> --json` shows whether the reviewer is still working. Answer reviewer questions you can answer from the repository; escalate the rest to the owner. If no verdict arrives in the total time, read the worker with `worker-read` and report to the owner instead of assuming a result.
+6. After the verdict, release the worker with `orca orchestration worker-release --dispatch <dispatchId> --json`, then remove its worktree with `orca worktree rm --worktree branch:<reviewer-branch> --force --json` (or the worktree id from the start receipt) so review worktrees do not pile up. Never remove the implementer's own worktree.
+7. Verify the verdict on GitHub: the reviewer's 🤖 comment must exist on the PR and name the same SHA. A `worker_done` without the matching PR comment is not a valid verdict; start a new round.
 
 ### Corrections
 
@@ -379,7 +374,6 @@ Do not force-push shared history or rewrite reviewed commits by default; preserv
 Stop and ask the owner, with the PR URL, current head SHA and a summary of the open findings, when any of these occur:
 - three review rounds have ended without a MERGE verdict;
 - you disagree with a blocking finding and the next round does not resolve it;
-- local verification passes for one agent but fails for the other and the cause is not clear (possible environment difference);
 - a finding requires a scope change, a new milestone, or a change to shared contracts not already in scope;
 - the reviewer reports `failed`, launches with the wrong model/effort, or asks a question you cannot answer from the repository.
 
@@ -389,15 +383,14 @@ The owner gives standing authorization to merge a PR only when **all** of these 
 
 1. The latest verdict is `MERGE`, and its reviewed SHA equals the PR's current head SHA. Any push after the review requires a new round.
 2. The PR is not a draft and its description lists no unresolved blocker.
-3. Local verification passed on that same head commit **twice, independently**: the implementer's run (reported in its latest 🛠️ comment) and the reviewer's own run (reported in the 🤖 review comment). Both must show `scripts/verify.ps1` exiting 0 at that SHA.
-4. The required CI check `build-and-test` passed on that same head commit.
-5. No merge conflict with `main`.
+3. All required CI checks pass on that same head commit (`gh pr checks <N> --required`). Missing, skipped or cancelled required checks are not passing.
+4. No merge conflict with `main`.
 
-Then post a closing comment ("✅ Reviewed by GPT-6-Astra in round R at `<SHA>`, local verification passed for implementer and reviewer, CI `build-and-test` passed, merging") and merge exactly the reviewed commit:
+Then post a closing comment ("✅ Reviewed by GPT-6-Astra in round R at `<SHA>`, CI green, merging") and merge exactly the reviewed commit:
 
 `gh pr merge <N> --squash --delete-branch --match-head-commit <SHA>`
 
-Never merge on your own self-review, enable auto-merge, bypass repository protections, manufacture approvals or weaken checks to achieve a merge. If either local verification run or the CI check is missing or failed, do not merge; fix it or hand the PR URL and head SHA to the owner.
+Never merge on your own self-review, enable auto-merge, bypass repository protections, manufacture approvals or weaken checks to achieve a merge. If CI is not configured for the PR, do not merge; hand the PR URL and head SHA to the owner instead.
 
 GitHub reviews run under the connected account's identity. If that account also authored the PR, it cannot formally approve its own PR, which is why the reviewer posts comments rather than approvals. An automated review verdict does not satisfy a repository rule that requires an independent human approval; if such a rule blocks the merge, hand the PR to the owner. See [GitHub's review rules](https://docs.github.com/en/pull-requests/how-tos/review-pull-requests/approving-a-pull-request-with-required-reviews).
 
