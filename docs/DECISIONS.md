@@ -171,6 +171,37 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
 - **Why:** Re-review of `e12e5dc`: `sha256OfFile` returning nullopt on an open or read error was treated as a digest mismatch. A transient sharing or I/O failure could therefore delete the only verified copy and close the import as Failed.
 - **Verified:** `recoveryDefersUnreadableCopy` (staged-only and installed-only rows; Windows `FILE_SHARE_DELETE`-only lock) fails on the previous `importservice.cpp` and passes now. `tst_importservice` 21 cases; ctest 8/8 in Debug and Release, and repeated 3 times in each.
 
+## 2026-09-26 — Hosted CI: `build-and-test` on Windows
+
+- **Change:** `.github/workflows/ci.yml` runs one job, `build-and-test`, on `windows-2025-vs2026`, for pull requests to `main` and pushes to `main`. It runs the whitespace and text checks (`tools/check_text_files.py`), installs Qt 6.11.2 `win64_msvc2022_64` + `qtpdf`, downloads the public pdfbookmark SDK 0.2.0 (SHA-256 pinned), builds Release with Ninja, runs `ctest`, and runs `--sdk-check`, `--sqlite-check` and a text-PDF `--reader-check`. Permissions are read-only, no secrets are used, actions are pinned to commit SHAs, and newer runs for the same PR cancel older ones.
+- **Why:** The owner asked for CI once both repositories were public. Local verification alone cannot be tied to every PR head.
+- **Assumptions:**
+  - The runner image's MSVC (19.51 observed) must match the SDK's toolset, because the SDK's C++ API crosses the DLL boundary; PDFMegine builds the SDK on the same image.
+  - aqtinstall comes from a pinned main-branch commit (`076e165`), because release 3.3.0 cannot read Qt 6.11's per-architecture repository layout. Switch to 3.4.0 or later when released.
+  - The OCR coexistence runs stay local because of run time.
+- **Verified:** Runs 36252774137 (failed at the Qt install: aqtinstall 3.3.0) and 36252887138 (passed in 3.6 minutes, 8/8 tests, smoke checks passed; re-run passed in 2.5 minutes with both caches hit).
+
+## 2026-09-26 — `scripts/verify.ps1` shared by local verification and CI; Orca workflow adopted
+
+- **Change:** The owner's AGENTS.md section 13 edits are committed verbatim (Orca/Codex review rounds, merge authorization, `.pr-notes/` drafts). A separate commit reconciles them with hosted CI: `verify.ps1` runs locally and in CI, PR verification includes the CI run link, and merging also requires `build-and-test` to pass on the reviewed head. `scripts/verify.ps1` is the single entry point (text checks, build, `ctest`, smoke checks), and CI now runs it instead of separate steps, which also removed `ilammy/msvc-dev-cmd`.
+- **Why:** The owner wants both hosted CI and local verification by implementer and reviewer, and the review workflow needs one command whose result means the same everywhere.
+- **Assumptions:** CI verifies GitHub's merge-test commit for a PR (`refs/pull/N/merge`), which the script prints. The `orca` CLI is not available in this session, so review rounds are started from an Orca-hosted session.
+- **Verified:** Locally, `pwsh scripts/verify.ps1 -SdkDir …\0.2.0 -Clean` gave `VERIFY PASSED` in 39 s, and a bad `-SdkDir` gave `VERIFY FAILED`, exit 1. In CI, run 36253866960 at head `50fb8f3` (merge commit `5fae0b9`) passed in 1 min 48 s.
+- **Superseded:** The Orca workflow part was dropped; see the next entry. `verify.ps1` and CI stay.
+
+## 2026-09-26 — Orca review workflow dropped; original GitHub flow restored
+
+- **Change:** AGENTS.md is restored to the `main` version: the section 13 GitHub flow with review by a separate ChatGPT session, and merges by the owner or with the owner's explicit authorization for a named PR. `docs/agents/pr-reviewer.md` is removed. No `orca` commands are used.
+- **Why:** The owner decided to stop using Orca after its `worker-start` refused the reviewer effort the workflow required (Orca 1.4.212 rejected `ultra` and `max` for `gpt-6-astra`), so no review round could start.
+- **Removed:** Orca setup, review-round task specs, the Orca `worker_done` report, and the Orca-specific merge gate.
+- **Assumptions:** `scripts/verify.ps1` stays the verification entry point for developers, reviewers and CI; that does not depend on Orca.
+
+## 2026-09-26 — `verify.ps1`: tests always built, empty suites fail, guarded `-Clean`
+
+- **Change:** `verify.ps1` configures with `-DMBL_BUILD_TESTS=ON` and runs `ctest --no-tests=error`. `-Clean` normalizes the build path and deletes only a folder under `<repo>\build\` or an outside folder whose `CMakeCache.txt` names this repository as its source; the repository, its ancestors, other repository folders, and the SDK and Qt folders are refused before any step runs. It deletes with `-LiteralPath`. The new `-ValidateOnly` switch stops after that check. `tools/test_verify_guards.ps1` exercises the guard against a disposable fake repository with sentinel files, and `verify.ps1` runs it, so CI covers it.
+- **Why:** PR #8 review: a reused build folder configured with `MBL_BUILD_TESTS=OFF` let `verify.ps1` print `VERIFY PASSED` with no tests, because `ctest` exits 0 when it finds none. `-Clean` would also recursively delete any `-BuildDir`, including the repository or the SDK.
+- **Verified:** The guard tests pass (9 refused, 3 cleaned); with the guard call removed they fail. A build folder configured with `MBL_BUILD_TESTS=OFF` and then passed to `verify.ps1` ran all 8 tests, and its cache read `ON` afterwards. On an empty test folder `ctest` exits 0 without `--no-tests=error` and 8 with it.
+
 ## 2026-09-26 — M03 part 2: composition root and library window
 
 - **Change:**

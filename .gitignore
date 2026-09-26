@@ -90,3 +90,9 @@ CMakeLists.txt.user*
 *.pdf
 # Generated synthetic test fixtures are allowed
 !tests/fixtures/*.pdf
+
+# CI and local downloads (e.g. the pdfbookmark SDK in CI)
+/.deps/
+
+# PR description and comment drafts
+/.pr-notes/

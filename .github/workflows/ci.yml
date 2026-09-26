@@ -1,0 +1,81 @@
+# Continuous integration: installs Qt and the pdfbookmark SDK, then runs
+# scripts/verify.ps1 -- the same single verification entry point used for
+# local verification (text checks, build, tests, application smoke checks).
+# The job id `build-and-test` is the required status check; do not rename it
+# without telling the repository owner.
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  QT_VERSION: 6.11.2
+  QT_ARCH: win64_msvc2022_64
+  # aqtinstall from a pinned commit of its main branch: the latest release
+  # (3.3.0) cannot read Qt 6.11's per-architecture repository layout; support
+  # landed in "Support Qt 6.11+ for Windows X64 (#1000)" and is unreleased.
+  # Replace with a released version (>= 3.4.0) once available.
+  AQT_SOURCE: git+https://github.com/miurahr/aqtinstall.git@076e1659807d0b362a3ed684d54c2e9c775eb9c7
+  # The pdfbookmark SDK is a public release of PantaKoda/PDFMegine, downloaded
+  # at run time and checked against this digest; nothing is committed.
+  PDFBOOKMARK_SDK_VERSION: 0.2.0
+  PDFBOOKMARK_SDK_SHA256: 728f5c5115e77082074e355621dfde810363e7fdc0f844fda578bcc9bdb374e0
+
+jobs:
+  build-and-test:
+    name: build-and-test
+    # Visual Studio 2026 (MSVC 14.5x), the toolset the SDK is built with; its
+    # C++ API passes standard library types across the DLL boundary.
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Install Qt with Qt PDF
+        uses: jurplel/install-qt-action@a9c63c7c123f3069cff414e7e482d95dfa9d8125  # v4.4.1
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: windows
+          target: desktop
+          arch: ${{ env.QT_ARCH }}
+          modules: qtpdf
+          aqtsource: ${{ env.AQT_SOURCE }}
+          cache: true
+
+      - name: Cache pdfbookmark SDK
+        id: sdk-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: .deps/pdfbookmark-sdk
+          key: pdfbookmark-sdk-${{ env.PDFBOOKMARK_SDK_VERSION }}-${{ env.PDFBOOKMARK_SDK_SHA256 }}
+
+      - name: Download pdfbookmark SDK
+        if: steps.sdk-cache.outputs.cache-hit != 'true'
+        run: |
+          $v = $env:PDFBOOKMARK_SDK_VERSION
+          $zip = Join-Path $env:RUNNER_TEMP "pdfbookmark-sdk-$v-win64.zip"
+          Invoke-WebRequest -Uri "https://github.com/PantaKoda/PDFMegine/releases/download/v$v/pdfbookmark-sdk-$v-win64.zip" -OutFile $zip
+          $actual = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLowerInvariant()
+          if ($actual -ne $env:PDFBOOKMARK_SDK_SHA256) { throw "SDK digest mismatch: $actual" }
+          Expand-Archive -Path $zip -DestinationPath .deps/pdfbookmark-sdk-extract
+          Move-Item ".deps/pdfbookmark-sdk-extract/pdfbookmark-$v-win64" .deps/pdfbookmark-sdk
+
+      - name: Verify (scripts/verify.ps1)
+        run: >
+          ./scripts/verify.ps1 -Configuration Release
+          -QtDir "$env:QT_ROOT_DIR"
+          -SdkDir "$env:GITHUB_WORKSPACE/.deps/pdfbookmark-sdk"
