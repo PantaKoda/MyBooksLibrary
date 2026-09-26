@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    The repository's single verification entry point (AGENTS.md section 13):
+    The repository's single verification entry point (see docs/BUILDING.md):
     text checks, configure and build, tests, and application smoke checks.
     Hosted CI (.github/workflows/ci.yml, job build-and-test) runs this same script.
 
@@ -14,6 +14,12 @@
     pwsh scripts/verify.ps1 -SdkDir C:\Dev\pdfbookmark-sdk\0.2.0
 .EXAMPLE
     pwsh scripts/verify.ps1 -Configuration Debug -Clean
+
+.NOTES
+    -Clean deletes only a build folder this script can identify as this
+    project's build output: a folder under <repo>\build\, or one whose
+    CMakeCache.txt names this repository as its source. The repository, its
+    ancestors, and the SDK and Qt folders are always refused.
 #>
 [CmdletBinding()]
 param(
@@ -25,8 +31,11 @@ param(
     [string]$QtDir = $(if ($env:QT_ROOT_DIR) { $env:QT_ROOT_DIR } else { 'C:\Qt\6.11.2\msvc2022_64' }),
     # Build folder; defaults to build\verify-<configuration>.
     [string]$BuildDir = '',
-    # Delete the build folder first.
-    [switch]$Clean
+    # Delete the build folder first (see .NOTES for which folders are allowed).
+    [switch]$Clean,
+    # Check the arguments and perform -Clean, then stop without building (used by
+    # tools/test_verify_guards.ps1).
+    [switch]$ValidateOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -34,6 +43,8 @@ Set-StrictMode -Version 3.0
 $repo = Split-Path -Parent $PSScriptRoot
 Set-Location $repo
 if (-not $BuildDir) { $BuildDir = Join-Path $repo "build\verify-$($Configuration.ToLowerInvariant())" }
+if (-not [IO.Path]::IsPathRooted($BuildDir)) { $BuildDir = Join-Path $repo $BuildDir }
+$BuildDir = [IO.Path]::GetFullPath($BuildDir)  # Resolves "..", so checks below see the real target.
 $steps = [System.Collections.Generic.List[object]]::new()
 
 function Invoke-Step([string]$Name, [scriptblock]$Body) {
@@ -58,6 +69,53 @@ function Add-ToolDir([string]$Tool, [string[]]$Candidates) {
     }
 }
 
+function Get-NormalizedDir([string]$Path) {
+    if (-not $Path) { return $null }
+    return [IO.Path]::GetFullPath($Path).TrimEnd('\', '/')
+}
+
+# True if $Inner is $Outer itself or inside it (case-insensitive, Windows paths).
+function Test-PathWithin([string]$Inner, [string]$Outer) {
+    if (-not $Inner -or -not $Outer) { return $false }
+    return $Inner.Equals($Outer, [StringComparison]::OrdinalIgnoreCase) -or
+        $Inner.StartsWith($Outer + '\', [StringComparison]::OrdinalIgnoreCase)
+}
+
+# Refuses to delete anything this script cannot identify as this project's build output.
+function Assert-SafeToClean([string]$Target) {
+    $target = Get-NormalizedDir $Target
+    $repoDir = Get-NormalizedDir $repo
+    # The repository, the SDK, Qt and every folder containing one of them.
+    foreach ($protected in @($repoDir, (Get-NormalizedDir $SdkDir), (Get-NormalizedDir $QtDir))) {
+        if ($protected -and (Test-PathWithin $protected $target)) {
+            throw "Refusing to clean '$target': it is or contains the protected folder '$protected'."
+        }
+    }
+    # Anything inside the SDK or Qt.
+    foreach ($protected in @((Get-NormalizedDir $SdkDir), (Get-NormalizedDir $QtDir))) {
+        if ($protected -and (Test-PathWithin $target $protected)) {
+            throw "Refusing to clean '$target': it is inside the protected folder '$protected'."
+        }
+    }
+    $buildRoot = Join-Path $repoDir 'build'
+    $underBuildRoot = (Test-PathWithin $target $buildRoot) -and
+        -not $target.Equals($buildRoot, [StringComparison]::OrdinalIgnoreCase)
+    if ((Test-PathWithin $target $repoDir) -and -not $underBuildRoot) {
+        throw "Refusing to clean '$target': build folders inside the repository must be under '$buildRoot'."
+    }
+    if ($underBuildRoot) { return }
+    # Outside the repository: only a CMake build folder configured from this repository.
+    $cache = Join-Path $target 'CMakeCache.txt'
+    $source = $null
+    if (Test-Path -LiteralPath $cache -PathType Leaf) {
+        $line = Select-String -LiteralPath $cache -Pattern '^CMAKE_HOME_DIRECTORY:INTERNAL=(.*)$' | Select-Object -First 1
+        if ($line) { $source = Get-NormalizedDir $line.Matches[0].Groups[1].Value.Replace('/', '\') }
+    }
+    if (-not $source -or -not $source.Equals($repoDir, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing to clean '$target': it is not under '$buildRoot' and has no CMakeCache.txt naming this repository as its source."
+    }
+}
+
 function Get-PythonCommand {
     foreach ($candidate in @('python', 'py')) {
         if (Get-Command $candidate -ErrorAction SilentlyContinue) { return $candidate }
@@ -70,6 +128,17 @@ try {
     $dirty = [bool](git status --porcelain --untracked-files=no)
     Write-Host "Verifying $head ($Configuration)$(if ($dirty) { ' with uncommitted changes: the result does not describe that commit alone' })"
 
+    # Check before any step so an unsafe -BuildDir is refused before anything is deleted.
+    if ($Clean -and (Test-Path -LiteralPath $BuildDir)) {
+        Assert-SafeToClean $BuildDir
+        Remove-Item -LiteralPath $BuildDir -Recurse -Force
+        Write-Host "Cleaned $BuildDir"
+    }
+    if ($ValidateOnly) {
+        Write-Host "VALIDATE-ONLY PASSED ($BuildDir)"
+        exit 0
+    }
+
     Invoke-Step 'Whitespace check (git diff --check, all tracked files)' {
         # Against Git's empty tree: every tracked file as in the working tree; binary files per .gitattributes are skipped.
         Invoke-Native git @('diff', '--check', '4b825dc642cb6eb9a060e54bf8d69288fbee4904')
@@ -77,6 +146,10 @@ try {
 
     Invoke-Step 'Text file check (UTF-8, no control characters)' {
         Invoke-Native (Get-PythonCommand) @('tools/check_text_files.py')
+    }
+
+    Invoke-Step 'Verification script guard tests' {
+        Invoke-Native (Get-Process -Id $PID).Path @('-NoProfile', '-File', (Join-Path $repo 'tools\test_verify_guards.ps1'))
     }
 
     Invoke-Step 'Toolchain' {
@@ -109,9 +182,9 @@ try {
     }
 
     Invoke-Step "Configure ($Configuration)" {
-        if ($Clean -and (Test-Path $BuildDir)) { Remove-Item -Recurse -Force $BuildDir }
+        # MBL_BUILD_TESTS=ON overrides a reused cache that disabled the tests.
         Invoke-Native cmake @('-S', $repo, '-B', $BuildDir, '-G', 'Ninja', "-DCMAKE_BUILD_TYPE=$Configuration",
-            "-DCMAKE_PREFIX_PATH=$QtDir", "-DPDFBOOKMARK_SDK=$SdkDir", '-Wno-dev')
+            "-DCMAKE_PREFIX_PATH=$QtDir", "-DPDFBOOKMARK_SDK=$SdkDir", '-DMBL_BUILD_TESTS=ON', '-Wno-dev')
     }
 
     Invoke-Step 'Build' {
@@ -119,7 +192,8 @@ try {
     }
 
     Invoke-Step 'Tests (ctest)' {
-        Invoke-Native ctest @('--test-dir', $BuildDir, '--output-on-failure', '--timeout', '600')
+        # --no-tests=error: an empty test suite is a failure, never a pass.
+        Invoke-Native ctest @('--test-dir', $BuildDir, '--output-on-failure', '--timeout', '600', '--no-tests=error')
     }
 
     Invoke-Step 'Application smoke checks' {

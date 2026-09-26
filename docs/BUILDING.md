@@ -70,12 +70,13 @@ On this Windows setup, the Qt Test plain-text logger prints nothing to a console
 
 ## Verification (`scripts/verify.ps1`)
 
-`scripts/verify.ps1` is the single verification entry point for developers, the automated reviewer and CI. In order, it runs:
+`scripts/verify.ps1` is the single verification entry point for developers, reviewers and CI. In order, it runs:
 
 1. `git diff --check` over every tracked file, and `tools/check_text_files.py` (UTF-8, no stray control characters);
-2. configure and build (Ninja) of the chosen configuration;
-3. `ctest`;
-4. the application checks `--sdk-check`, `--sqlite-check` and `--reader-check` on the text-PDF fixture (`QT_QPA_PLATFORM=offscreen`).
+2. `tools/test_verify_guards.ps1`, the regression tests for the `-Clean` guard described below;
+3. configure (always with `-DMBL_BUILD_TESTS=ON`, so a reused build folder cannot silently drop the tests) and build (Ninja) of the chosen configuration;
+4. `ctest --no-tests=error`, so an empty test suite fails instead of passing;
+5. the application checks `--sdk-check`, `--sqlite-check` and `--reader-check` on the text-PDF fixture (`QT_QPA_PLATFORM=offscreen`).
 
 It finds MSVC itself (through `vswhere`/`vcvars64` when `cl.exe` is not on `PATH`), along with CMake and Ninja (Qt's `Tools` folder or Visual Studio's). It prints the verified commit and exits 0 only if every step passed.
 
@@ -85,6 +86,8 @@ pwsh scripts/verify.ps1 -Configuration Debug -Clean                        # SDK
 ```
 
 `-QtDir` defaults to `QT_ROOT_DIR`, then `C:\Qt\6.11.2\msvc2022_64`.
+
+`-Clean` deletes the build folder only if the script can identify it as this project's build output: a folder under `<repo>\build\` (not `build\` itself), or a folder outside the repository whose `CMakeCache.txt` names this repository as its source. The path is normalized first, so `..` cannot escape `build\`. The repository, its ancestors, other folders inside it, and the SDK and Qt folders (and anything inside them) are refused before anything is deleted. `-ValidateOnly` stops after this check and the clean; the guard tests use it against a disposable fake repository.
 
 ## Continuous integration
 

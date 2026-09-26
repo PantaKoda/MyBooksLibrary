@@ -187,3 +187,17 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
 - **Why:** The owner wants both hosted CI and local verification by implementer and reviewer, and the review workflow needs one command whose result means the same everywhere.
 - **Assumptions:** CI verifies GitHub's merge-test commit for a PR (`refs/pull/N/merge`), which the script prints. The `orca` CLI is not available in this session, so review rounds are started from an Orca-hosted session.
 - **Verified:** Locally, `pwsh scripts/verify.ps1 -SdkDir …\0.2.0 -Clean` gave `VERIFY PASSED` in 39 s, and a bad `-SdkDir` gave `VERIFY FAILED`, exit 1. In CI, run 36253866960 at head `50fb8f3` (merge commit `5fae0b9`) passed in 1 min 48 s.
+- **Superseded:** The Orca workflow part was dropped; see the next entry. `verify.ps1` and CI stay.
+
+## 2026-09-26 — Orca review workflow dropped; original GitHub flow restored
+
+- **Change:** AGENTS.md is restored to the `main` version: the section 13 GitHub flow with review by a separate ChatGPT session, and merges by the owner or with the owner's explicit authorization for a named PR. `docs/agents/pr-reviewer.md` is removed. No `orca` commands are used.
+- **Why:** The owner decided to stop using Orca after its `worker-start` refused the reviewer effort the workflow required (Orca 1.4.212 rejected `ultra` and `max` for `gpt-6-astra`), so no review round could start.
+- **Removed:** Orca setup, review-round task specs, the Orca `worker_done` report, and the Orca-specific merge gate.
+- **Assumptions:** `scripts/verify.ps1` stays the verification entry point for developers, reviewers and CI; that does not depend on Orca.
+
+## 2026-09-26 — `verify.ps1`: tests always built, empty suites fail, guarded `-Clean`
+
+- **Change:** `verify.ps1` configures with `-DMBL_BUILD_TESTS=ON` and runs `ctest --no-tests=error`. `-Clean` normalizes the build path and deletes only a folder under `<repo>\build\` or an outside folder whose `CMakeCache.txt` names this repository as its source; the repository, its ancestors, other repository folders, and the SDK and Qt folders are refused before any step runs. It deletes with `-LiteralPath`. The new `-ValidateOnly` switch stops after that check. `tools/test_verify_guards.ps1` exercises the guard against a disposable fake repository with sentinel files, and `verify.ps1` runs it, so CI covers it.
+- **Why:** PR #8 review: a reused build folder configured with `MBL_BUILD_TESTS=OFF` let `verify.ps1` print `VERIFY PASSED` with no tests, because `ctest` exits 0 when it finds none. `-Clean` would also recursively delete any `-BuildDir`, including the repository or the SDK.
+- **Verified:** The guard tests pass (9 refused, 3 cleaned); with the guard call removed they fail. A build folder configured with `MBL_BUILD_TESTS=OFF` and then passed to `verify.ps1` ran all 8 tests, and its cache read `ON` afterwards. On an empty test folder `ctest` exits 0 without `--no-tests=error` and 8 with it.
