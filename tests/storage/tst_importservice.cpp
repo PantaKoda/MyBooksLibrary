@@ -73,6 +73,9 @@ private slots:
     void crashRecovery();
     void recoveryDropsDuplicateInstalledCopyButKeepsReferencedFile();
     void recoveryReportsButKeepsOrphans();
+    void recoveryKeepsVerifiedStageWhenInstallFails();
+    void recoveryReplacesWrongDigestDestinationWithGoodStage();
+    void commitMoveNeverOverwrites();
 
 private:
     QString external(const QString& name, const QString& from = fixture("title-page.pdf"));
@@ -80,6 +83,8 @@ private:
     auto db(Task task) { return m_library->run(std::move(task)).result(); }
     void restart();
     int bookCount();
+    void expectStoredDuplicate(const ImportResult& r, const BookId& existing);
+    ImportOperation interruptedVerified(const QString& fileName);
 
     std::unique_ptr<QTemporaryDir> m_root;      // Library folder.
     std::unique_ptr<QTemporaryDir> m_outside;   // "User's" folder with the originals.
@@ -124,6 +129,39 @@ void TestImportService::restart()
     QVERIFY(opened);
     m_library = std::move(opened.value());
     m_service = std::make_unique<ImportService>(*m_library);
+}
+
+// The duplicate outcome must be persisted, not just returned, and survive a restart.
+void TestImportService::expectStoredDuplicate(const ImportResult& r, const BookId& existing)
+{
+    QVERIFY(r.operation);
+    auto op = db([id = *r.operation](QSqlDatabase& d) { return catalog::importOperation(d, id); });
+    QVERIFY(op);
+    QCOMPARE(op.value().phase, ImportPhase::Duplicate);
+    QCOMPARE(*op.value().book, existing);
+    QCOMPARE(*op.value().sha256, r.sha256);
+    QCOMPARE(*op.value().byteSize, r.bytes);
+    auto open = db([](QSqlDatabase& d) { return catalog::openImports(d); });
+    QVERIFY(open.value().isEmpty());
+
+    restart();
+    const RecoveryReport report = m_service->recover();
+    QCOMPARE(report.abandoned + report.registered + report.duplicates + report.failed + report.deferred, 0);
+    op = db([id = *r.operation](QSqlDatabase& d) { return catalog::importOperation(d, id); });
+    QCOMPARE(op.value().phase, ImportPhase::Duplicate);
+    QCOMPARE(*op.value().book, existing);
+}
+
+// Crashes an import right after it was recorded as Verified (file still in
+// staging), restarts, and returns the open operation.
+ImportOperation TestImportService::interruptedVerified(const QString& fileName)
+{
+    m_service->setCrashHook([](ImportStage s) { return s == ImportStage::VerifiedRecorded; });
+    const ImportResult r = m_service->importFile(external(fileName));
+    if (r.outcome != Outcome::Interrupted)
+        qFatal("expected an interrupted import");
+    restart();
+    return db([id = *r.operation](QSqlDatabase& d) { return catalog::importOperation(d, id); }).value();
 }
 
 int TestImportService::bookCount()
@@ -214,6 +252,7 @@ void TestImportService::duplicateBytesUnderAnotherNameReuseTheBook()
     const ImportResult second = m_service->importFile(external(QStringLiteral("renamed copy.pdf")));
     QCOMPARE(second.outcome, Outcome::Duplicate);
     QCOMPARE(*second.book, *first.book);
+    expectStoredDuplicate(second, *first.book);
     QCOMPARE(bookCount(), 1);
     QCOMPARE(filesUnder(m_service->layout().absolute(QStringLiteral("files"))).size(), 1);
     QVERIFY(filesUnder(m_service->layout().absolute(QStringLiteral("staging"))).isEmpty());
@@ -233,6 +272,7 @@ void TestImportService::duplicateOfTrashedBookIsReportedNotRestored()
     const ImportResult again = m_service->importFile(external(QStringLiteral("t again.pdf")));
     QCOMPARE(again.outcome, Outcome::DuplicateInTrash);
     QCOMPARE(*again.book, *first.book);
+    expectStoredDuplicate(again, *first.book);
     auto details = db([id = *first.book](QSqlDatabase& d) { return catalog::bookDetails(d, id); });
     QCOMPARE(details.value().summary.lifecycle, Lifecycle::Trashed);  // Restoring is the user's choice.
 }
@@ -383,6 +423,90 @@ void TestImportService::recoveryReportsButKeepsOrphans()
     QVERIFY(QFile::exists(orphan));  // Never deleted automatically.
     QCOMPARE(report.removedStagingDirectories, 1);
     QVERIFY(!QDir(stray).exists());
+}
+
+// Recovery must not trade a verified stage for a terminal failure when only
+// installation failed: once through a real I/O obstacle, once through the hook.
+void TestImportService::recoveryKeepsVerifiedStageWhenInstallFails()
+{
+    const QString source = external(QStringLiteral("keep.pdf"));
+    const QString sha = shaOf(source);
+    const ImportOperation op = interruptedVerified(QStringLiteral("keep.pdf"));
+    const QString staged = m_service->layout().absolute(LibraryLayout::stagedSourcePath(op.id));
+    QCOMPARE(shaOf(staged), sha);
+
+    // (a) A file where the asset folder should be: the folder cannot be created.
+    const QString blocker = m_service->layout().absolute(QStringLiteral("files/") + op.assetId->toString());
+    {
+        QFile f(blocker);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+    }
+    RecoveryReport report = m_service->recover();
+    QCOMPARE(report.deferred, 1);
+    QCOMPARE(report.failed, 0);
+    QCOMPARE(bookCount(), 0);
+    QCOMPARE(shaOf(staged), sha);  // The good bytes survive.
+    auto stored = db([id = op.id](QSqlDatabase& d) { return catalog::importOperation(d, id); });
+    QCOMPARE(stored.value().phase, ImportPhase::Verified);
+    report = m_service->recover();  // Still blocked: still kept.
+    QCOMPARE(report.deferred, 1);
+    QCOMPARE(shaOf(staged), sha);
+
+    // (b) The move itself fails.
+    QVERIFY(QFile::remove(blocker));
+    m_service->setInstallHook([] { return false; });
+    report = m_service->recover();
+    QCOMPARE(report.deferred, 1);
+    QCOMPARE(shaOf(staged), sha);
+
+    // The obstacle is gone: the next recovery completes the import.
+    m_service->setInstallHook({});
+    report = m_service->recover();
+    QCOMPARE(report.registered, 1);
+    QCOMPARE(report.deferred, 0);
+    QCOMPARE(bookCount(), 1);
+    QVERIFY(!QFile::exists(staged));
+    stored = db([id = op.id](QSqlDatabase& d) { return catalog::importOperation(d, id); });
+    QCOMPARE(stored.value().phase, ImportPhase::Registered);
+    QCOMPARE(shaOf(m_service->layout().absolute(LibraryLayout::managedSourcePath(*op.assetId))), sha);
+}
+
+void TestImportService::recoveryReplacesWrongDigestDestinationWithGoodStage()
+{
+    const QString source = external(QStringLiteral("damaged dest.pdf"));
+    const QString sha = shaOf(source);
+    const ImportOperation op = interruptedVerified(QStringLiteral("damaged dest.pdf"));
+    const QString managed = m_service->layout().absolute(LibraryLayout::managedSourcePath(*op.assetId));
+    QDir().mkpath(QFileInfo(managed).absolutePath());
+    {
+        QFile f(managed);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write("%PDF-1.4 truncated garbage");
+    }
+    const RecoveryReport report = m_service->recover();
+    QCOMPARE(report.registered, 1);
+    QCOMPARE(report.removedUnreferencedFiles, 1);
+    QCOMPARE(shaOf(managed), sha);  // The verified bytes, not the damaged ones.
+    QVERIFY(filesUnder(m_service->layout().absolute(QStringLiteral("staging"))).isEmpty());
+}
+
+void TestImportService::commitMoveNeverOverwrites()
+{
+    const QString a = QDir(m_outside->path()).filePath(QStringLiteral("a.bin"));
+    const QString b = QDir(m_outside->path()).filePath(QStringLiteral("b.bin"));
+    for (const QString& path : {a, b}) {
+        QFile f(path);
+        QVERIFY(f.open(QIODevice::WriteOnly));
+        f.write(path.toUtf8());
+    }
+    QString error;
+    QVERIFY(!commitMove(a, b, &error));  // Existing target: refused.
+    QVERIFY(!error.isEmpty());
+    QVERIFY(QFile::exists(a));
+    QVERIFY(QFile::remove(b));
+    QVERIFY2(commitMove(a, b, &error), qPrintable(error));
+    QVERIFY(!QFile::exists(a));
+    QVERIFY(QFile::exists(b));
 }
 
 QTEST_GUILESS_MAIN(TestImportService)

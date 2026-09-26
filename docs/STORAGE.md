@@ -23,12 +23,17 @@ This runs off the GUI thread. File work happens on the calling thread and catalo
    - The source's size and modification time must be unchanged after reading; otherwise the result is **Failed** ("changed while it was being imported").
    - The committed staged file is read again and must give the same digest.
 4. **Deduplicate by exact SHA-256.** Title similarity is never used.
-   - If a book has the same bytes: **Duplicate**, or **DuplicateInTrash** if that book is trashed. The staging folder is removed, and the existing book and its corrections are untouched.
+   - If a book has the same bytes: **Duplicate**, or **DuplicateInTrash** if that book is trashed. The operation is stored as `duplicate` with the digest, size and existing book (`closeImportAsDuplicate`), the staging folder is removed, and the existing book and its corrections are untouched.
    - Restoring a trashed book is left to the user.
 5. **Record `verified`** with the SHA-256, size and a newly reserved asset ID.
-6. **Install** by renaming the staged file to `files/<asset>/source.pdf`. It is the same filesystem, so this is atomic, and an existing target is never overwritten.
+6. **Install** with `commitMove`, a strict same-volume move of the staged file to `files/<asset>/source.pdf`.
+   - On Windows this is `MoveFileExW` with `MOVEFILE_WRITE_THROUGH`, without `MOVEFILE_COPY_ALLOWED` or `MOVEFILE_REPLACE_EXISTING`; elsewhere `rename(2)` after an existence check.
+   - It never copies (unlike `QFile::rename`, whose Qt 6.11 fallback copies and deletes) and never overwrites.
+   - A failure here closes the operation as Failed. The external original still exists, so the user imports again.
 7. **Register** in one catalog transaction (`catalog::completeImport`): the asset, the book, its search projection, and the operation's `registered` phase.
    - If another import catalogued the same bytes first, the transaction reports Duplicate, and this import's installed copy is deleted **only if no asset references it**.
+
+Every phase transition's result is checked. If recording an outcome fails, the import reports **Failed** with that error, never a success.
 
 The page count is unknown at import, which is valid. Metadata, TOC and page count come from later processing (M04).
 
@@ -39,10 +44,12 @@ Filesystem changes and SQLite commits are not one atomic transaction, so every p
 | Open operation | Action |
 | --- | --- |
 | `copying` (nothing verified) | Remove its staging folder; close as **abandoned**. The original was never touched, so the user can import it again. |
-| `verified`, and a book now has the same SHA-256 | Close as **duplicate**. Remove this operation's installed copy only if no asset references it. |
-| `verified`, managed copy present with the right digest | Register it. |
-| `verified`, staged copy present with the right digest | Install (rename), then register. |
-| `verified`, neither copy intact | Close as **failed**; remove an unreferenced partial copy. |
+| `verified`, and a book now has the same SHA-256 | Close as **duplicate** first; then remove this operation's installed copy (only if no asset references it) and its staging. |
+| `verified`, managed copy present with the right digest | Register it; then remove staging. |
+| `verified`, staged copy present with the right digest | Remove a wrong-digest file at the destination if no asset references it. Install with `commitMove`, then register, then remove staging. If installation or registration fails, the operation **stays open** (`deferred`) with the verified stage kept, and the next recovery retries. |
+| `verified`, neither copy intact | The verified bytes are gone: close as **failed** and remove the unusable leftovers. |
+
+The verified staged copy is deleted only after a good installed copy exists, or after the bytes turn out to be catalogued already.
 
 Afterwards, staging folders that belong to no open operation are removed, since they never hold catalogued files. Managed files that no asset references and no open operation claims are **reported only** (`RecoveryReport::orphanedManagedFiles`); they are never deleted automatically.
 
@@ -53,9 +60,13 @@ Afterwards, staging folders that belong to no open operation are removed, since 
 - a 3.5 MiB multi-chunk copy with progress;
 - a duplicate under another name keeps the existing book's correction;
 - a duplicate of a trashed book is reported, not restored;
+- both duplicate kinds are **stored** as `duplicate` with the digest, size and existing book; they are not open, and a restart and recovery leave them unchanged;
 - a source modified mid-copy fails and leaves nothing behind;
 - a missing source and a non-PDF source fail;
 - cancellation;
 - a **simulated crash after each phase** (begun, staged, verified, installed), followed by a restart and `recover()`: the expected outcome, clean staging, the original unchanged, recovery idempotent, and a later import behaving normally;
 - a duplicate race resolved by recovery, where the referenced copy is kept;
-- orphans reported but kept, and stray staging removed.
+- orphans reported but kept, and stray staging removed;
+- a failed installation during recovery (a file blocking the asset folder, then a failing move) keeps the verified stage and the open operation across repeated recoveries, then completes once the obstacle is gone;
+- a wrong-digest file at the destination is replaced by the verified stage;
+- `commitMove` refuses an existing target.

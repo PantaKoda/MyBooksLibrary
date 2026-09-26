@@ -32,7 +32,12 @@ domain::Status markImportVerified(QSqlDatabase& db, const domain::ImportId& id, 
 domain::Result<domain::BookId> completeImport(QSqlDatabase& db, const domain::ImportId& id,
                                               const domain::NewBook& book);
 
-// Moves an open operation to a terminal phase other than Registered.
+// Copying or Verified -> Duplicate: records the digest and size of the bytes
+// that were read and the existing book they match.
+domain::Status closeImportAsDuplicate(QSqlDatabase& db, const domain::ImportId& id, const QString& sha256,
+                                      qint64 byteSize, const domain::BookId& existing);
+
+// Moves an open operation to Failed, Cancelled or Abandoned.
 domain::Status closeImport(QSqlDatabase& db, const domain::ImportId& id, domain::ImportPhase phase,
                            const std::optional<domain::BookId>& book, const QString& error);
 

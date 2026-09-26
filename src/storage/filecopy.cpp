@@ -1,10 +1,22 @@
 #include "storage/filecopy.h"
 
 #include <QCryptographicHash>
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QSaveFile>
 #include <QTimeZone>
+
+#ifdef Q_OS_WIN
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
+#  include <windows.h>
+#else
+#  include <cerrno>
+#  include <cstdio>
+#  include <cstring>
+#endif
 
 namespace mbl::storage {
 
@@ -29,6 +41,36 @@ FileStamp stampOf(const QString& path)
         stamp.modified = info.lastModified(QTimeZone::UTC);
     }
     return stamp;
+}
+
+bool commitMove(const QString& from, const QString& to, QString* error)
+{
+    if (QFileInfo::exists(to)) {
+        if (error)
+            *error = QStringLiteral("%1 already exists.").arg(to);
+        return false;
+    }
+#ifdef Q_OS_WIN
+    const std::wstring source = QDir::toNativeSeparators(from).toStdWString();
+    const std::wstring target = QDir::toNativeSeparators(to).toStdWString();
+    // No MOVEFILE_COPY_ALLOWED: a cross-volume move fails instead of copying.
+    // No MOVEFILE_REPLACE_EXISTING: an existing target is never overwritten.
+    if (!MoveFileExW(source.c_str(), target.c_str(), MOVEFILE_WRITE_THROUGH)) {
+        if (error)
+            *error = QStringLiteral("Moving %1 to %2 failed (Windows error %3).").arg(from, to).arg(GetLastError());
+        return false;
+    }
+    return true;
+#else
+    // rename(2) is atomic within one filesystem; the existence check above
+    // guards replacement (the library writer lock excludes other writers).
+    if (std::rename(QFile::encodeName(from).constData(), QFile::encodeName(to).constData()) != 0) {
+        if (error)
+            *error = QStringLiteral("Moving %1 to %2 failed: %3").arg(from, to, QString::fromLocal8Bit(std::strerror(errno)));
+        return false;
+    }
+    return true;
+#endif
 }
 
 bool looksLikePdf(const QString& path)

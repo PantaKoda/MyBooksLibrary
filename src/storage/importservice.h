@@ -7,7 +7,8 @@
 //      change, verify the staged bytes;
 //   3. if the SHA-256 is already catalogued, close as Duplicate and remove
 //      staging; otherwise record Verified with a reserved asset ID;
-//   4. install by same-filesystem rename to files/<asset>/source.pdf;
+//   4. install by a strict same-volume move (commitMove: never a copy, never
+//      a replacement) to files/<asset>/source.pdf;
 //   5. register asset, book, search projection and the operation's
 //      Registered phase in one catalog transaction.
 // recover() resumes or closes every operation left open by a crash.
@@ -60,6 +61,7 @@ struct RecoveryReport {
     int duplicates = 0;             // Verified operations whose bytes were meanwhile catalogued.
     int abandoned = 0;              // Copying operations closed; nothing had been verified.
     int failed = 0;                 // Verified operations whose file was missing or corrupt.
+    int deferred = 0;               // Verified operations kept open (e.g. installation failed); retried next time.
     int removedStagingDirectories = 0;
     int removedUnreferencedFiles = 0;  // Installed copies no asset references (duplicates only).
     QStringList orphanedManagedFiles;  // files/* not referenced and not claimed; reported, never deleted.
@@ -85,6 +87,7 @@ public:
     // Tests only.
     void setCrashHook(CrashHook hook) { m_crashHook = std::move(hook); }
     void setAfterFirstChunkHook(std::function<void()> hook) { m_afterFirstChunk = std::move(hook); }
+    void setInstallHook(std::function<bool()> hook) { m_installHook = std::move(hook); }  // Return false to fail.
 
     const LibraryLayout& layout() const { return m_layout; }
 
@@ -93,11 +96,13 @@ private:
     void removeStaging(const domain::ImportId& id) const;
     // Deletes an installed copy only if no asset references it.
     bool removeIfUnreferenced(const QString& relativePath);
+    bool install(const QString& staged, const QString& managed, QString* error);
 
     catalog::Library& m_library;
     LibraryLayout m_layout;
     CrashHook m_crashHook;
     std::function<void()> m_afterFirstChunk;
+    std::function<bool()> m_installHook;
 };
 
 QString outcomeName(ImportResult::Outcome outcome);

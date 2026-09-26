@@ -129,6 +129,8 @@ QList<Migration> buildMigrations()
     v2.name = QStringLiteral("import operations");
     v2.statements = {
         // One row per attempt to import an external PDF; open rows are recovered at startup.
+        // Import history blocks permanent deletion of its book (RESTRICT) until M08
+        // defines how history is kept or removed.
         QStringLiteral(R"(CREATE TABLE import_operations (
             id TEXT PRIMARY KEY,
             source_path TEXT NOT NULL,
@@ -140,12 +142,13 @@ QList<Migration> buildMigrations()
             sha256 TEXT CHECK (sha256 IS NULL OR length(sha256) = 64),
             byte_size INTEGER CHECK (byte_size IS NULL OR byte_size >= 0),
             asset_id TEXT,
-            book_id TEXT REFERENCES books(id) ON DELETE SET NULL,
+            book_id TEXT REFERENCES books(id) ON DELETE RESTRICT,
             error TEXT,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
-            CHECK (phase IN ('copying', 'cancelled', 'abandoned', 'failed')
+            CHECK (phase NOT IN ('verified', 'registered')
                    OR (sha256 IS NOT NULL AND byte_size IS NOT NULL AND asset_id IS NOT NULL)),
+            CHECK (phase <> 'duplicate' OR (sha256 IS NOT NULL AND byte_size IS NOT NULL AND book_id IS NOT NULL)),
             CHECK (phase <> 'registered' OR book_id IS NOT NULL)))"),
         QStringLiteral("CREATE INDEX import_operations_open ON import_operations(phase) "
                        "WHERE phase IN ('copying', 'verified')"),

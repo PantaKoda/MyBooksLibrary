@@ -149,3 +149,18 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - Files that don't contain `%PDF-` in their first KiB are refused before any record is made.
   - Import runs on a worker thread; wiring it to the GUI is M03 part 2.
 - **Verified:** `tst_importservice` (15 cases, including a crash after each phase with a restart) and `tst_migrations` (v1 → v2 upgrade with data). ctest 8/8 in Debug and Release, and repeated 3 times.
+
+## 2026-09-26 — M03 part 1 review fixes (PR #6)
+
+- **Change:**
+  1. Migration 2's constraints now require `sha256`, `byte_size` and `asset_id` only for `verified`/`registered`, and `sha256`, `byte_size` and `book_id` for `duplicate`. `catalog::closeImportAsDuplicate` stores them. Every transition's result is checked, and a failure to record an outcome is reported as Failed.
+  2. Recovery removes a verified stage only after a good installed copy exists or the bytes are catalogued. Installation or registration errors leave the operation open (`RecoveryReport::deferred`) for a retry. A wrong-digest destination is replaced by the good stage.
+  3. `commitMove` (MoveFileExW write-through; no copy, no replace) replaces `QFile::rename`, which can fall back to copy and delete.
+  4. `import_operations.book_id` is `ON DELETE RESTRICT`.
+- **Why:** Review of `2d74ae4`:
+  1. Ordinary duplicates failed the CHECK constraint silently, and restarts then mislabelled them as abandoned.
+  2. Recovery could delete a good verified copy before installing it.
+  3. The atomic-rename assumption did not hold for `QFile::rename`.
+  4. `SET NULL` contradicted the `registered` CHECK.
+- **Assumptions:** Migration 2 was edited in place because it is unreleased (PR #6 not merged). Import history blocks permanent deletion of its book until M08 decides how history is kept or removed. An install failure during a live import still closes the operation, because the external original is available to import again.
+- **Verified:** `tst_importservice` 18 cases. Mutations: the old constraint fails both duplicate tests and the crash-recovery cases that reach a duplicate close; "remove stage before install" fails both new recovery tests. ctest 8/8 in Debug and Release, and repeated 3 times in each.

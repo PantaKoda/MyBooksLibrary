@@ -25,6 +25,15 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 
 The first run had one failure in a test: a path compared relative to `files/` instead of the library root. The test was fixed; the behaviour was correct.
 
+**Review fixes (PR #6, review of `2d74ae4`):** two P2 findings fixed (duplicate outcome persisted; recovery keeps the verified stage until installed), plus strict `commitMove` and `ON DELETE RESTRICT` (see DECISIONS.md).
+
+| Check | Result |
+| --- | --- |
+| Debug and Release builds + `ctest` | 8/8 in both; `--repeat until-fail:3` passed in both |
+| `tst_importservice` | 18 cases, 0 failures |
+| Mutation: previous migration constraint restored | Fails `duplicateBytesUnderAnotherNameReuseTheBook`, `duplicateOfTrashedBookIsReportedNotRestored` and two `crashRecovery` rows |
+| Mutation: recovery removes the stage before installing | Fails `recoveryKeepsVerifiedStageWhenInstallFails`, `recoveryReplacesWrongDigestDestinationWithGoodStage` and `crashRecovery(verified, still in staging)` |
+
 **Not in this part:** GUI wiring, library-root configuration and the book list (part 2); restoring a trashed duplicate from the UI; page count at import (M04).
 
 ## SDK 0.2.0 update (2026-09-25)

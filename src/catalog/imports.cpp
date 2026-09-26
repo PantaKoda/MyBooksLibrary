@@ -124,10 +124,28 @@ Result<BookId> completeImport(QSqlDatabase& db, const ImportId& id, const NewBoo
     return inserted;
 }
 
+Status closeImportAsDuplicate(QSqlDatabase& db, const ImportId& id, const QString& sha256, qint64 byteSize,
+                              const BookId& existing)
+{
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral("UPDATE import_operations SET phase = 'duplicate', sha256 = ?, byte_size = ?, "
+                             "book_id = ?, updated_at = ? WHERE id = ? AND phase IN ('copying', 'verified')"));
+    q.addBindValue(sha256.toLower());
+    q.addBindValue(byteSize);
+    q.addBindValue(existing.toString());
+    q.addBindValue(now());
+    q.addBindValue(id.toString());
+    if (!q.exec())
+        return sqlError(q);
+    if (q.numRowsAffected() != 1)
+        return makeError(ErrorCode::InvalidArgument, QStringLiteral("Import %1 is not open.").arg(id.toString()));
+    return Done{};
+}
+
 Status closeImport(QSqlDatabase& db, const ImportId& id, ImportPhase phase, const std::optional<BookId>& book,
                    const QString& error)
 {
-    if (!isTerminal(phase) || phase == ImportPhase::Registered)
+    if (phase != ImportPhase::Failed && phase != ImportPhase::Cancelled && phase != ImportPhase::Abandoned)
         return makeError(ErrorCode::InvalidArgument, QStringLiteral("Not a closing phase."));
     auto op = importOperation(db, id);
     if (!op)

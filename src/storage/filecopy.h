@@ -50,6 +50,11 @@ struct CopyHooks {
 CopyOutcome copyVerified(const QString& source, const QString& target, const std::atomic_bool* cancel,
                          const CopyHooks& hooks = {});
 
+// Moves `from` to `to` on the same volume as one filesystem operation: never
+// copies (unlike QFile::rename's fallback) and never replaces an existing
+// `to`. On Windows the move is flushed before returning (MOVEFILE_WRITE_THROUGH).
+bool commitMove(const QString& from, const QString& to, QString* error);
+
 // True if the file starts like a PDF: "%PDF-" within its first 1024 bytes
 // (the format tolerates leading bytes). A cheap guard, not a validation.
 bool looksLikePdf(const QString& path);
