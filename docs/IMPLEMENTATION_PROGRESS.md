@@ -9,7 +9,7 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | M02 Contracts/persistence | Merged | `feat/m02-a2-catalog-persistence` / [PR #3](https://github.com/PantaKoda/MyBooksLibrary/pull/3), merge `b643446` | See below |
 | SDK 0.2.0 update | Merged | `chore/m01-sdk-0.2.0` / [PR #5](https://github.com/PantaKoda/MyBooksLibrary/pull/5), merge `4f87975` | See "SDK 0.2.0 update" |
 | M03 Import/library shell | Merged: part 1 [PR #6](https://github.com/PantaKoda/MyBooksLibrary/pull/6) (merge `515ff43`); part 2 [PR #7](https://github.com/PantaKoda/MyBooksLibrary/pull/7) (merge `f39b141`) | `feat/m03-a1-managed-import`; `feat/m03-presentation-library-shell` | See "M03" |
-| M04 Metadata jobs | Part 1 AwaitingReview (headless jobs); part 2 NotStarted (presentation) | `feat/m04-a4-metadata-jobs` | See "M04" |
+| M04 Metadata jobs | Part 1 AwaitingReview ([PR #9](https://github.com/PantaKoda/MyBooksLibrary/pull/9), headless jobs); part 2 NotStarted (presentation) | `feat/m04-a4-metadata-jobs` | See "M04" |
 | M05–M11 | NotStarted | | |
 
 ## M04 — Metadata jobs
@@ -22,7 +22,7 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 
 | Command | Result |
 | --- | --- |
-| `pwsh scripts/verify.ps1 -SdkDir <sdk 0.2.0>` (Release) and `-Configuration Debug` | VERIFY PASSED in both; 11/11 `ctest` suites |
+| `pwsh scripts/verify.ps1 -SdkDir <sdk 0.2.0>` (Release `-Clean`) and `-Configuration Debug` | VERIFY PASSED in both; 11/11 `ctest` suites; the new suites passed `--repeat until-fail:10`. CI `build-and-test` passed for head `a323e9c` (run 36274652262) |
 | `tst_processingcoordinator` (fake extractor) | 16 cases, 0 failures:<br>- publishes from the worker, signals on the owner thread;<br>- report, details and page count stored;<br>- open job reused without a new generation;<br>- cancel while running, and cancel while the SDK completes anyway: nothing published, report removed;<br>- title override and cleared year set during the run survive;<br>- trash and a newer request during the run: not published;<br>- failure keeps the earlier result;<br>- digest mismatch fails;<br>- restart: running → interrupted + requeued and completed, cancel requested → cancelled, idempotent;<br>- recovery removes only unpublished reports;<br>- a trashed book's queued job never runs;<br>- metadata jobs before TOC jobs;<br>- destroying the coordinator mid-job cancels it |
 | `tst_sdkmetadataextractor` (real SDK 0.2.0) | 5 cases: normalization (ambiguous not promoted, contributor order, separate years, details); `title-page.pdf` → "Practical Library Engineering", 3 pages, report kind `pdfbookmark.metadata`, models used; pre-set cancel → cancelled; `image-only.pdf` without models completes without a title; end-to-end job through the coordinator publishes |
 | `tst_migrations` | `version2CatalogGainsJobs`: a schema 2 catalog upgrades and its book can be queued |
