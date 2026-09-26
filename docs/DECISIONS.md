@@ -170,3 +170,13 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
 - **Change:** `storage::checkDigest` returns Missing, Match, Mismatch or Unreadable. Recovery defers (keeps files and the `verified` phase) when no copy is confirmed good and one could not be read. It fails an operation only when both copies are confirmed missing or mismatched, and never replaces an unreadable destination.
 - **Why:** Re-review of `e12e5dc`: `sha256OfFile` returning nullopt on an open or read error was treated as a digest mismatch. A transient sharing or I/O failure could therefore delete the only verified copy and close the import as Failed.
 - **Verified:** `recoveryDefersUnreadableCopy` (staged-only and installed-only rows; Windows `FILE_SHARE_DELETE`-only lock) fails on the previous `importservice.cpp` and passes now. `tst_importservice` 21 cases; ctest 8/8 in Debug and Release, and repeated 3 times in each.
+
+## 2026-09-26 — Hosted CI: `build-and-test` on Windows
+
+- **Change:** `.github/workflows/ci.yml` runs one job, `build-and-test`, on `windows-2025-vs2026`, for pull requests to `main` and pushes to `main`. It runs the whitespace and text checks (`tools/check_text_files.py`), installs Qt 6.11.2 `win64_msvc2022_64` + `qtpdf`, downloads the public pdfbookmark SDK 0.2.0 (SHA-256 pinned), builds Release with Ninja, runs `ctest`, and runs `--sdk-check`, `--sqlite-check` and a text-PDF `--reader-check`. Permissions are read-only, no secrets are used, actions are pinned to commit SHAs, and newer runs for the same PR cancel older ones.
+- **Why:** The owner asked for CI once both repositories were public. Local verification alone cannot be tied to every PR head.
+- **Assumptions:**
+  - The runner image's MSVC (19.51 observed) must match the SDK's toolset, because the SDK's C++ API crosses the DLL boundary; PDFMegine builds the SDK on the same image.
+  - aqtinstall comes from a pinned main-branch commit (`076e165`), because release 3.3.0 cannot read Qt 6.11's per-architecture repository layout. Switch to 3.4.0 or later when released.
+  - The OCR coexistence runs stay local because of run time.
+- **Verified:** Runs 36252774137 (failed at the Qt install: aqtinstall 3.3.0) and 36252887138 (passed in 3.6 minutes, 8/8 tests, smoke checks passed; re-run passed in 2.5 minutes with both caches hit).
