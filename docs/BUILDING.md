@@ -73,7 +73,7 @@ On this Windows setup, the Qt Test plain-text logger prints nothing to a console
 `.github/workflows/ci.yml` runs on pull requests to `main` and on pushes to `main`. Its single job, **`build-and-test`**, is the check to require. It runs on `windows-2025-vs2026` (MSVC from Visual Studio 2026, the toolset the SDK is built with) and does the following:
 
 1. `git diff --check` over every tracked file, and `python tools/check_text_files.py` (UTF-8, no stray control characters). Both can be run locally.
-2. Installs Qt 6.11.2 `win64_msvc2022_64` with the `qtpdf` extension (open-source packages, via `jurplel/install-qt-action`/aqtinstall, cached).
+2. Installs Qt 6.11.2 `win64_msvc2022_64` with the `qtpdf` extension (open-source packages, via `jurplel/install-qt-action`/aqtinstall, cached). aqtinstall comes from a pinned commit of its main branch, because release 3.3.0 cannot read Qt 6.11's repository layout.
 3. Downloads the public pdfbookmark SDK release (version and SHA-256 pinned in the workflow; cached; never committed) into `.deps/`.
 4. Configures and builds Release with Ninja, runs `ctest`, then runs the application checks `--sdk-check`, `--sqlite-check` and `--reader-check` on the text-PDF fixture (`QT_QPA_PLATFORM=offscreen`).
 

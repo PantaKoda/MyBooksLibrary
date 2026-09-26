@@ -19,7 +19,11 @@ concurrency:
 env:
   QT_VERSION: 6.11.2
   QT_ARCH: win64_msvc2022_64
-  AQT_VERSION: ==3.3.0
+  # aqtinstall from a pinned commit of its main branch: the latest release
+  # (3.3.0) cannot read Qt 6.11's per-architecture repository layout; support
+  # landed in "Support Qt 6.11+ for Windows X64 (#1000)" and is unreleased.
+  # Replace with a released version (>= 3.4.0) once available.
+  AQT_SOURCE: git+https://github.com/miurahr/aqtinstall.git@076e1659807d0b362a3ed684d54c2e9c775eb9c7
   # The pdfbookmark SDK is a public release of PantaKoda/PDFMegine, downloaded
   # at run time and checked against this digest; nothing is committed.
   PDFBOOKMARK_SDK_VERSION: 0.2.0
@@ -61,7 +65,7 @@ jobs:
           target: desktop
           arch: ${{ env.QT_ARCH }}
           modules: qtpdf
-          aqtversion: ${{ env.AQT_VERSION }}
+          aqtsource: ${{ env.AQT_SOURCE }}
           cache: true
 
       - name: Cache pdfbookmark SDK
