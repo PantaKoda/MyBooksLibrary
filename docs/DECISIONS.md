@@ -216,3 +216,23 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - Closing waits for the controller to become idle after cancelling. Cancellation is checked between 1 MiB chunks.
   - The library folder's default location is not yet configurable in the UI. The organization and application names are both "MyBooksLibrary".
 - **Removed:** The Qt Creator template content of `Main.qml`.
+
+## 2026-09-26 — M04 part 1: durable metadata jobs
+
+- **Change:**
+  - Schema 3 adds `jobs` (one open job per book and kind) and `metadata_field_details`.
+  - `ProcessingCoordinator` runs one SDK call at a time on its own one-thread pool and does all catalog work on the database thread.
+  - A job captures its request generation and source digest at enqueue. `completeMetadataJob` publishes, stores details, fills the page count and marks the job succeeded in one transaction, and only while the job is still `running`.
+  - Reports are written before publication and removed when publication is refused; recovery removes those a stopped process left behind.
+  - The SDK sits behind `MetadataExtractor`, so the coordinator is in `mbl_core` and tested with a fake.
+- **Why:**
+  - AGENTS.md section 8: persist jobs before running, one SDK operation at a time, reject stale, trashed or mismatched results, keep corrections made during a run, recover interrupted jobs explicitly.
+  - Section 4: keep candidates, evidence and reasons, and never accept ambiguity automatically.
+  - Section 5: recover staged reports.
+- **Assumptions:**
+  - A cancel requested while the SDK finishes wins over the result.
+  - An interrupted job is requeued once, under a new generation.
+  - Failed jobs are not retried automatically.
+  - The model identity is empty, stored as `''`, when OCR models are unavailable.
+  - Evidence is stored as JSON per field, because it is only displayed, never queried.
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, M04 part 1.

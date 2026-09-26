@@ -8,8 +8,31 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | M01 Feasibility | Merged: part 1 [PR #2](https://github.com/PantaKoda/MyBooksLibrary/pull/2) (merge `f126ad0`); part 2 [PR #4](https://github.com/PantaKoda/MyBooksLibrary/pull/4) (merge `e9d8be2`) | `feat/m01-a3-fts5-probe`, `feat/m01-reader-qtpdf-coexistence` | Qt PDF coexists; OCR memory-pressure and Qt Quick teardown risks tracked in READER.md |
 | M02 Contracts/persistence | Merged | `feat/m02-a2-catalog-persistence` / [PR #3](https://github.com/PantaKoda/MyBooksLibrary/pull/3), merge `b643446` | See below |
 | SDK 0.2.0 update | Merged | `chore/m01-sdk-0.2.0` / [PR #5](https://github.com/PantaKoda/MyBooksLibrary/pull/5), merge `4f87975` | See "SDK 0.2.0 update" |
-| M03 Import/library shell | Part 1 Merged ([PR #6](https://github.com/PantaKoda/MyBooksLibrary/pull/6), merge `515ff43`); part 2 AwaitingReview ([PR #7](https://github.com/PantaKoda/MyBooksLibrary/pull/7)) | `feat/m03-a1-managed-import`; `feat/m03-presentation-library-shell` | See "M03" |
-| M04–M11 | NotStarted | | |
+| M03 Import/library shell | Merged: part 1 [PR #6](https://github.com/PantaKoda/MyBooksLibrary/pull/6) (merge `515ff43`); part 2 [PR #7](https://github.com/PantaKoda/MyBooksLibrary/pull/7) (merge `f39b141`) | `feat/m03-a1-managed-import`; `feat/m03-presentation-library-shell` | See "M03" |
+| M04 Metadata jobs | Part 1 AwaitingReview (headless jobs); part 2 NotStarted (presentation) | `feat/m04-a4-metadata-jobs` | See "M04" |
+| M05–M11 | NotStarted | | |
+
+## M04 — Metadata jobs
+
+### Part 1: durable queue, SDK extraction and publication (A4 + A2 + A1)
+
+**Scope:** schema 3 (`jobs`, `metadata_field_details`); `catalog/jobs.*` (enqueue, claim, cancel, finish, transactional completion, restart recovery); `storage/reportstore.*` (immutable reports and removal of unpublished ones); `processing::ProcessingCoordinator` with the `MetadataExtractor` interface; `sdk::SdkMetadataExtractor` and `sdk::normalizeMetadata`. The application does not use them yet (part 2).
+
+**Touched paths:** `src/domain/jobs.h`, `src/domain/ids.h`, `src/domain/metadata.h`, `src/domain/codes.cpp`, `src/catalog/jobs.*`, `src/catalog/catalog.cpp` (shared publication helpers; `''` for empty required run text), `src/catalog/catalog_internal.h`, `src/catalog/migrations.cpp`, `src/storage/reportstore.*`, `src/processing/`, `CMakeLists.txt`, `tests/processing/`, `tests/catalog/tst_migrations.cpp`, `tests/CMakeLists.txt`, `docs/`.
+
+| Command | Result |
+| --- | --- |
+| `pwsh scripts/verify.ps1 -SdkDir <sdk 0.2.0>` (Release) and `-Configuration Debug` | VERIFY PASSED in both; 11/11 `ctest` suites |
+| `tst_processingcoordinator` (fake extractor) | 16 cases, 0 failures:<br>- publishes from the worker, signals on the owner thread;<br>- report, details and page count stored;<br>- open job reused without a new generation;<br>- cancel while running, and cancel while the SDK completes anyway: nothing published, report removed;<br>- title override and cleared year set during the run survive;<br>- trash and a newer request during the run: not published;<br>- failure keeps the earlier result;<br>- digest mismatch fails;<br>- restart: running → interrupted + requeued and completed, cancel requested → cancelled, idempotent;<br>- recovery removes only unpublished reports;<br>- a trashed book's queued job never runs;<br>- metadata jobs before TOC jobs;<br>- destroying the coordinator mid-job cancels it |
+| `tst_sdkmetadataextractor` (real SDK 0.2.0) | 5 cases: normalization (ambiguous not promoted, contributor order, separate years, details); `title-page.pdf` → "Practical Library Engineering", 3 pages, report kind `pdfbookmark.metadata`, models used; pre-set cancel → cancelled; `image-only.pdf` without models completes without a title; end-to-end job through the coordinator publishes |
+| `tst_migrations` | `version2CatalogGainsJobs`: a schema 2 catalog upgrades and its book can be queued |
+| Mutation: completion no longer requires `running`, worker ignores the flag | `cancelWhileTheSdkCompletesDoesNotPublish` fails (job `succeeded`); restored |
+
+**Found and fixed:** publication failed with "NOT NULL constraint failed: metadata_runs.model_identity" when the model identity was empty (no OCR models), because a null `QString` binds as SQL NULL.
+
+**Limitations:** not yet wired into the application, and no job UI (part 2). TOC jobs are not implemented (M05). There is no automatic retry: a failed job stays failed until the user asks again. `recover()` must be called before `start()`.
+
+**Next action:** M04 part 2. Queue metadata after import, run recovery at open, show job progress with cancel and retry, show extracted titles, and handle a responsive close during extraction.
 
 ## M03 — Import and library shell
 

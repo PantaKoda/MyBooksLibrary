@@ -45,4 +45,15 @@ domain::Error sqlError(const QSqlDatabase& db, const QString& what);
 // the caller's transaction. Fails with Duplicate if the SHA-256 is known.
 domain::Result<domain::BookId> insertBook(QSqlDatabase& db, const domain::NewBook& book);
 
+// Increments the metadata (or TOC) request generation inside the caller's
+// transaction. Fails with Trashed for a trashed book.
+domain::Result<domain::PublishTicket> bumpGeneration(QSqlDatabase& db, const domain::BookId& book, bool metadata);
+
+// publishMetadata() without its own transaction, with a caller-chosen run ID
+// (so the run's report file can be named before publication).
+domain::Result<domain::RunId> publishMetadataRun(QSqlDatabase& db, const domain::RunId& id,
+                                                 const domain::PublishTicket& ticket,
+                                                 const domain::RunIdentity& run,
+                                                 const domain::ExtractedMetadata& metadata);
+
 } // namespace mbl::catalog::detail

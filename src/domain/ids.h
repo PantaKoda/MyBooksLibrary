@@ -36,7 +36,10 @@ using BookId = Id<struct BookTag>;
 using AssetId = Id<struct AssetTag>;
 using RunId = Id<struct RunTag>;  // One metadata or TOC analysis run.
 using ImportId = Id<struct ImportTag>;  // One import operation.
+using JobId = Id<struct JobTag>;        // One processing job.
 
 } // namespace mbl::domain
 
 Q_DECLARE_METATYPE(mbl::domain::BookId)
+Q_DECLARE_METATYPE(mbl::domain::RunId)
+Q_DECLARE_METATYPE(mbl::domain::JobId)

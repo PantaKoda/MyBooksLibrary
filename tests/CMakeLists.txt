@@ -33,3 +33,11 @@ mbl_add_test(tst_sdksnapshot processing/tst_sdksnapshot.cpp)
 target_link_libraries(tst_sdksnapshot PRIVATE mbl_sdk)
 pdfbookmark_deploy_runtime(tst_sdksnapshot)
 target_compile_definitions(tst_sdksnapshot PRIVATE MBL_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+
+mbl_add_test(tst_processingcoordinator processing/tst_processingcoordinator.cpp)
+target_compile_definitions(tst_processingcoordinator PRIVATE MBL_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+
+mbl_add_test(tst_sdkmetadataextractor processing/tst_sdkmetadataextractor.cpp)
+target_link_libraries(tst_sdkmetadataextractor PRIVATE mbl_sdk)
+pdfbookmark_deploy_runtime(tst_sdkmetadataextractor)
+target_compile_definitions(tst_sdkmetadataextractor PRIVATE MBL_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")

@@ -54,6 +54,13 @@ QVariant nullableText(const QString& v)
     return v.isEmpty() ? QVariant(QMetaType(QMetaType::QString)) : QVariant(v);
 }
 
+// For NOT NULL text columns: a null QString binds as SQL NULL, so an empty
+// value (e.g. no model identity when OCR is unavailable) must bind as ''.
+QVariant requiredText(const QString& v)
+{
+    return v.isNull() ? QVariant(QStringLiteral("")) : QVariant(v);
+}
+
 std::optional<int> optInt(const QVariant& v)
 {
     return v.isNull() ? std::nullopt : std::optional<int>(v.toInt());
@@ -330,11 +337,8 @@ Status touchBook(QSqlDatabase& db, const BookId& id)
     return Done{};
 }
 
-Result<PublishTicket> requestRun(QSqlDatabase& db, const BookId& id, const char* column)
+Result<PublishTicket> bumpGenerationColumn(QSqlDatabase& db, const BookId& id, const char* column)
 {
-    Transaction tx(db);
-    if (!tx.begun())
-        return sqlError(db, QStringLiteral("begin"));
     auto row = loadBookRow(db, id);
     if (!row)
         return row.error();
@@ -351,6 +355,17 @@ Result<PublishTicket> requestRun(QSqlDatabase& db, const BookId& id, const char*
         return sqlError(q);
     PublishTicket ticket{id, q.value(0).toLongLong(), row.value().asset.sha256};
     q.finish();
+    return ticket;
+}
+
+Result<PublishTicket> requestRun(QSqlDatabase& db, const BookId& id, const char* column)
+{
+    Transaction tx(db);
+    if (!tx.begun())
+        return sqlError(db, QStringLiteral("begin"));
+    auto ticket = bumpGenerationColumn(db, id, column);
+    if (!ticket)
+        return ticket;
     if (!tx.commit())
         return sqlError(db, QStringLiteral("commit"));
     return ticket;
@@ -384,10 +399,10 @@ bool bindRunIdentity(QSqlQuery& q, const RunId& id, const PublishTicket& ticket,
     q.addBindValue(ticket.book.toString());
     q.addBindValue(ticket.generation);
     q.addBindValue(run.sourceSha256);
-    q.addBindValue(run.sdkVersion);
-    q.addBindValue(run.modelIdentity);
-    q.addBindValue(run.optionsJson);
-    q.addBindValue(run.outcome);
+    q.addBindValue(requiredText(run.sdkVersion));
+    q.addBindValue(requiredText(run.modelIdentity));
+    q.addBindValue(requiredText(run.optionsJson));
+    q.addBindValue(requiredText(run.outcome));
     q.addBindValue(nullable(run.reportPath));
     q.addBindValue(now());
     return true;
@@ -575,16 +590,31 @@ Result<PublishTicket> requestTocRun(QSqlDatabase& db, const BookId& book)
     return requestRun(db, book, "toc_generation");
 }
 
+Result<PublishTicket> detail::bumpGeneration(QSqlDatabase& db, const BookId& book, bool metadata)
+{
+    return bumpGenerationColumn(db, book, metadata ? "metadata_generation" : "toc_generation");
+}
+
 Result<RunId> publishMetadata(QSqlDatabase& db, const PublishTicket& ticket, const RunIdentity& run,
                               const ExtractedMetadata& m)
 {
     Transaction tx(db);
     if (!tx.begun())
         return sqlError(db, QStringLiteral("begin"));
+    auto id = detail::publishMetadataRun(db, RunId::create(), ticket, run, m);
+    if (!id)
+        return id;
+    if (!tx.commit())
+        return sqlError(db, QStringLiteral("commit"));
+    return id;
+}
+
+Result<RunId> detail::publishMetadataRun(QSqlDatabase& db, const RunId& id, const PublishTicket& ticket,
+                                         const RunIdentity& run, const ExtractedMetadata& m)
+{
     if (auto row = checkPublishable(db, ticket, run, true); !row)
         return row.error();
 
-    const RunId id = RunId::create();
     // Values are stored only for resolved fields; ambiguity keeps its status.
     const auto resolvedText = [](FieldStatus s, const std::optional<QString>& v) {
         return s == FieldStatus::Resolved ? nullable(v) : QVariant(QMetaType(QMetaType::QString));
@@ -636,8 +666,6 @@ Result<RunId> publishMetadata(QSqlDatabase& db, const PublishTicket& ticket, con
         return s.error();
     if (auto s = refreshProjection(db, ticket.book); !s)
         return s.error();
-    if (!tx.commit())
-        return sqlError(db, QStringLiteral("commit"));
     return id;
 }
 
