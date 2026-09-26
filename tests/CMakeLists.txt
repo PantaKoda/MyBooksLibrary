@@ -23,6 +23,9 @@ mbl_add_test(tst_catalog catalog/tst_catalog.cpp)
 mbl_add_test(tst_importservice storage/tst_importservice.cpp)
 target_compile_definitions(tst_importservice PRIVATE MBL_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 mbl_add_test(tst_checkverdict reader/tst_checkverdict.cpp)
+mbl_add_test(tst_librarycontroller presentation/tst_librarycontroller.cpp)
+target_link_libraries(tst_librarycontroller PRIVATE mbl_presentation)
+target_compile_definitions(tst_librarycontroller PRIVATE MBL_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 
 # Links the SDK: runs next to the app, whose build deploys the SDK runtime there;
 # deploying again for this target keeps it runnable on its own.

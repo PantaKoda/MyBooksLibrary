@@ -170,3 +170,18 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
 - **Change:** `storage::checkDigest` returns Missing, Match, Mismatch or Unreadable. Recovery defers (keeps files and the `verified` phase) when no copy is confirmed good and one could not be read. It fails an operation only when both copies are confirmed missing or mismatched, and never replaces an unreadable destination.
 - **Why:** Re-review of `e12e5dc`: `sha256OfFile` returning nullopt on an open or read error was treated as a digest mismatch. A transient sharing or I/O failure could therefore delete the only verified copy and close the import as Failed.
 - **Verified:** `recoveryDefersUnreadableCopy` (staged-only and installed-only rows; Windows `FILE_SHARE_DELETE`-only lock) fails on the previous `importservice.cpp` and passes now. `tst_importservice` 21 cases; ctest 8/8 in Debug and Release, and repeated 3 times in each.
+
+## 2026-09-26 — M03 part 2: composition root and library window
+
+- **Change:**
+  - `main.cpp` is the composition root. It resolves the library folder (`--library`, then `MYBOOKSLIBRARY_ROOT`, then `AppLocalDataLocation/Library`), creates `presentation::LibraryController` and passes it to `Main.qml` as a required property.
+  - The controller opens the library, runs `ImportService::recover()` and imports files on a one-thread `QThreadPool`. Results reach the GUI only through queued invocations and `QFuture::then(this, …)`.
+  - `Main.qml` is replaced by the list-first library window. See UI.md.
+  - `mbl_presentation` is a static QML module (`MyBooksLibrary.Presentation`), with `Q_IMPORT_QML_PLUGIN` in `main.cpp`.
+  - The development options `--import` and `--screenshot` drive smoke runs.
+- **Why:** The M03 gate requires a usable book list. AGENTS.md sections 1 (rule 9), 3 and 9 require a small composition root, no work in QML or on the GUI thread, GUI-thread model updates and a responsive close.
+- **Assumptions:**
+  - One worker thread serves opening, recovery and imports. SDK jobs get their own worker in M04, and file copying stays bounded separately.
+  - Closing waits for the controller to become idle after cancelling. Cancellation is checked between 1 MiB chunks.
+  - The library folder's default location is not yet configurable in the UI. The organization and application names are both "MyBooksLibrary".
+- **Removed:** The Qt Creator template content of `Main.qml`.

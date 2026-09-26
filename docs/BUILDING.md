@@ -42,6 +42,18 @@ Qt Creator's bundled tools can be used if CMake/Ninja are not on `PATH`: `C:\Qt\
 
 Running outside Qt Creator needs Qt's DLLs on `PATH` (for example `C:\Qt\6.11.2\msvc2022_64\bin`) until a deployed package exists.
 
+## Running the app
+
+`appMyBooksLibrary` opens the library folder chosen by (first match wins):
+
+1. `--library <dir>`;
+2. the `MYBOOKSLIBRARY_ROOT` environment variable;
+3. the default `%LOCALAPPDATA%\MyBooksLibrary\MyBooksLibrary\Library` (Qt's `AppLocalDataLocation` plus `Library`).
+
+The folder is created on first use. Only one running app may open a library at a time; a second one shows "already open".
+
+Development options: `--import <pdf>` (repeatable) queues files once the library is open, and `--screenshot <png>` saves the window when the app is idle and then quits. They are used for smoke runs and PR screenshots.
+
 ## SDK baseline check
 
 `appMyBooksLibrary --sdk-check [<pdf>]` runs without a window. It prints the SDK header and loaded versions and whether OCR models were found. Given a PDF, it also prints the PDF's SHA-256 and page count and runs `extract_metadata()`. It exits with 0 on success and 1 on an SDK error.
