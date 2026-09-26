@@ -313,7 +313,7 @@ At each handoff, state what changed and which subsystem owns it, what actually p
 
 ## 13. GitHub workflow — one implementation step, one feature branch, one PR
 
-The owner requires reviewable changes through GitHub. The normal sequence is **branch → implementation → tests and self-review → commit/push → PR and local verification → automated independent review → fixes → merge after a passing review**. Do not commit or push implementation changes directly to `main`, and do not silently combine several milestones into one PR.
+The owner requires reviewable changes through GitHub. The normal sequence is **branch → implementation → tests and self-review → commit/push → PR, local verification and CI → automated independent review → fixes → merge after a passing review**. Do not commit or push implementation changes directly to `main`, and do not silently combine several milestones into one PR.
 
 For assigned implementation work, creating its branch, committing the scoped changes, pushing that branch, opening/updating its PR, starting its automated review and merging it under the conditions in "Merge authorization" below are part of the requested workflow; do not ask for permission again for each routine action. This does not authorize releases, unrelated changes or repository-settings changes.
 
@@ -329,7 +329,7 @@ For assigned implementation work, creating its branch, committing the scoped cha
 5. Implement only the assigned step. Add or update focused behavior tests for its risks, using section 12. For application-code changes, build the affected application configuration; exercise changed UI behavior in a smoke test. Documentation-only changes need relevant document checks, not unrelated OCR runs.
 6. Inspect the full diff, including untracked files. Run formatting/whitespace checks, review error and cancellation paths where affected, and verify that no SDK binaries/models, personal PDFs, credentials or machine-specific paths enter the commit. Stage only intended files; do not sweep unrelated work into a commit.
 7. Record exact commands and observed results, then commit coherent changes and push the feature branch to the intended repository. Open one PR targeting `main` after local checks pass. If necessary validation cannot run locally, or a known blocker remains, open a **draft PR** with that limitation; do not label it ready or tested prematurely.
-8. **Local verification replaces hosted CI for now.** Do not add or enable GitHub Actions workflows without the owner's explicit request. All build and test evidence comes from local runs of the repository's single verification entry point, `scripts/verify.ps1` (build the affected configuration, run the tests, run formatting/whitespace checks, exit non-zero on any failure). If that script does not exist yet, propose it to the owner as its own small PR before relying on it. Tie evidence to the current PR head commit; an earlier passing run does not validate later changes. A check that was skipped, not run, or could not run is not passing. Never describe local results as "CI passed"; call them "local verification".
+8. **One verification entry point, run in two places.** `scripts/verify.ps1` is the repository's single verification entry point: text and whitespace checks, build of the affected configuration, tests and application smoke checks, exiting non-zero on any failure. Run it locally ("local verification"). Hosted CI (`.github/workflows/ci.yml`, job **`build-and-test`**, a required check) runs the same script on every PR head and on `main`. Do not add, rename, remove or weaken workflows, jobs or checks without the owner's explicit request. Tie evidence to the current PR head commit; an earlier passing run does not validate later changes. A check that was skipped, not run, or could not run is not passing. Report local results as "local verification" and CI results with their run link; never describe one as the other.
 9. Update progress and the PR description, post the PR intro comment and start the automated review (see "Automated independent review"). An open PR is **AwaitingReview**, not a completed/merged milestone.
 
 Every PR description must contain:
@@ -338,7 +338,7 @@ Every PR description must contain:
 | --- | --- |
 | Purpose and scope | Concrete problem, milestone/step, owning subsystem(s), resulting behavior |
 | Contracts and data | Changed public application contracts, migrations, compatibility and recovery implications; say when none apply |
-| Verification | Exact build/test/smoke commands, results, tested platform/kit/SDK, and the head SHA the local verification ran on |
+| Verification | Exact build/test/smoke commands, results, tested platform/kit/SDK, the head SHA the local verification ran on, and the CI run link for that head |
 | UI evidence | Screenshots or a short recording for visible behavior changes, when executable locally |
 | Remaining limits | Known blockers, unverified platforms/behavior and follow-up work |
 
@@ -390,13 +390,14 @@ The owner gives standing authorization to merge a PR only when **all** of these 
 1. The latest verdict is `MERGE`, and its reviewed SHA equals the PR's current head SHA. Any push after the review requires a new round.
 2. The PR is not a draft and its description lists no unresolved blocker.
 3. Local verification passed on that same head commit **twice, independently**: the implementer's run (reported in its latest 🛠️ comment) and the reviewer's own run (reported in the 🤖 review comment). Both must show `scripts/verify.ps1` exiting 0 at that SHA.
-4. No merge conflict with `main`.
+4. The required CI check `build-and-test` passed on that same head commit.
+5. No merge conflict with `main`.
 
-Then post a closing comment ("✅ Reviewed by GPT-6-Astra in round R at `<SHA>`, local verification passed for implementer and reviewer, merging") and merge exactly the reviewed commit:
+Then post a closing comment ("✅ Reviewed by GPT-6-Astra in round R at `<SHA>`, local verification passed for implementer and reviewer, CI `build-and-test` passed, merging") and merge exactly the reviewed commit:
 
 `gh pr merge <N> --squash --delete-branch --match-head-commit <SHA>`
 
-Never merge on your own self-review, enable auto-merge, bypass repository protections, manufacture approvals or weaken checks to achieve a merge. If either local verification run is missing or failed, do not merge; fix it or hand the PR URL and head SHA to the owner.
+Never merge on your own self-review, enable auto-merge, bypass repository protections, manufacture approvals or weaken checks to achieve a merge. If either local verification run or the CI check is missing or failed, do not merge; fix it or hand the PR URL and head SHA to the owner.
 
 GitHub reviews run under the connected account's identity. If that account also authored the PR, it cannot formally approve its own PR, which is why the reviewer posts comments rather than approvals. An automated review verdict does not satisfy a repository rule that requires an independent human approval; if such a rule blocks the merge, hand the PR to the owner. See [GitHub's review rules](https://docs.github.com/en/pull-requests/how-tos/review-pull-requests/approving-a-pull-request-with-required-reviews).
 
