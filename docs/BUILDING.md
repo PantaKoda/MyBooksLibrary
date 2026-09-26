@@ -68,6 +68,19 @@ CTest puts Qt's `bin` folder on `PATH` for each test (CMake 3.22 or later). Code
 
 On this Windows setup, the Qt Test plain-text logger prints nothing to a console or pipe, although the tests run and set their exit code. CTest therefore runs every test with `-o -,junitxml`, so `--output-on-failure` shows the failing assertion. When running a test by hand, use `tst_x.exe -o -,junitxml` or `-o result.txt,txt`.
 
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on pull requests to `main` and on pushes to `main`. Its single job, **`build-and-test`**, is the check to require. It runs on `windows-2025-vs2026` (MSVC from Visual Studio 2026, the toolset the SDK is built with) and does the following:
+
+1. `git diff --check` over every tracked file, and `python tools/check_text_files.py` (UTF-8, no stray control characters). Both can be run locally.
+2. Installs Qt 6.11.2 `win64_msvc2022_64` with the `qtpdf` extension (open-source packages, via `jurplel/install-qt-action`/aqtinstall, cached).
+3. Downloads the public pdfbookmark SDK release (version and SHA-256 pinned in the workflow; cached; never committed) into `.deps/`.
+4. Configures and builds Release with Ninja, runs `ctest`, then runs the application checks `--sdk-check`, `--sqlite-check` and `--reader-check` on the text-PDF fixture (`QT_QPA_PLATFORM=offscreen`).
+
+The workflow has read-only permissions and uses no secrets, and third-party actions are pinned to commit SHAs. Newer runs for the same PR cancel older ones. The long OCR coexistence runs (`--require-ocr`) are not part of CI; see READER.md.
+
+To move to a new SDK release, update `PDFBOOKMARK_SDK_VERSION` and `PDFBOOKMARK_SDK_SHA256` in the workflow together with `find_package(pdfbookmark …)`.
+
 ## Test fixtures
 
 `tests/fixtures/make_fixtures.py` generates small synthetic PDFs using only the Python standard library. The output is deterministic. Personal books must never be committed; `.gitignore` allows only `tests/fixtures/*.pdf`.
