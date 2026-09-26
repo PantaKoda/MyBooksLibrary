@@ -122,8 +122,22 @@ void LibraryController::onOpened(std::shared_ptr<catalog::Library> library,
                                  QString recoveryText)
 {
     if (!library) {
+        // Files queued while opening can never be imported by this session:
+        // report them and end the batch so busy/importing clear.
+        int dropped = 0;
+        {
+            QMutexLocker lock(&m_queueMutex);
+            dropped = int(m_queue.size());
+            m_queue.clear();
+        }
         setState(State::Failed);
         setStatus(tr("The library could not be opened: %1").arg(error));
+        if (dropped > 0) {
+            m_problems << trn("%n file(s) were not imported because the library could not be opened.", dropped);
+            emit problemsChanged();
+            m_batch.failed += dropped;
+            finishBatch();
+        }
         return;
     }
     m_library = std::move(library);
@@ -286,15 +300,25 @@ void LibraryController::onFileFinished(const FileResult& result)
 void LibraryController::onBatchFinished()
 {
     m_batchRunning = false;
-    // Files queued after the worker's last check start a new batch.
+    // Files queued after the worker's last check start a new batch. That
+    // includes files added after a cancel: cancelImports() already cleared
+    // the queue, so anything in it now was added afterwards. Decide under
+    // the lock, but call startBatch() only after releasing it, because
+    // startBatch() locks m_queueMutex again (QMutex is not recursive).
+    bool more = false;
     {
         QMutexLocker lock(&m_queueMutex);
-        if (!m_queue.isEmpty() && !m_cancel->load()) {
-            startBatch();
-            return;
-        }
-        m_queue.clear();
+        more = !m_queue.isEmpty();
     }
+    if (more && m_importer) {
+        startBatch();  // Resets m_cancel.
+        return;
+    }
+    finishBatch();
+}
+
+void LibraryController::finishBatch()
+{
     m_lastBatch = m_batch;
     m_batch = {};
     QStringList parts;
@@ -306,7 +330,8 @@ void LibraryController::onBatchFinished()
         parts << tr("%1 failed").arg(m_lastBatch.failed);
     if (m_lastBatch.cancelled)
         parts << tr("%1 cancelled").arg(m_lastBatch.cancelled);
-    setStatus(parts.isEmpty() ? tr("Library ready.") : parts.join(QStringLiteral(", ")) + u'.');
+    if (m_state != State::Failed)  // Keep the reason the library could not be opened.
+        setStatus(parts.isEmpty() ? tr("Library ready.") : parts.join(QStringLiteral(", ")) + u'.');
     setBusyFlags([this] {
         m_importTotal = 0;
         m_importDone = 0;

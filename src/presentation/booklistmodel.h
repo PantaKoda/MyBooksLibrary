@@ -32,7 +32,10 @@ public:
     QVariant data(const QModelIndex& index, int role) const override;
     QHash<int, QByteArray> roleNames() const override;
 
-    // Replaces all rows. Must be called on the model's thread.
+    // Makes the rows equal to `books` (in that order) with row-level changes
+    // keyed by book ID -- never a model reset -- so views keep their scroll
+    // position and current item. A row whose revision changed gets
+    // dataChanged. Must be called on the model's thread.
     void setBooks(QList<domain::BookSummary> books);
 
     Q_INVOKABLE int rowOfBook(const QString& bookId) const;  // -1 when absent.

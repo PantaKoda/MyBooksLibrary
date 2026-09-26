@@ -63,7 +63,9 @@ public:
     // Opens (and creates if needed) the library at `rootDir` on the worker
     // thread, then recovers interrupted imports and loads the book list.
     Q_INVOKABLE void open(const QString& rootDir);
-    // Queues files for import; ignored unless ready.
+    // Queues files for import. Files queued while the library is opening are
+    // imported once it is ready, or reported as not imported if opening fails.
+    // Ignored when the library is closed or failed.
     Q_INVOKABLE void importUrls(const QList<QUrl>& urls);
     void importFiles(const QStringList& localPaths);
     // Cancels the file being copied and drops queued files.
@@ -104,6 +106,7 @@ private:
     void onFileProgress(qint64 done, qint64 total);
     void onFileFinished(const FileResult& result);
     void onBatchFinished();
+    void finishBatch();  // Publishes the batch summary and clears the import counters.
     void setState(State state);
     void setStatus(const QString& text);
     void setBusyFlags(const std::function<void()>& change);

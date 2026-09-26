@@ -6,6 +6,7 @@
 #include "presentation/librarycontroller.h"
 #include "storage/importservice.h"
 
+#include <QAbstractItemModelTester>
 #include <QDir>
 #include <QFile>
 #include <QSignalSpy>
@@ -46,6 +47,10 @@ private slots:
     void startupRecoversInterruptedImport();
     void secondSessionOnSameLibraryFails();
     void libraryRootResolution();
+    void filesAddedAsBatchEndsAreImported();
+    void filesAddedWhileCancellingAreImported();
+    void failedOpenReleasesQueuedFiles();
+    void setBooksAppliesRowChangesWithoutReset();
 
 private:
     void openAndWait(LibraryController& c, const QString& root)
@@ -60,8 +65,9 @@ void TestLibraryController::opensEmptyLibraryOffTheGuiThread()
 {
     QTemporaryDir dir;
     LibraryController c;
+    // booksRefreshed is emitted right after setBooks() in the same continuation.
     QThread* modelThreadAtReset = nullptr;
-    connect(c.books(), &QAbstractItemModel::modelReset, this,
+    connect(&c, &LibraryController::booksRefreshed, this,
             [&] { modelThreadAtReset = QThread::currentThread(); }, Qt::DirectConnection);
     c.open(dir.path());
     QVERIFY(c.opening());
@@ -216,6 +222,130 @@ void TestLibraryController::libraryRootResolution()
     QCOMPARE(fallback.source, QStringLiteral("default"));
     QVERIFY(fallback.path.endsWith(QStringLiteral("/Library")));
     QVERIFY(fallback.path.contains(QStringLiteral("MyBooksLibrary")));
+}
+
+// PR #7 review, finding 1: files added after the worker's last empty-queue
+// check but before onBatchFinished() ran used to deadlock the GUI thread
+// (startBatch() re-locked m_queueMutex).
+void TestLibraryController::filesAddedAsBatchEndsAreImported()
+{
+    QTemporaryDir dir;
+    LibraryController c;
+    openAndWait(c, dir.path());
+    QSignalSpy finished(&c, &LibraryController::importsFinished);
+    bool added = false;
+    connect(&c, &LibraryController::importProgressChanged, this, [&] {
+        if (added || c.importTotal() != 1 || c.importDone() != 1)
+            return;  // onFileFinished of the only file.
+        added = true;
+        QThread::msleep(300);  // The worker sees an empty queue and posts onBatchFinished.
+        c.importFiles({fixture("contents-book.pdf")});
+    });
+    c.importFiles({fixture("title-page.pdf")});
+    QTRY_COMPARE_WITH_TIMEOUT(finished.size(), 1, 20000);  // Hung before the fix.
+    QVERIFY(added);
+    QCOMPARE(c.lastBatch().imported, 2);
+    QTRY_COMPARE_WITH_TIMEOUT(c.books()->rowCount(), 2, 10000);
+    QTRY_VERIFY_WITH_TIMEOUT(!c.busy(), 10000);
+}
+
+// Finding 2: files added while "Cancelling..." used to be discarded silently.
+void TestLibraryController::filesAddedWhileCancellingAreImported()
+{
+    QTemporaryDir dir;
+    LibraryController c;
+    openAndWait(c, dir.path());
+    QSignalSpy finished(&c, &LibraryController::importsFinished);
+    bool added = false;
+    connect(&c, &LibraryController::importProgressChanged, this, [&] {
+        if (added || c.currentFile().isEmpty())
+            return;  // onFileStarted of the first file.
+        added = true;
+        c.cancelImports();
+        c.importFiles({fixture("contents-book.pdf")});
+    });
+    c.importFiles({fixture("title-page.pdf")});
+    QTRY_COMPARE_WITH_TIMEOUT(finished.size(), 1, 20000);
+    QVERIFY(added);
+    const auto b = c.lastBatch();
+    QCOMPARE(b.imported + b.cancelled, 2);  // Before the fix: 1 -- the second file vanished.
+    QVERIFY(b.imported >= 1);               // The file added after the cancel was imported.
+    QTRY_COMPARE_WITH_TIMEOUT(c.books()->rowCount(), b.imported, 10000);
+    QTRY_VERIFY_WITH_TIMEOUT(!c.busy(), 10000);
+}
+
+// Finding 3: files queued while opening used to stay pending forever when the
+// open failed, so busy/importing never cleared.
+void TestLibraryController::failedOpenReleasesQueuedFiles()
+{
+    QTemporaryDir dir;
+    LibraryController first;
+    openAndWait(first, dir.path());
+    LibraryController second;
+    QSignalSpy finished(&second, &LibraryController::importsFinished);
+    second.open(dir.path());
+    second.importFiles({fixture("title-page.pdf")});  // Accepted while opening, as --import does.
+    QTRY_VERIFY_WITH_TIMEOUT(second.failed(), 10000);
+    QTRY_VERIFY_WITH_TIMEOUT(!second.busy(), 10000);
+    QVERIFY(!second.importing());
+    QCOMPARE(second.problems().size(), 1);
+    QVERIFY(second.problems().first().contains(QStringLiteral("could not be opened")));
+    QCOMPARE(finished.size(), 1);
+    QCOMPARE(second.lastBatch().failed, 1);
+    QVERIFY(second.statusText().contains(QStringLiteral("already open")));  // The reason stays visible.
+}
+
+// Finding 4: refreshes must not reset the model (a reset scrolls views back
+// to the top); rows change individually, keyed by book ID.
+void TestLibraryController::setBooksAppliesRowChangesWithoutReset()
+{
+    using mbl::domain::BookId;
+    using mbl::domain::BookSummary;
+    const auto book = [](const BookId& id, const QString& title, qint64 revision) {
+        BookSummary b;
+        b.id = id;
+        b.displayTitle = title;
+        b.revision = revision;
+        return b;
+    };
+    const BookId a = BookId::create(), b = BookId::create(), c = BookId::create();
+
+    BookListModel model;
+    QAbstractItemModelTester tester(&model, QAbstractItemModelTester::FailureReportingMode::Fatal);
+    QSignalSpy resets(&model, &QAbstractItemModel::modelReset);
+    QSignalSpy inserted(&model, &QAbstractItemModel::rowsInserted);
+    QSignalSpy removed(&model, &QAbstractItemModel::rowsRemoved);
+    QSignalSpy moved(&model, &QAbstractItemModel::rowsMoved);
+    QSignalSpy changed(&model, &QAbstractItemModel::dataChanged);
+    QSignalSpy counts(&model, &BookListModel::countChanged);
+
+    model.setBooks({book(a, QStringLiteral("A"), 1), book(b, QStringLiteral("B"), 1)});
+    QCOMPARE(model.rowCount(), 2);
+    QCOMPARE(inserted.size(), 2);
+
+    // One more book (what each imported file causes): one insertion, nothing else.
+    inserted.clear();
+    model.setBooks({book(a, QStringLiteral("A"), 1), book(b, QStringLiteral("B"), 1), book(c, QStringLiteral("C"), 1)});
+    QCOMPARE(inserted.size(), 1);
+    QCOMPARE(inserted.first().at(1).toInt(), 2);
+    QCOMPARE(changed.size(), 0);  // Unchanged revisions: no dataChanged.
+
+    // A removed, a changed revision.
+    model.setBooks({book(a, QStringLiteral("A2"), 2), book(c, QStringLiteral("C"), 1)});
+    QCOMPARE(removed.size(), 1);
+    QCOMPARE(changed.size(), 1);
+    QCOMPARE(model.data(model.index(0), BookListModel::TitleRole).toString(), QStringLiteral("A2"));
+
+    // Reordering moves rows.
+    model.setBooks({book(c, QStringLiteral("C"), 1), book(a, QStringLiteral("A2"), 2)});
+    QCOMPARE(moved.size(), 1);
+    QCOMPARE(model.bookIdAt(0), c.toString());
+    QCOMPARE(model.bookIdAt(1), a.toString());
+
+    model.setBooks({});
+    QCOMPARE(model.rowCount(), 0);
+    QCOMPARE(resets.size(), 0);  // Never a reset.
+    QCOMPARE(counts.size(), 4);  // 0->2, 2->3, 3->2, 2->0; the reorder kept the count.
 }
 
 QTEST_GUILESS_MAIN(TestLibraryController)

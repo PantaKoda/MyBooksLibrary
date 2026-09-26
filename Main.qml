@@ -200,8 +200,10 @@ ApplicationWindow {
                     onClicked: window.library.cancelImports()
                 }
             }
+            // At most a few problem lines here, so the book list keeps its
+            // space; the full list is one click away.
             Repeater {
-                model: window.library.problems
+                model: window.library.problems.slice(0, window.maxFooterProblems)
                 delegate: Label {
                     required property string modelData
                     Layout.fillWidth: true
@@ -210,6 +212,41 @@ ApplicationWindow {
                     elide: Text.ElideRight
                     opacity: 0.8
                 }
+            }
+            Button {
+                id: moreProblemsButton
+                visible: window.library.problems.length > window.maxFooterProblems
+                flat: true
+                text: qsTr("…and %n more", "", window.library.problems.length - window.maxFooterProblems)
+                onClicked: problemsDialog.open()
+                Accessible.description: qsTr("Show every file that was not imported")
+            }
+        }
+    }
+
+    readonly property int maxFooterProblems: 3
+
+    Dialog {
+        id: problemsDialog
+        title: qsTr("Files not imported (%1)").arg(window.library.problems.length)
+        modal: true
+        standardButtons: Dialog.Close
+        anchors.centerIn: parent
+        width: Math.min(window.width - 48, 640)
+        height: Math.min(window.height - 48, 480)
+
+        ListView {
+            anchors.fill: parent
+            clip: true
+            model: window.library.problems
+            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+            delegate: Label {
+                required property string modelData
+                width: ListView.view.width
+                text: modelData
+                textFormat: Text.PlainText
+                wrapMode: Text.Wrap
+                bottomPadding: 4
             }
         }
     }

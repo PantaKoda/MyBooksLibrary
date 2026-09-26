@@ -1,6 +1,7 @@
 #include "presentation/booklistmodel.h"
 
 #include <QCoreApplication>
+#include <QSet>
 #include <QStringList>
 
 namespace mbl::presentation {
@@ -64,11 +65,56 @@ QHash<int, QByteArray> BookListModel::roleNames() const
 
 void BookListModel::setBooks(QList<domain::BookSummary> books)
 {
-    const bool countChanges = books.size() != m_books.size();
-    beginResetModel();
-    m_books = std::move(books);
-    endResetModel();
-    if (countChanges)
+    // Apply the new list as row-level changes keyed by book ID (removals,
+    // moves, insertions, dataChanged) rather than a model reset, so views
+    // keep their scroll position, current item and delegates.
+    const qsizetype oldCount = m_books.size();
+
+    QSet<domain::BookId> wanted;
+    for (const domain::BookSummary& book : books)
+        wanted.insert(book.id);
+    for (qsizetype row = m_books.size() - 1; row >= 0; --row) {
+        if (!wanted.contains(m_books.at(row).id)) {
+            beginRemoveRows({}, int(row), int(row));
+            m_books.removeAt(row);
+            endRemoveRows();
+        }
+    }
+
+    for (qsizetype target = 0; target < books.size(); ++target) {
+        domain::BookSummary& incoming = books[target];
+        if (target < m_books.size() && m_books.at(target).id == incoming.id) {
+            // Same book in place: replace it, and notify if it changed.
+            const bool changed = m_books.at(target).revision != incoming.revision;
+            m_books[target] = std::move(incoming);
+            if (changed)
+                emit dataChanged(index(int(target)), index(int(target)));
+            continue;
+        }
+        qsizetype from = -1;
+        for (qsizetype row = target + 1; row < m_books.size(); ++row) {
+            if (m_books.at(row).id == incoming.id) {
+                from = row;
+                break;
+            }
+        }
+        if (from >= 0) {
+            // Later in the list: move it up to its new position.
+            const bool changed = m_books.at(from).revision != incoming.revision;
+            beginMoveRows({}, int(from), int(from), {}, int(target));
+            m_books.move(from, target);
+            endMoveRows();
+            m_books[target] = std::move(incoming);
+            if (changed)
+                emit dataChanged(index(int(target)), index(int(target)));
+        } else {
+            beginInsertRows({}, int(target), int(target));
+            m_books.insert(target, std::move(incoming));
+            endInsertRows();
+        }
+    }
+
+    if (m_books.size() != oldCount)
         emit countChanged();
 }
 
