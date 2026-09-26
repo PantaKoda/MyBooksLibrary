@@ -44,6 +44,7 @@ class TestMigrations : public QObject {
 private slots:
     void freshLibraryReachesLatest();
     void reopeningIsIdempotent();
+    void version1CatalogUpgradesWithDataIntact();
     void newerSchemaIsRefusedUnchanged();
     void failedMigrationRollsBack();
     void nonConsecutiveListIsRejected();
@@ -76,6 +77,37 @@ void TestMigrations::reopeningIsIdempotent()
 
 // Starts from a closed catalog in DELETE journal mode, as a newer
 // application might leave it, and checks that refusal writes nothing.
+// A catalog created by the M02 release (schema 1) with a book upgrades in place.
+void TestMigrations::version1CatalogUpgradesWithDataIntact()
+{
+    QTemporaryDir dir;
+    const QString path = dir.filePath(QLatin1StringView(Library::kCatalogFileName));
+    withConnection(path, [](QSqlDatabase& db) {
+        QVERIFY(migrate(db, {catalogMigrations().first()}));
+        QCOMPARE(schemaVersion(db), 1);
+        QSqlQuery q(db);
+        QVERIFY(q.exec(QStringLiteral(
+            "INSERT INTO assets(id, sha256, byte_size, managed_path, created_at) VALUES "
+            "('a1', '0000000000000000000000000000000000000000000000000000000000000001', 10, 'files/a1/source.pdf', 'x')")));
+        QVERIFY(q.exec(QStringLiteral(
+            "INSERT INTO books(id, asset_id, original_file_name, original_path, created_at, updated_at) VALUES "
+            "('b1', 'a1', 'old.pdf', 'C:/old.pdf', 'x', 'x')")));
+    });
+
+    auto library = Library::open(dir.path());
+    QVERIFY2(library, library ? "" : qPrintable(library.error().message));
+    QCOMPARE(library.value()->schemaVersion(), latestSchemaVersion());
+    QVERIFY(latestSchemaVersion() >= 2);
+    const auto counts = library.value()->run([](QSqlDatabase& db) {
+        QSqlQuery q(db);
+        q.exec(QStringLiteral("SELECT (SELECT count(*) FROM books), (SELECT count(*) FROM import_operations)"));
+        q.next();
+        return qMakePair(q.value(0).toInt(), q.value(1).toInt());
+    }).result();
+    QCOMPARE(counts.first, 1);
+    QCOMPARE(counts.second, 0);
+}
+
 void TestMigrations::newerSchemaIsRefusedUnchanged()
 {
     QTemporaryDir dir;

@@ -1,5 +1,6 @@
 // Stable storage codes for domain enums. Never change an existing code.
 #include "domain/book.h"
+#include "domain/importing.h"
 #include "domain/metadata.h"
 #include "domain/toc.h"
 
@@ -69,7 +70,21 @@ const std::pair<OverrideMode, const char*> kMode[] = {
     {OverrideMode::Cleared, "cleared"},
 };
 
+const std::pair<ImportPhase, const char*> kImportPhase[] = {
+    {ImportPhase::Copying, "copying"},
+    {ImportPhase::Verified, "verified"},
+    {ImportPhase::Registered, "registered"},
+    {ImportPhase::Duplicate, "duplicate"},
+    {ImportPhase::Failed, "failed"},
+    {ImportPhase::Cancelled, "cancelled"},
+    {ImportPhase::Abandoned, "abandoned"},
+};
+
 } // namespace
+
+QString toCode(ImportPhase v) { return name(v, kImportPhase); }
+std::optional<ImportPhase> importPhaseFromCode(const QString& c) { return find(c, kImportPhase); }
+bool isTerminal(ImportPhase phase) { return phase != ImportPhase::Copying && phase != ImportPhase::Verified; }
 
 QString toCode(FieldStatus v) { return name(v, kFieldStatus); }
 std::optional<FieldStatus> fieldStatusFromCode(const QString& c) { return find(c, kFieldStatus); }

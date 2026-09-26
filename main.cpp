@@ -121,8 +121,8 @@ int main(int argc, char *argv[])
                 ++i;
             } else if (a == QLatin1String("--qml-naive-teardown")) {
                 options.qmlNaiveTeardown = true;
-            } else if (a == QLatin1String("--ocr-threads") && next.toInt() > 0) {
-                options.ocrThreads = next.toInt();
+            } else if (bool ok = false; a == QLatin1String("--ocr-threads") && next.toInt(&ok) >= 0 && ok) {
+                options.ocrThreads = next.toInt();  // 0 = automatic.
                 ++i;
             } else if (a == QLatin1String("--timeout") && next.toInt() > 0) {
                 options.timeoutSeconds = next.toInt();

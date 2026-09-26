@@ -136,3 +136,37 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
 - **Change:** `ReaderCheckView.qml` hosts `PdfMultiPageView` in a `Loader`. The check's default teardown deactivates the view, processes events for 200 ms, then destroys the document. `--qml-cycles` and `--qml-naive-teardown` allow stress runs.
 - **Why:** One package run crashed (`0xC0000005`) on a Qt Quick worker thread during that check's teardown. The hypothesis was that page-image loads were still using the document. 1,500 naive cycles did not reproduce it, so the hypothesis is unconfirmed.
 - **Assumptions:** The ordered teardown is a reasonable default but not a proven fix. The M06 reader adapter must own document lifetime explicitly and needs its own stress test with a visible window.
+
+## 2026-09-26 — M03 part 1: import protocol with recorded phases
+
+- **Change:** Added A1 `src/storage/` (`LibraryLayout`, `copyVerified`, `ImportService` with `recover()`), A2 `catalog/imports.*`, and migration 2 (`import_operations`). `registerBook` shares its insert with `completeImport` through `catalog_internal.h` and now reports `ErrorCode::Duplicate`. See STORAGE.md.
+- **Why:** AGENTS.md sections 1 and 5 require verified managed copies, unchanged originals, exact-SHA-256 deduplication, and recovery of interrupted operations without losing or duplicating files.
+- **Assumptions:**
+  - A same-filesystem `QFile::rename` is the install commit.
+  - A `QSaveFile` commit plus a re-read digest is the verification.
+  - A `copying` operation is abandoned on recovery rather than resumed, because its source may have changed. The user imports it again.
+  - Orphaned managed files are reported, never deleted.
+  - Files that don't contain `%PDF-` in their first KiB are refused before any record is made.
+  - Import runs on a worker thread; wiring it to the GUI is M03 part 2.
+- **Verified:** `tst_importservice` (15 cases, including a crash after each phase with a restart) and `tst_migrations` (v1 → v2 upgrade with data). ctest 8/8 in Debug and Release, and repeated 3 times.
+
+## 2026-09-26 — M03 part 1 review fixes (PR #6)
+
+- **Change:**
+  1. Migration 2's constraints now require `sha256`, `byte_size` and `asset_id` only for `verified`/`registered`, and `sha256`, `byte_size` and `book_id` for `duplicate`. `catalog::closeImportAsDuplicate` stores them. Every transition's result is checked, and a failure to record an outcome is reported as Failed.
+  2. Recovery removes a verified stage only after a good installed copy exists or the bytes are catalogued. Installation or registration errors leave the operation open (`RecoveryReport::deferred`) for a retry. A wrong-digest destination is replaced by the good stage.
+  3. `commitMove` (MoveFileExW write-through; no copy, no replace) replaces `QFile::rename`, which can fall back to copy and delete.
+  4. `import_operations.book_id` is `ON DELETE RESTRICT`.
+- **Why:** Review of `2d74ae4`:
+  1. Ordinary duplicates failed the CHECK constraint silently, and restarts then mislabelled them as abandoned.
+  2. Recovery could delete a good verified copy before installing it.
+  3. The atomic-rename assumption did not hold for `QFile::rename`.
+  4. `SET NULL` contradicted the `registered` CHECK.
+- **Assumptions:** Migration 2 was edited in place because it is unreleased (PR #6 not merged). Import history blocks permanent deletion of its book until M08 decides how history is kept or removed. An install failure during a live import still closes the operation, because the external original is available to import again.
+- **Verified:** `tst_importservice` 18 cases. Mutations: the old constraint fails both duplicate tests and the crash-recovery cases that reach a duplicate close; "remove stage before install" fails both new recovery tests. ctest 8/8 in Debug and Release, and repeated 3 times in each.
+
+## 2026-09-26 — M03 re-review fix (PR #6): unreadable is not damaged
+
+- **Change:** `storage::checkDigest` returns Missing, Match, Mismatch or Unreadable. Recovery defers (keeps files and the `verified` phase) when no copy is confirmed good and one could not be read. It fails an operation only when both copies are confirmed missing or mismatched, and never replaces an unreadable destination.
+- **Why:** Re-review of `e12e5dc`: `sha256OfFile` returning nullopt on an open or read error was treated as a digest mismatch. A transient sharing or I/O failure could therefore delete the only verified copy and close the import as Failed.
+- **Verified:** `recoveryDefersUnreadableCopy` (staged-only and installed-only rows; Windows `FILE_SHARE_DELETE`-only lock) fails on the previous `importservice.cpp` and passes now. `tst_importservice` 21 cases; ctest 8/8 in Debug and Release, and repeated 3 times in each.

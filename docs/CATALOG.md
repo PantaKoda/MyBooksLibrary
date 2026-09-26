@@ -24,10 +24,13 @@
 | `metadata_overrides`, `metadata_override_contributors` | User overrides. No row means **Auto**. `value` holds the user's value; `cleared` means deliberately empty. |
 | `toc_runs`, `toc_entries` | Every TOC run and **every parsed entry**: run-scoped SDK ID, order, title, hierarchy state and parent, printed label, destination state and page, source TOC page, and whether the entry is in the export plan. |
 | `search_books`, `search_toc` | A3's FTS5 projections (derived; see SEARCH.md). |
+| `import_operations` (schema 2) | One row per import attempt: source path, name, size and modification time; phase (`copying`, `verified`, `registered`, `duplicate`, `failed`, `cancelled`, `abandoned`); SHA-256, size and reserved asset ID once verified; the registered or existing book; the error. Open rows (`copying`, `verified`) are recovered at startup (STORAGE.md). |
 
 Constraints enforce the invariants: one book per asset, one asset per SHA-256, a destination page present **iff** its state is `resolved` (page 0 is valid), a parent only for `known_parent`, and unique SDK entry IDs within a run.
 
 ## Migrations
+
+Schema versions: **1** is the catalog, metadata, contents and search projections (M02). **2** adds `import_operations` (M03). A version 1 catalog upgrades in place (`tst_migrations::version1CatalogUpgradesWithDataIntact`).
 
 Migrations live in `catalog/migrations.cpp`. `PRAGMA user_version` records the applied version. Each migration runs in its own transaction together with its `user_version` update:
 
@@ -37,6 +40,7 @@ Migrations live in `catalog/migrations.cpp`. `PRAGMA user_version` records the a
 
 ## Publication rules
 
+- `catalog::completeImport` inserts the asset, the book and its projection and marks the import `registered` in **one transaction**. It fails with `Duplicate`, changing nothing, if the SHA-256 is already catalogued. `registerBook` also reports `Duplicate` (previously `InvalidArgument`).
 - `requestMetadataRun` / `requestTocRun` increment that component's generation and return a `PublishTicket` (book, generation, asset SHA-256).
 - `publishToc` requires `TocAnalysis.outcome == RunIdentity.outcome` (otherwise `InvalidArgument`). The outcome is stored once and read back unchanged.
 - `publishMetadata` / `publishToc` succeed only when all of these hold: the ticket's generation is current (`StaleGeneration` otherwise), the book is not trashed (`Trashed`), and the ticket's and run's digests equal the asset's (`SourceMismatch`). The new run, the active-run pointer, the revision bump and the search projection are written in **one transaction**.

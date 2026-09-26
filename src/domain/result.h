@@ -18,7 +18,8 @@ enum class ErrorCode {
     Database,         // SQL failure; the transaction was rolled back.
     SchemaTooNew,     // Catalog was written by a newer application.
     LibraryLocked,    // Another process holds the library writer lock.
-    Io,               // Filesystem problem opening the library.
+    Io,               // Filesystem problem.
+    Duplicate,        // A book with the same SHA-256 already exists.
 };
 
 struct Error {
