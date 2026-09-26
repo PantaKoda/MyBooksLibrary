@@ -1,6 +1,8 @@
-# Continuous integration: build the Windows application, run the tests and
-# the text checks. The job id `build-and-test` is the required status check;
-# do not rename it without telling the repository owner.
+# Continuous integration: installs Qt and the pdfbookmark SDK, then runs
+# scripts/verify.ps1 -- the same single verification entry point used for
+# local verification (text checks, build, tests, application smoke checks).
+# The job id `build-and-test` is the required status check; do not rename it
+# without telling the repository owner.
 name: CI
 
 on:
@@ -43,20 +45,6 @@ jobs:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
-      - name: Whitespace check (all tracked files)
-        run: |
-          # Diff against Git's empty tree: checks every tracked file (binary PDFs excluded by .gitattributes).
-          git diff --check 4b825dc642cb6eb9a060e54bf8d69288fbee4904 HEAD
-          if ($LASTEXITCODE -ne 0) { throw "Whitespace errors (git diff --check)." }
-
-      - name: Text file check (UTF-8, no control characters)
-        run: python tools/check_text_files.py
-
-      - name: MSVC x64 developer environment
-        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756  # v1.13.0
-        with:
-          arch: x64
-
       - name: Install Qt with Qt PDF
         uses: jurplel/install-qt-action@a9c63c7c123f3069cff414e7e482d95dfa9d8125  # v4.4.1
         with:
@@ -86,41 +74,8 @@ jobs:
           Expand-Archive -Path $zip -DestinationPath .deps/pdfbookmark-sdk-extract
           Move-Item ".deps/pdfbookmark-sdk-extract/pdfbookmark-$v-win64" .deps/pdfbookmark-sdk
 
-      - name: Ninja
-        run: |
-          if (-not (Get-Command ninja -ErrorAction SilentlyContinue)) {
-            python -m pip install --disable-pip-version-check ninja==1.13.0
-          }
-          ninja --version
-          cmake --version
-
-      - name: Configure (Release)
+      - name: Verify (scripts/verify.ps1)
         run: >
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-          "-DCMAKE_PREFIX_PATH=$env:QT_ROOT_DIR"
-          "-DPDFBOOKMARK_SDK=$env:GITHUB_WORKSPACE/.deps/pdfbookmark-sdk"
-          -Wno-dev
-
-      - name: Build
-        run: cmake --build build
-
-      - name: Test
-        run: ctest --test-dir build --output-on-failure --timeout 600
-
-      - name: Application smoke checks
-        env:
-          QT_QPA_PLATFORM: offscreen
-        run: |
-          $app = "build/appMyBooksLibrary.exe"
-          $fixtures = "tests/fixtures"
-          function Invoke-Check([string]$name, [string[]]$arguments) {
-            # Capturing the output also waits for this GUI-subsystem executable.
-            $output = & $app @arguments 2>&1 | Out-String
-            $code = $LASTEXITCODE
-            Write-Host "---- $name (exit $code)"
-            Write-Host $output
-            if ($code -ne 0) { throw "$name failed with exit code $code" }
-          }
-          Invoke-Check "sdk-check" @("--sdk-check", "$fixtures/title-page.pdf")
-          Invoke-Check "sqlite-check" @("--sqlite-check")
-          Invoke-Check "reader-check (text PDF)" @("--reader-check", "$fixtures/contents-book.pdf", "--rounds", "3")
+          ./scripts/verify.ps1 -Configuration Release
+          -QtDir "$env:QT_ROOT_DIR"
+          -SdkDir "$env:GITHUB_WORKSPACE/.deps/pdfbookmark-sdk"
