@@ -11,7 +11,7 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | M03 Import/library shell | Merged: part 1 [PR #6](https://github.com/PantaKoda/MyBooksLibrary/pull/6) (merge `515ff43`); part 2 [PR #7](https://github.com/PantaKoda/MyBooksLibrary/pull/7) (merge `f39b141`) | `feat/m03-a1-managed-import`; `feat/m03-presentation-library-shell` | See "M03" |
 | M04 Metadata jobs | Merged: part 1 [PR #9](https://github.com/PantaKoda/MyBooksLibrary/pull/9) (merge `6b5d740`); part 2 [PR #10](https://github.com/PantaKoda/MyBooksLibrary/pull/10) (merge `578e951`) | `feat/m04-a4-metadata-jobs`; `feat/m04-presentation-metadata-jobs` | See "M04" |
 | SDK 0.3.0 update | Merged | `chore/sdk-0.3.0` / [PR #11](https://github.com/PantaKoda/MyBooksLibrary/pull/11), merge `a4b7d59` | See "SDK 0.3.0 update" |
-| M05 Contents | Part 1 AwaitingReview (contents jobs, one SDK call per book); part 2 NotStarted (inspector and contents tree) | `feat/m05-a4-contents-analysis` | See "M05" |
+| M05 Contents | Part 1 AwaitingReview ([PR #12](https://github.com/PantaKoda/MyBooksLibrary/pull/12), contents jobs, one SDK call per book); part 2 NotStarted (inspector and contents tree) | `feat/m05-a4-contents-analysis` | See "M05" |
 | M06–M11 | NotStarted | | |
 
 ## M05 — Contents
