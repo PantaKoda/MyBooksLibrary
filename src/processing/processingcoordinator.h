@@ -34,14 +34,31 @@ struct Recovery {
     QStringList removedReports;  // Relative paths of unpublished reports.
 };
 
+// Cancel flags of claimed jobs, shared with database tasks so a cancel
+// recorded there reaches the SDK call even if the claim came first.
+class CancelFlags {
+public:
+    std::shared_ptr<std::atomic_bool> get(const domain::JobId& id);  // Created raised after stopAll().
+    void raise(const domain::JobId& id);                            // Creates it raised if absent.
+    void raiseExisting(const domain::JobId& id);
+    void raiseAll();
+    void stopAll();
+    void drop(const domain::JobId& id);
+
+private:
+    QMutex m_mutex;
+    bool m_stopped = false;
+    QHash<domain::JobId, std::shared_ptr<std::atomic_bool>> m_flags;
+};
+
 class ProcessingCoordinator : public QObject {
     Q_OBJECT
 
 public:
     ProcessingCoordinator(catalog::Library& library, std::shared_ptr<MetadataExtractor> metadata,
                           QObject* parent = nullptr);
-    // Stops the worker: cancels the running job and waits for it. Only for
-    // teardown; the window waits for !busy() first (cancelAll + idle).
+    // stop(), then waits for the worker. Only for teardown: the window calls
+    // stop() and waits for !busy() (idle) first, staying responsive.
     ~ProcessingCoordinator() override;
 
     // Closes jobs a previous process left Running (Interrupted, and queues a
@@ -53,8 +70,14 @@ public:
     // jobChanged() reports the queued job.
     void enqueueMetadata(const domain::BookId& book);
     void cancelJob(const domain::JobId& job);
-    void cancelAll();   // Cancels running and queued jobs.
+    void cancelAll();   // User "Cancel all": cancels running and queued jobs.
     void start();       // Starts the worker if it is not running.
+
+    // Application shutdown, not a user cancel: stops the running SDK call and
+    // claims no more jobs. Queued jobs stay queued; a job stopped this way is
+    // closed as Interrupted and requeued, so the next session resumes it.
+    // Final: start() does nothing afterwards.
+    void stop();
 
     bool busy() const { return m_running.load(); }
 
@@ -70,8 +93,6 @@ private:
     bool processNext();             // Worker thread; false when nothing is queued.
     void runMetadataJob(const domain::JobRecord& job);
     void emitJob(const domain::JobId& id);  // Reloads and emits on the owner thread.
-    std::shared_ptr<std::atomic_bool> flagFor(const domain::JobId& id);
-    void dropFlag(const domain::JobId& id);
 
     catalog::Library& m_library;
     storage::LibraryLayout m_layout;
@@ -80,8 +101,7 @@ private:
     std::atomic_bool m_running{false};
     std::atomic_bool m_wake{false};
     std::atomic_bool m_stop{false};
-    QMutex m_flagsMutex;
-    QHash<domain::JobId, std::shared_ptr<std::atomic_bool>> m_flags;  // Cancel flags of claimed jobs.
+    std::shared_ptr<CancelFlags> m_flags = std::make_shared<CancelFlags>();
 };
 
 } // namespace mbl::processing

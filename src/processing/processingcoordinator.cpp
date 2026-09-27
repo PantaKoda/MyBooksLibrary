@@ -7,6 +7,7 @@
 
 #include <QMetaObject>
 #include <QMutexLocker>
+#include <QScopeGuard>
 
 #include <exception>
 
@@ -34,13 +35,14 @@ ProcessingCoordinator::ProcessingCoordinator(catalog::Library& library, std::sha
 
 ProcessingCoordinator::~ProcessingCoordinator()
 {
-    m_stop.store(true);
-    {
-        QMutexLocker lock(&m_flagsMutex);
-        for (const auto& flag : std::as_const(m_flags))
-            flag->store(true);
-    }
+    stop();
     m_pool.waitForDone();
+}
+
+void ProcessingCoordinator::stop()
+{
+    m_stop.store(true);
+    m_flags->stopAll();
 }
 
 QFuture<Result<Recovery>> ProcessingCoordinator::recover()
@@ -79,13 +81,16 @@ void ProcessingCoordinator::enqueueMetadata(const BookId& book)
 
 void ProcessingCoordinator::cancelJob(const JobId& id)
 {
-    // Set the flag first so a running SDK call stops as soon as possible.
-    {
-        QMutexLocker lock(&m_flagsMutex);
-        if (const auto flag = m_flags.value(id))
-            flag->store(true);
-    }
-    m_library.run([id](QSqlDatabase& db) { return catalog::requestJobCancel(db, id); })
+    // Raise a claimed job's flag at once so its SDK call stops early...
+    m_flags->raiseExisting(id);
+    // ...and again where the cancel is recorded: the worker may claim the job
+    // after the line above but before this task runs.
+    m_library.run([id, flags = m_flags](QSqlDatabase& db) {
+                 auto job = catalog::requestJobCancel(db, id);
+                 if (job && job.value().state == JobState::CancelRequested)
+                     flags->raise(id);
+                 return job;
+             })
         .then(this, [this](const Result<JobRecord>& job) {
             if (job)
                 emit jobChanged(job.value());
@@ -94,19 +99,18 @@ void ProcessingCoordinator::cancelJob(const JobId& id)
 
 void ProcessingCoordinator::cancelAll()
 {
-    {
-        QMutexLocker lock(&m_flagsMutex);
-        for (const auto& flag : std::as_const(m_flags))
-            flag->store(true);
-    }
-    m_library.run([](QSqlDatabase& db) -> QList<JobRecord> {
+    m_flags->raiseAll();
+    m_library.run([flags = m_flags](QSqlDatabase& db) -> QList<JobRecord> {
                  QList<JobRecord> changed;
                  auto open = catalog::listJobs(db, true);
                  if (!open)
                      return changed;
                  for (const JobRecord& j : open.value()) {
-                     if (auto after = catalog::requestJobCancel(db, j.id))
+                     if (auto after = catalog::requestJobCancel(db, j.id)) {
+                         if (after.value().state == JobState::CancelRequested)
+                             flags->raise(j.id);  // See cancelJob().
                          changed << after.value();
+                     }
                  }
                  return changed;
              })
@@ -131,7 +135,19 @@ void ProcessingCoordinator::runLoop()
 {
     for (;;) {
         m_wake.store(false);
-        while (!m_stop.load() && processNext()) {
+        bool more = true;
+        while (more && !m_stop.load()) {
+            // Worker boundary: nothing may escape into the pool. A job left
+            // Running here is closed by recover() in the next session.
+            try {
+                more = processNext();
+            } catch (const std::exception& e) {
+                qWarning("Processing worker stopped by an unexpected error: %s", e.what());
+                more = false;
+            } catch (...) {
+                qWarning("Processing worker stopped by an unexpected error.");
+                more = false;
+            }
         }
         m_running.store(false);
         // A start() that raced with the last empty check set m_wake: go again.
@@ -152,7 +168,8 @@ bool ProcessingCoordinator::processNext()
     if (!claimed || !claimed.value())
         return false;
     const JobRecord job = *claimed.value();
-    flagFor(job.id);
+    m_flags->get(job.id);
+    const auto dropFlag = qScopeGuard([&] { m_flags->drop(job.id); });
     emitJob(job.id);
     try {
         switch (job.kind) {
@@ -177,7 +194,6 @@ bool ProcessingCoordinator::processNext()
                                       QStringLiteral("Unexpected error."));
         }));
     }
-    dropFlag(job.id);
     emitJob(job.id);
     return true;
 }
@@ -196,12 +212,20 @@ void ProcessingCoordinator::runMetadataJob(const JobRecord& job)
         return;
     }
     const QString pdf = m_layout.absolute(details.value().asset.managedPath);
-    const auto cancel = flagFor(job.id);
+    const auto cancel = m_flags->get(job.id);
 
     // The SDK call: the only long-running step, on this worker thread.
     const MetadataExtraction result = m_metadata->extract(pdf, *cancel);
 
-    if (result.status == MetadataExtraction::Status::Cancelled || cancel->load()) {
+    // Read once: stop() sets m_stop before raising the flags, so a call stopped
+    // by shutdown is always seen as such here.
+    const bool stopping = m_stop.load();
+    if (stopping && result.status != MetadataExtraction::Status::Completed) {
+        // Stopped by shutdown, not by the user: requeue it for the next session.
+        wait(m_library.run([id = job.id](QSqlDatabase& db) { return catalog::interruptJob(db, id); }));
+        return;
+    }
+    if (!stopping && (result.status == MetadataExtraction::Status::Cancelled || cancel->load())) {
         finish(JobState::Cancelled, QStringLiteral("cancelled"), QStringLiteral("Cancelled."));
         return;
     }
@@ -267,18 +291,45 @@ void ProcessingCoordinator::emitJob(const JobId& id)
     QMetaObject::invokeMethod(this, [this, record = job.value()] { emit jobChanged(record); }, Qt::QueuedConnection);
 }
 
-std::shared_ptr<std::atomic_bool> ProcessingCoordinator::flagFor(const JobId& id)
+std::shared_ptr<std::atomic_bool> CancelFlags::get(const JobId& id)
 {
-    QMutexLocker lock(&m_flagsMutex);
+    QMutexLocker lock(&m_mutex);
     auto& flag = m_flags[id];
     if (!flag)
-        flag = std::make_shared<std::atomic_bool>(m_stop.load());
+        flag = std::make_shared<std::atomic_bool>(m_stopped);
     return flag;
 }
 
-void ProcessingCoordinator::dropFlag(const JobId& id)
+void CancelFlags::raise(const JobId& id)
 {
-    QMutexLocker lock(&m_flagsMutex);
+    get(id)->store(true);
+}
+
+void CancelFlags::raiseExisting(const JobId& id)
+{
+    QMutexLocker lock(&m_mutex);
+    if (const auto flag = m_flags.value(id))
+        flag->store(true);
+}
+
+void CancelFlags::raiseAll()
+{
+    QMutexLocker lock(&m_mutex);
+    for (const auto& flag : std::as_const(m_flags))
+        flag->store(true);
+}
+
+void CancelFlags::stopAll()
+{
+    QMutexLocker lock(&m_mutex);
+    m_stopped = true;
+    for (const auto& flag : std::as_const(m_flags))
+        flag->store(true);
+}
+
+void CancelFlags::drop(const JobId& id)
+{
+    QMutexLocker lock(&m_mutex);
     m_flags.remove(id);
 }
 

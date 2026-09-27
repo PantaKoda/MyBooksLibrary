@@ -9,6 +9,7 @@
 #include "storage/reportstore.h"
 
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QSignalSpy>
 #include <QSqlQuery>
@@ -17,6 +18,7 @@
 #include <QThread>
 
 #include <functional>
+#include <stdexcept>
 
 using namespace mbl::domain;
 using mbl::catalog::Library;
@@ -103,7 +105,13 @@ private slots:
     void recoveryRemovesOnlyUnpublishedReports();
     void queuedJobOfTrashedBookNeverRuns();
     void metadataJobsRunBeforeTocJobs();
-    void destructionDuringAJobCancelsIt();
+    void destructionDuringAJobInterruptsIt();
+    void stopKeepsWorkForRestart();
+    void stopDoesNotDiscardACompletedResult();
+    void retryWhileCancellingIsNotLost();
+    void cancelRacingTheClaimReachesTheSdk();
+    void cancelAllCancelsRunningAndQueued();
+    void extractorExceptionFailsTheJob();
 
 private:
     template <typename Task>
@@ -493,7 +501,9 @@ void TestProcessingCoordinator::metadataJobsRunBeforeTocJobs()
     QCOMPARE(order, (QList<JobKind>{JobKind::Metadata, JobKind::Metadata, JobKind::Toc}));
 }
 
-void TestProcessingCoordinator::destructionDuringAJobCancelsIt()
+// Closing the application is not a user cancel: the running job is
+// requeued and the next session runs it.
+void TestProcessingCoordinator::destructionDuringAJobInterruptsIt()
 {
     const BookId book = importBook("title-page.pdf");
     auto never = std::make_shared<std::atomic_bool>(false);
@@ -509,8 +519,194 @@ void TestProcessingCoordinator::destructionDuringAJobCancelsIt()
         c.enqueueMetadata(book);
         QTRY_VERIFY_WITH_TIMEOUT(m_fake->started.load(), 10000);
         id = db([](QSqlDatabase& d) { return catalog::listJobs(d, true); }).value().first().id;
-    }  // The destructor cancels and waits; it must not hang.
+    }  // The destructor stops and waits; it must not hang.
+    QCOMPARE(jobOf(id).state, JobState::Interrupted);
+    const auto open = db([](QSqlDatabase& d) { return catalog::listJobs(d, true); }).value();
+    QCOMPARE(open.size(), 1);
+    QCOMPARE(open.first().state, JobState::Queued);
+    QVERIFY(open.first().id != id);
+}
+
+// The documented close path: stop(), wait for !busy(), destroy. Nothing is
+// lost: the running job is requeued, the queued one stays queued.
+void TestProcessingCoordinator::stopKeepsWorkForRestart()
+{
+    const BookId a = importBook("title-page.pdf");
+    const BookId b = importBook("contents-book.pdf");
+    auto never = std::make_shared<std::atomic_bool>(false);
+    m_fake->behavior = [never](const QString&, const std::atomic_bool& cancel) {
+        waitFor(*never, cancel, true);
+        MetadataExtraction r;
+        r.status = MetadataExtraction::Status::Cancelled;
+        return r;
+    };
+    {
+        ProcessingCoordinator c(*m_library, m_fake);
+        QSignalSpy idle(&c, &ProcessingCoordinator::idle);
+        c.enqueueMetadata(a);
+        c.enqueueMetadata(b);
+        QTRY_VERIFY_WITH_TIMEOUT(m_fake->started.load(), 10000);
+        QTRY_COMPARE_WITH_TIMEOUT(db([](QSqlDatabase& d) { return catalog::listJobs(d, true); }).value().size(), 2, 5000);
+        c.stop();
+        QTRY_VERIFY_WITH_TIMEOUT(!c.busy(), 10000);
+        QTRY_VERIFY_WITH_TIMEOUT(idle.size() >= 1, 5000);
+        QCOMPARE(m_fake->calls.load(), 1);  // Nothing more was claimed.
+        c.start();                           // Stopped for good.
+        QVERIFY(!c.busy());
+    }
+    QStringList states;
+    const auto jobs = db([](QSqlDatabase& d) { return catalog::listJobs(d, false); }).value();
+    for (const JobRecord& j : jobs)
+        states << toCode(j.state);
+    states.sort();
+    QCOMPARE(states, (QStringList{QStringLiteral("interrupted"), QStringLiteral("queued"), QStringLiteral("queued")}));
+
+    restartLibrary();
+    m_fake->behavior = [](const QString& p, const std::atomic_bool&) { return success(p, QStringLiteral("After Restart")); };
+    ProcessingCoordinator c(*m_library, m_fake);
+    const auto rec = c.recover().result();
+    QVERIFY(rec);
+    QCOMPARE(rec.value().jobs.interrupted + rec.value().jobs.requeued + rec.value().jobs.cancelled, 0);
+    c.start();
+    QTRY_VERIFY_WITH_TIMEOUT(detailsOf(a).extracted && detailsOf(b).extracted, 10000);
+    QCOMPARE(*detailsOf(a).summary.metadata.title, QStringLiteral("After Restart"));
+}
+
+// A result that completes although stop() was called is still published.
+void TestProcessingCoordinator::stopDoesNotDiscardACompletedResult()
+{
+    const BookId book = importBook("title-page.pdf");
+    auto release = std::make_shared<std::atomic_bool>(false);
+    m_fake->behavior = [release](const QString& p, const std::atomic_bool& cancel) {
+        waitFor(*release, cancel, false);
+        return success(p, QStringLiteral("Finished Anyway"));
+    };
+    ProcessingCoordinator c(*m_library, m_fake);
+    c.enqueueMetadata(book);
+    QTRY_VERIFY_WITH_TIMEOUT(m_fake->started.load(), 10000);
+    c.stop();
+    release->store(true);
+    QTRY_VERIFY_WITH_TIMEOUT(!c.busy(), 10000);
+    const auto title = detailsOf(book).summary.metadata.title;
+    QVERIFY(title.has_value());
+    QCOMPARE(*title, QStringLiteral("Finished Anyway"));
+}
+
+// The user cancels, then asks again before the SDK reaches its next cancel
+// checkpoint: the new request must run, not be absorbed by the dying job.
+void TestProcessingCoordinator::retryWhileCancellingIsNotLost()
+{
+    const BookId book = importBook("title-page.pdf");
+    auto release = std::make_shared<std::atomic_bool>(false);
+    auto first = std::make_shared<std::atomic_bool>(true);
+    m_fake->behavior = [release, first](const QString& p, const std::atomic_bool& cancel) {
+        if (first->exchange(false)) {
+            waitFor(*release, cancel, false);
+            MetadataExtraction r;
+            r.status = MetadataExtraction::Status::Cancelled;
+            return r;
+        }
+        return success(p, QStringLiteral("Retried"));
+    };
+    ProcessingCoordinator c(*m_library, m_fake);
+    QSignalSpy changed(&c, &ProcessingCoordinator::jobChanged);
+    c.enqueueMetadata(book);
+    QTRY_VERIFY_WITH_TIMEOUT(m_fake->started.load(), 10000);
+    const JobId id = db([](QSqlDatabase& d) { return catalog::listJobs(d, true); }).value().first().id;
+    c.cancelJob(id);
+    QTRY_COMPARE_WITH_TIMEOUT(jobOf(id).state, JobState::CancelRequested, 5000);
+    QTest::qWait(50);  // Let the cancel's own jobChanged arrive first.
+    changed.clear();
+    c.enqueueMetadata(book);  // Retry.
+    QTRY_VERIFY_WITH_TIMEOUT(!changed.isEmpty(), 5000);
+    const JobRecord retry = changed.first().at(0).value<JobRecord>();
+    QVERIFY(retry.id != id);
+    QCOMPARE(retry.state, JobState::Queued);
+    release->store(true);
+    QTRY_VERIFY_WITH_TIMEOUT(detailsOf(book).extracted.has_value(), 10000);
+    QCOMPARE(*detailsOf(book).summary.metadata.title, QStringLiteral("Retried"));
     QCOMPARE(jobOf(id).state, JobState::Cancelled);
+    QTRY_COMPARE_WITH_TIMEOUT(jobOf(retry.id).state, JobState::Succeeded, 5000);
+}
+
+// The worker claims the job after cancelJob() checked for a flag but before
+// the cancel is recorded: the SDK call must still see the cancel.
+void TestProcessingCoordinator::cancelRacingTheClaimReachesTheSdk()
+{
+    const BookId book = importBook("title-page.pdf");
+    const JobId id = db([book](QSqlDatabase& d) { return catalog::enqueueJob(d, book, JobKind::Metadata); }).value().id;
+    auto sawCancel = std::make_shared<std::atomic_bool>(false);
+    m_fake->behavior = [sawCancel](const QString& p, const std::atomic_bool& cancel) {
+        QElapsedTimer t;
+        t.start();
+        while (!cancel.load() && t.elapsed() < 5000)
+            QThread::msleep(2);
+        if (cancel.load()) {
+            sawCancel->store(true);
+            MetadataExtraction r;
+            r.status = MetadataExtraction::Status::Cancelled;
+            return r;
+        }
+        return success(p, QStringLiteral("Ran To The End"));
+    };
+    // Hold the database thread so the worker's claim and the cancel queue up
+    // behind it in that order.
+    auto gate = std::make_shared<std::atomic_bool>(false);
+    m_library->run([gate](QSqlDatabase&) {
+        while (!gate->load())
+            QThread::msleep(1);
+        return 0;
+    });
+    ProcessingCoordinator c(*m_library, m_fake);
+    c.start();
+    QTest::qWait(300);  // The worker posts its claim.
+    c.cancelJob(id);    // No flag exists yet.
+    gate->store(true);
+    QTRY_COMPARE_WITH_TIMEOUT(jobOf(id).state, JobState::Cancelled, 10000);
+    QCOMPARE(m_fake->calls.load(), 1);  // Claimed first, as intended.
+    QVERIFY(sawCancel->load());          // Stopped early, not after 5 s.
+    QVERIFY(!detailsOf(book).extracted);
+}
+
+void TestProcessingCoordinator::cancelAllCancelsRunningAndQueued()
+{
+    const BookId a = importBook("title-page.pdf");
+    const BookId b = importBook("contents-book.pdf");
+    auto never = std::make_shared<std::atomic_bool>(false);
+    m_fake->behavior = [never](const QString&, const std::atomic_bool& cancel) {
+        waitFor(*never, cancel, true);
+        MetadataExtraction r;
+        r.status = MetadataExtraction::Status::Cancelled;
+        return r;
+    };
+    ProcessingCoordinator c(*m_library, m_fake);
+    c.enqueueMetadata(a);
+    c.enqueueMetadata(b);
+    QTRY_VERIFY_WITH_TIMEOUT(m_fake->started.load(), 10000);
+    QTRY_COMPARE_WITH_TIMEOUT(db([](QSqlDatabase& d) { return catalog::listJobs(d, true); }).value().size(), 2, 5000);
+    c.cancelAll();
+    QTRY_VERIFY_WITH_TIMEOUT(!c.busy(), 10000);
+    QTRY_VERIFY_WITH_TIMEOUT(db([](QSqlDatabase& d) { return catalog::listJobs(d, true); }).value().isEmpty(), 5000);
+    const auto jobs = db([](QSqlDatabase& d) { return catalog::listJobs(d, false); }).value();
+    for (const JobRecord& j : jobs)
+        QCOMPARE(j.state, JobState::Cancelled);
+    QCOMPARE(m_fake->calls.load(), 1);
+}
+
+void TestProcessingCoordinator::extractorExceptionFailsTheJob()
+{
+    const BookId book = importBook("title-page.pdf");
+    m_fake->behavior = [](const QString&, const std::atomic_bool&) -> MetadataExtraction {
+        throw std::runtime_error("boom");
+    };
+    ProcessingCoordinator c(*m_library, m_fake);
+    const JobRecord job = runToEnd(c, book);
+    QCOMPARE(job.state, JobState::Failed);
+    QCOMPARE(job.outcome, QStringLiteral("exception"));
+    QVERIFY(job.error.contains(QStringLiteral("boom")));
+    // The worker survives and runs the next request.
+    m_fake->behavior = [](const QString& p, const std::atomic_bool&) { return success(p, QStringLiteral("Next")); };
+    QCOMPARE(runToEnd(c, book).state, JobState::Succeeded);
 }
 
 QTEST_GUILESS_MAIN(TestProcessingCoordinator)

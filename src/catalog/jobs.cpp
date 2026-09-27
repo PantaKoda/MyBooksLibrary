@@ -44,11 +44,13 @@ QVariant textOrNull(const QString& text)
     return text.isEmpty() ? QVariant(QMetaType(QMetaType::QString)) : QVariant(text);
 }
 
+// The pending request (queued or running) of that kind, if any. A job whose
+// cancel was requested is ending and never publishes, so it does not count.
 Result<std::optional<JobRecord>> openJobFor(QSqlDatabase& db, const BookId& book, JobKind kind)
 {
     QSqlQuery q(db);
     q.prepare(QStringLiteral("SELECT %1 FROM jobs WHERE book_id = ? AND kind = ? "
-                             "AND state IN ('queued', 'running', 'cancel_requested')")
+                             "AND state IN ('queued', 'running')")
                   .arg(kColumns));
     q.addBindValue(book.toString());
     q.addBindValue(toCode(kind));
@@ -286,6 +288,42 @@ Result<RunId> completeMetadataJob(QSqlDatabase& db, const JobRecord& job, const 
     return runId;
 }
 
+namespace {
+
+// Closes a job whose worker ended without a result (no transaction):
+// CancelRequested -> Cancelled; Running -> Interrupted plus a fresh queued job
+// under a new generation, unless the book is trashed or gone.
+Status closeUnfinished(QSqlDatabase& db, const JobRecord& j, JobRecovery* counts)
+{
+    if (j.state == JobState::CancelRequested) {
+        if (auto s = transition(db, j.id, {JobState::CancelRequested}, JobState::Cancelled, QStringLiteral("cancelled"),
+                                QStringLiteral("Cancelled; the application closed before it stopped."));
+            !s)
+            return s;
+        ++counts->cancelled;
+        return Done{};
+    }
+    if (j.state != JobState::Running)
+        return Done{};
+    if (auto s = transition(db, j.id, {JobState::Running}, JobState::Interrupted, QStringLiteral("interrupted"),
+                            QStringLiteral("The application closed while this job was running."));
+        !s)
+        return s;
+    ++counts->interrupted;
+    auto ticket = detail::bumpGeneration(db, j.book, j.kind == JobKind::Metadata);
+    if (!ticket) {
+        if (ticket.error().code == ErrorCode::Trashed || ticket.error().code == ErrorCode::NotFound)
+            return Done{};
+        return ticket.error();
+    }
+    if (auto inserted = insertQueuedJob(db, ticket.value(), j.kind); !inserted)
+        return inserted.error();
+    ++counts->requeued;
+    return Done{};
+}
+
+} // namespace
+
 Result<JobRecovery> recoverJobs(QSqlDatabase& db)
 {
     Transaction tx(db);
@@ -300,33 +338,28 @@ Result<JobRecovery> recoverJobs(QSqlDatabase& db)
         stuck << readJob(q);
     q.finish();
     for (const JobRecord& j : stuck) {
-        if (j.state == JobState::CancelRequested) {
-            if (auto s = transition(db, j.id, {JobState::CancelRequested}, JobState::Cancelled, QStringLiteral("cancelled"),
-                                    QStringLiteral("Cancelled; the application closed before it stopped."));
-                !s)
-                return s.error();
-            ++recovery.cancelled;
-            continue;
-        }
-        if (auto s = transition(db, j.id, {JobState::Running}, JobState::Interrupted, QStringLiteral("interrupted"),
-                                QStringLiteral("The application closed while this job was running."));
-            !s)
+        if (auto s = closeUnfinished(db, j, &recovery); !s)
             return s.error();
-        ++recovery.interrupted;
-        // Replace it with a fresh request, unless the book is gone to Trash.
-        auto ticket = detail::bumpGeneration(db, j.book, j.kind == JobKind::Metadata);
-        if (!ticket) {
-            if (ticket.error().code == ErrorCode::Trashed || ticket.error().code == ErrorCode::NotFound)
-                continue;
-            return ticket.error();
-        }
-        if (auto inserted = insertQueuedJob(db, ticket.value(), j.kind); !inserted)
-            return inserted.error();
-        ++recovery.requeued;
     }
     if (!tx.commit())
         return sqlError(db, QStringLiteral("commit"));
     return recovery;
+}
+
+Result<JobRecovery> interruptJob(QSqlDatabase& db, const JobId& id)
+{
+    Transaction tx(db);
+    if (!tx.begun())
+        return sqlError(db, QStringLiteral("begin"));
+    auto current = job(db, id);
+    if (!current)
+        return current.error();
+    JobRecovery counts;
+    if (auto s = closeUnfinished(db, current.value(), &counts); !s)
+        return s.error();
+    if (!tx.commit())
+        return sqlError(db, QStringLiteral("commit"));
+    return counts;
 }
 
 Result<QStringList> referencedReportPaths(QSqlDatabase& db)

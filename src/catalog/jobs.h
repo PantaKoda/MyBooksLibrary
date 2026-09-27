@@ -19,8 +19,10 @@
 namespace mbl::catalog {
 
 // Queues a job of `kind` for the book, starting a new request generation for
-// that component. If an open job of that kind already exists, returns it
-// unchanged (no new generation). Fails with Trashed for a trashed book.
+// that component. If a queued or running job of that kind already exists,
+// returns it unchanged (no new generation). A job whose cancel was requested
+// does not count: the new request supersedes it. Fails with Trashed for a
+// trashed book.
 domain::Result<domain::JobRecord> enqueueJob(QSqlDatabase& db, const domain::BookId& book, domain::JobKind kind);
 
 // Takes the next queued job (metadata before TOC, then oldest first), marks it
@@ -54,6 +56,11 @@ struct JobRecovery {
 };
 // Run at startup, before the worker starts.
 domain::Result<JobRecovery> recoverJobs(QSqlDatabase& db);
+
+// Shutdown: closes a job whose SDK call was stopped because the application
+// is closing, as recovery would after a crash (Running -> Interrupted plus a
+// requeued job; CancelRequested -> Cancelled). Terminal jobs are unchanged.
+domain::Result<JobRecovery> interruptJob(QSqlDatabase& db, const domain::JobId& id);
 
 // Report paths (relative to the library root) that metadata and TOC runs
 // reference. Any other file in reports/ belongs to no run.

@@ -178,7 +178,7 @@ QList<Migration> buildMigrations()
             CHECK (state <> 'succeeded' OR run_id IS NOT NULL)))"),
         // At most one open job per book and kind.
         QStringLiteral("CREATE UNIQUE INDEX jobs_one_open ON jobs(book_id, kind) "
-                       "WHERE state IN ('queued', 'running', 'cancel_requested')"),
+                       "WHERE state IN ('queued', 'running')"),
         QStringLiteral("CREATE INDEX jobs_by_state ON jobs(state, created_at)"),
 
         // Evidence, candidates and reasons behind each metadata field of a run

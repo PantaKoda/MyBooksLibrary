@@ -236,3 +236,20 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - The model identity is empty, stored as `''`, when OCR models are unavailable.
   - Evidence is stored as JSON per field, because it is only displayed, never queried.
 - **Verified:** See IMPLEMENTATION_PROGRESS.md, M04 part 1.
+
+## 2026-09-27 — M04 part 1 review fixes (PR #9): shutdown keeps work, retry during cancel, cancel/claim race
+
+- **Change:**
+  - `ProcessingCoordinator::stop()` is the close path. It raises the flags and claims nothing more. A job it stops without a completed result becomes `interrupted` and is requeued at once (`catalog::interruptJob`, which shares its logic with `recoverJobs`). Queued jobs stay queued. `cancelAll()` stays for an explicit user "Cancel all". The destructor calls `stop()`.
+  - A `cancel_requested` job no longer counts as pending. The v3 partial index `jobs_one_open` and `openJobFor` cover only `queued` and `running`, so a retry during a cancel queues a new job under a new generation.
+  - Cancel flags moved to a `CancelFlags` registry shared with database tasks. `cancelJob` and `cancelAll` raise, or create, the flag in the task that records `cancel_requested`.
+  - `runLoop` catches everything that `processNext` lets escape.
+- **Why:**
+  - PR #9 review: the documented close (`cancelAll` → idle → destroy) permanently cancelled all pending work, so the queue survived only crashes.
+  - A retry during a cooperative cancel was absorbed by the dying job.
+  - A cancel recorded after the worker's claim did not reach the SDK call.
+  - AGENTS.md section 8 asks for exceptions to be handled at the worker boundary.
+- **Assumptions:**
+  - Migration 3 is unreleased (PR #9 is not merged), so it is edited in place rather than followed by a v4. A development catalog created from the earlier branch head keeps the wider index. A retry during a cancel there fails with a constraint error; delete such a test library.
+  - An interrupted job is requeued immediately rather than left `running` for `recover()`, so the catalog never shows a job as running when no worker runs it.
+- **Verified:** New tests `stopKeepsWorkForRestart`, `stopDoesNotDiscardACompletedResult`, `destructionDuringAJobInterruptsIt` (replacing `destructionDuringAJobCancelsIt`), `retryWhileCancellingIsNotLost`, `cancelRacingTheClaimReachesTheSdk`, `cancelAllCancelsRunningAndQueued` and `extractorExceptionFailsTheJob`. Reverting each fix makes its tests fail (see IMPLEMENTATION_PROGRESS.md). The `runLoop` catch was checked by inspection only.
