@@ -242,7 +242,12 @@ Pane {
                     implicitHeight: detailsColumn.implicitHeight + 16
                     Layout.fillWidth: true
                     visible: tree.visible
-                    property var entry: pane.inspector.contents.entryAt(tree.selectionModel.currentIndex)
+                    // Rebuilding the tree (another book, a new contents run) clears the
+                    // current index without a signal, so also depend on entryCount, whose
+                    // entriesChanged is emitted on every rebuild: never show an entry of
+                    // the previous tree.
+                    property var entry: pane.inspector.contents.entryCount >= 0
+                                        ? pane.inspector.contents.entryAt(tree.selectionModel.currentIndex) : ({})
                     property bool showTechnical: false
 
                     ColumnLayout {
@@ -251,6 +256,7 @@ Pane {
                         anchors.margins: 8
                         spacing: 2
                         Label {
+                            objectName: "entryHeading"
                             Layout.fillWidth: true
                             text: detailsFrame.entry.title !== undefined
                                   ? qsTr("%1 · %2").arg(detailsFrame.entry.title).arg(detailsFrame.entry.pageText)

@@ -27,10 +27,11 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 
 | Command | Result |
 | --- | --- |
-| `pwsh scripts/verify.ps1 -Clean` (Release) and `-Configuration Debug` | VERIFY PASSED in both; 13/13 `ctest` suites |
+| `pwsh scripts/verify.ps1 -Clean` (Release) and `-Configuration Debug` | VERIFY PASSED in both; 14/14 `ctest` suites |
 | `tst_toctreemodel` (4 cases, model tester) | A parent listed after its child, with a grandchild. A self-reference, a two-entry cycle, a missing parent, and an entry below a cycle member (kept attached). Unknown level. Page texts: index 0 → "Page 1", ambiguous → "Page 5 or 10?", unresolved → "Page not found" with no guessed page. Plain-language details and technical details |
 | `tst_librarycontroller` (21 cases, 2 new) | The inspector shows what processing published: value, source and evidence; candidates capped at five plus "and 2 more"; contents summary and notes; page 0 → "Page 1". A refresh keeps the tree (no reset); a missing book gives a message. Selecting while processing updates when the results publish; a quick second selection drops the first load; clearing the selection empties the pane |
 | Mutations, each reverted | No cycle check, single pass, page shown as the index, stale loads applied, tree rebuilt on every load: each makes its test fail |
+| Review fix (PR #13): the entry details no longer keep the previous book's entry | `tst_inspectorpane` (new) loads the real `BookInspectorPane.qml` offscreen: book A's entry shows "Alpha chapter · Page 1"; after selecting book B the details read "Select an entry…". With the old binding it still showed "Alpha chapter · Page 1" |
 | `qmllint` on the module's `Main.qml` and `BookInspectorPane.qml` | No warnings |
 | `appMyBooksLibrary --import contents-book.pdf --inspect-first --screenshot …` (Debug and Release, real SDK) | Exit 0, no QML warnings. The tree shows 5 entries with "2.1 Installing the Tools" under "2 Getting Started"; "1 Introduction" is "Page 4" (printed "1"), with its reasons |
 
