@@ -35,6 +35,8 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | `appMyBooksLibrary --library <new> --import title-page.pdf --import contents-book.pdf --import image-only.pdf --activity --screenshot …` (Debug and Release, real SDK and models) | Exit 0. "Practical Library Engineering" resolved; the other two ambiguous, shown as "Title uncertain"; `image-only.pdf` read by OCR (model identity recorded); page counts 3, 27 and 4; three reports; 15 field-detail rows; no QML warnings on stderr |
 | Close (`CloseMainWindow`) while OCR runs on `image-only.pdf`, then restart (scripted) | Debug: closed after 8.7 s; Release: after 6.8 s. Exit 0 and responding throughout in both. Jobs `interrupted` + `queued`; after restart `succeeded/published` |
 
+| Review fixes (PR #10) | `tst_catalog::latestJobsPicksTheNewestPerBookAndKind` (3000 books × 3 jobs: one newest row per book, under a 3 s guard; the old query took 8.0 s there), `tst_librarycontroller::pendingCountIncludesTheWholeBacklog` (150 of 150 waiting jobs counted and listed) and `refreshesAreCoalesced` (20 calls, 2 reloads). Each fails with its fix reverted |
+
 **Found and fixed while testing:**
 - QML `String.arg()` takes one argument, so the activity detail line was blank. The calls are now chained, with the free-text error substituted last.
 - Ambiguous titles were shown as "No title found". `BookSummary.extractedTitleStatus` now tells them apart.

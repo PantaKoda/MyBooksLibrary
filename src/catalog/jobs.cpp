@@ -370,8 +370,11 @@ Result<JobRecovery> interruptJob(QSqlDatabase& db, const JobId& id)
 Result<QList<JobRecord>> latestJobs(QSqlDatabase& db)
 {
     QSqlQuery q(db);
-    if (!q.exec(QStringLiteral("SELECT %1 FROM jobs j WHERE j.rowid = (SELECT rowid FROM jobs "
-                               "WHERE book_id = j.book_id AND kind = j.kind ORDER BY created_at DESC, rowid DESC LIMIT 1)")
+    // One pass with a window function. A correlated subquery per row is
+    // quadratic: no index covers (book_id, kind, created_at), and this runs on
+    // every library refresh.
+    if (!q.exec(QStringLiteral("SELECT %1 FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY book_id, kind "
+                               "ORDER BY created_at DESC, rowid DESC) AS latest FROM jobs) WHERE latest = 1")
                     .arg(kColumns)))
         return sqlError(q);
     QList<JobRecord> jobs;

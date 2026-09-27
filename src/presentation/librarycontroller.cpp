@@ -237,16 +237,31 @@ void LibraryController::refresh()
 {
     if (!m_library)
         return;
-    setBusyFlags([this] { ++m_refreshesPending; });
+    // Imports and publications each ask for a reload. Keep one in flight and
+    // at most one more pending, so the database thread (shared with the
+    // processing worker) and closing never wait behind a backlog of reloads.
+    if (m_refreshInFlight) {
+        m_refreshAgain = true;
+        return;
+    }
+    setBusyFlags([this] { m_refreshInFlight = true; });
+    runRefresh();
+}
+
+void LibraryController::runRefresh()
+{
     struct Snapshot {
         domain::Result<QList<domain::BookSummary>> books;
         domain::Result<QList<domain::JobRecord>> latest;
         domain::Result<QList<domain::JobRecord>> recent;
+        domain::Result<QList<domain::JobRecord>> open;
     };
     m_library
         ->run([](QSqlDatabase& db) {
+            // Recent jobs for the activity list, plus every open job however
+            // old, so waiting counts and per-job Cancel are complete.
             return Snapshot{catalog::listBooks(db, domain::Lifecycle::Active), catalog::latestJobs(db),
-                            catalog::listJobs(db, false, 100)};
+                            catalog::listJobs(db, false, 100), catalog::listJobs(db, true, -1)};
         })
         .then(this, [this](const Snapshot& snapshot) {
             if (snapshot.books) {
@@ -259,12 +274,19 @@ void LibraryController::refresh()
             // snapshot; both models merge and keep the newer one (updatedAt).
             if (snapshot.latest)
                 m_books.setLatestJobs(snapshot.latest.value());
-            if (snapshot.recent) {
-                for (const domain::JobRecord& job : snapshot.recent.value())
-                    m_jobs.upsert(job);
+            for (const auto* jobs : {&snapshot.recent, &snapshot.open}) {
+                if (*jobs) {
+                    for (const domain::JobRecord& job : jobs->value())
+                        m_jobs.upsert(job);
+                }
             }
-            setBusyFlags([this] { --m_refreshesPending; });
             emit booksRefreshed();
+            if (m_refreshAgain && m_library) {
+                m_refreshAgain = false;
+                runRefresh();  // Still in flight: busy stays set.
+                return;
+            }
+            setBusyFlags([this] { m_refreshInFlight = false; });
         });
 }
 

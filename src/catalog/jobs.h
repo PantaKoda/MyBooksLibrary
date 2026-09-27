@@ -72,6 +72,7 @@ domain::Result<QStringList> referencedReportPaths(QSqlDatabase& db);
 
 domain::Result<domain::JobRecord> job(QSqlDatabase& db, const domain::JobId& id);
 // Newest first. `openOnly` restricts to Queued, Running and CancelRequested.
+// A negative `limit` returns every matching job.
 domain::Result<QList<domain::JobRecord>> listJobs(QSqlDatabase& db, bool openOnly, int limit = 200);
 
 domain::Result<QList<domain::MetadataFieldDetail>> metadataDetails(QSqlDatabase& db, const domain::RunId& run);

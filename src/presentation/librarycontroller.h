@@ -86,6 +86,8 @@ public:
     void importFiles(const QStringList& localPaths);
     // Cancels the file being copied and drops queued files.
     Q_INVOKABLE void cancelImports();
+    // Reloads books and jobs. Coalesced: at most one reload runs, and calls
+    // made meanwhile schedule a single further one.
     Q_INVOKABLE void refresh();
 
     // Metadata jobs, by job ID (from the jobs model).
@@ -103,7 +105,7 @@ public:
     bool failed() const { return m_state == State::Failed; }
     bool busy() const
     {
-        return opening() || importing() || m_refreshesPending > 0 || m_recoveringJobs || m_processingBusy;
+        return opening() || importing() || m_refreshInFlight || m_recoveringJobs || m_processingBusy;
     }
     bool importing() const { return m_importTotal > 0; }
     int importTotal() const { return m_importTotal; }
@@ -145,6 +147,7 @@ private:
     void setBusyFlags(const std::function<void()>& change);
     void startProcessing();  // Creates the coordinator, recovers jobs, then starts it.
     void startJobs();        // Starts the worker once recovery has run.
+    void runRefresh();
 
     BookListModel m_books;
     JobListModel m_jobs;
@@ -172,7 +175,8 @@ private:
     int m_importDone = 0;
     QString m_currentFile;
     double m_fileProgress = 0;
-    int m_refreshesPending = 0;
+    bool m_refreshInFlight = false;
+    bool m_refreshAgain = false;
     BatchSummary m_batch;
     BatchSummary m_lastBatch;
 };

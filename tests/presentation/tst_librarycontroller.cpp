@@ -1,6 +1,7 @@
 // Presentation: the library session opens, recovers and imports off the GUI
 // thread, runs metadata jobs, and updates its models only on the GUI thread.
 #include "app/libraryroot.h"
+#include "catalog/catalog.h"
 #include "catalog/jobs.h"
 #include "catalog/library.h"
 #include "presentation/booklistmodel.h"
@@ -106,6 +107,8 @@ private slots:
     void cancelAndRetryFromTheActivityList();
     void startupRequeuesACrashedJob();
     void withoutAnExtractorJobsWait();
+    void pendingCountIncludesTheWholeBacklog();
+    void refreshesAreCoalesced();
 
 private:
     void openAndWait(LibraryController& c, const QString& root)
@@ -538,6 +541,56 @@ void TestLibraryController::withoutAnExtractorJobsWait()
     QTRY_VERIFY_WITH_TIMEOUT(!c.busy(), 10000);
     QCOMPARE(stateOf(c.books(), 0), QStringLiteral("Waiting to read title and authors"));
     QCOMPARE(c.jobs()->pendingCount(), 1);
+}
+
+// A backlog larger than the "recent jobs" window is counted and listed in
+// full (the snapshot used to hold only the 100 newest jobs).
+void TestLibraryController::pendingCountIncludesTheWholeBacklog()
+{
+    constexpr int kBooks = 150;
+    QTemporaryDir dir;
+    {
+        auto library = mbl::catalog::Library::open(dir.path());
+        QVERIFY(library);
+        const bool seeded = library.value()->run([](QSqlDatabase& db) {
+            for (int i = 0; i < kBooks; ++i) {
+                mbl::domain::NewBook book;
+                book.asset.id = mbl::domain::AssetId::create();
+                book.asset.sha256 = QStringLiteral("%1").arg(i, 64, 10, QLatin1Char('0'));
+                book.asset.byteSize = 1;
+                book.asset.managedPath = QStringLiteral("files/%1/source.pdf").arg(book.asset.id.toString());
+                book.originalFileName = QStringLiteral("book %1.pdf").arg(i);
+                book.originalPath = book.originalFileName;
+                auto id = mbl::catalog::registerBook(db, book);
+                if (!id || !mbl::catalog::enqueueJob(db, id.value(), mbl::domain::JobKind::Metadata))
+                    return false;
+            }
+            return true;
+        }).result();
+        QVERIFY(seeded);
+    }
+    LibraryController c;  // No extractor: the jobs wait.
+    openAndWait(c, dir.path());
+    QCOMPARE(c.books()->rowCount(), kBooks);
+    QCOMPARE(c.jobs()->pendingCount(), kBooks);
+    QCOMPARE(c.jobs()->rowCount(), kBooks);
+    QVERIFY2(c.jobs()->summary().contains(QStringLiteral("150")), qPrintable(c.jobs()->summary()));
+}
+
+void TestLibraryController::refreshesAreCoalesced()
+{
+    QTemporaryDir dir;
+    LibraryController c;
+    openAndWait(c, dir.path());
+    QSignalSpy refreshed(&c, &LibraryController::booksRefreshed);
+    for (int i = 0; i < 20; ++i)
+        c.refresh();
+    QVERIFY(c.busy());
+    QTRY_VERIFY_WITH_TIMEOUT(!c.busy(), 10000);
+    QCOMPARE(refreshed.size(), 2);  // The first, and one for all the calls made meanwhile.
+    c.refresh();
+    QTRY_VERIFY_WITH_TIMEOUT(!c.busy(), 10000);
+    QCOMPARE(refreshed.size(), 3);
 }
 
 QTEST_GUILESS_MAIN(TestLibraryController)
