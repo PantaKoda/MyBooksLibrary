@@ -265,6 +265,11 @@ void TestSearchController::paginatesByBook()
     QTRY_COMPARE_WITH_TIMEOUT(applied.size(), 2, 5000);
     QCOMPARE(s.results()->rowCount(), kBooks);
     QVERIFY(!s.canLoadMore());
+    // A background re-run (after a publication) keeps the pages already loaded.
+    s.refresh();
+    QTRY_COMPARE_WITH_TIMEOUT(applied.size(), 3, 5000);
+    QCOMPARE(s.results()->rowCount(), kBooks);
+    QVERIFY(!s.canLoadMore());
 }
 
 QTEST_GUILESS_MAIN(TestSearchController)

@@ -51,7 +51,8 @@ public:
 
     Q_INVOKABLE void clear();
     Q_INVOKABLE void loadMore();
-    // Runs the current query now (e.g. after processing published new titles).
+    // Runs the current query now (e.g. after processing published new titles),
+    // keeping as many results as are loaded (pages added with "Show more").
     Q_INVOKABLE void refresh();
 
 signals:
@@ -62,7 +63,7 @@ signals:
     void responseApplied();  // The newest response was applied (tests, views).
 
 private:
-    void run(int offset);
+    void run(int offset, int limit = kPageSize);
     void apply(const domain::SearchResponse& response, int offset, const QString& error);
     void setSearching(bool searching);
     void setStatus(const QString& text);

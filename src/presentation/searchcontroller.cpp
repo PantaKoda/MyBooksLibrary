@@ -91,11 +91,11 @@ void SearchController::refresh()
 {
     if (active()) {
         m_debounce.stop();
-        run(0);
+        run(0, qMax(kPageSize, int(m_results.rowCount())));
     }
 }
 
-void SearchController::run(int offset)
+void SearchController::run(int offset, int limit)
 {
     if (!m_library || !active())
         return;
@@ -103,7 +103,7 @@ void SearchController::run(int offset)
     request.text = m_text;
     request.scope = m_scope;
     request.offset = offset;
-    request.limit = kPageSize;
+    request.limit = limit;
     request.generation = ++m_generation;
     setSearching(true);
     m_library

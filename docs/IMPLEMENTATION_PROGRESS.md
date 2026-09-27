@@ -29,10 +29,11 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 
 | Command | Result |
 | --- | --- |
-| `pwsh scripts/verify.ps1 -Clean` (Release) and `-Configuration Debug` | VERIFY PASSED in both; 15/15 `ctest` suites |
+| `pwsh scripts/verify.ps1 -Clean` (Release) and `-Configuration Debug` | VERIFY PASSED in both; 16/16 `ctest` suites |
 | `tst_searchcontroller` (new, 6 cases, model tester) | Typing is debounced (nothing runs while typing; one response for "c", "co", "cooking"); with two requests in flight only the newer is applied; `clear()` drops a response in flight. Chapter hits: page index 0 → "Page 1" with the printed label kept; an unresolved entry → "Page not found", no page, "Listed on page 5 of the PDF"; ambiguous → "Page uncertain". "No matches…" and the punctuation-only text; a blank query returns to the book list. Scope re-runs the query; 60 books page as 50 + "Show more" → 60 |
 | `tst_librarycontroller::searchUpdatesWhenContentsArePublished` | A query entered before processing shows the chapter once the contents are published, with "Page 1" and the book's state "Metadata ready · 2 contents entries" |
 | Mutations, each reverted | Stale responses applied, no debounce, no re-run after publications, page shown as the index: each makes its test fail |
+| Review fixes (PR #14) | `tst_searchresultsview` (new) loads the real `SearchResultsView.qml` offscreen: choose book A; a query still matching A keeps it highlighted; a query without A highlights nothing and announces nothing; a re-run bringing A back highlights A. `paginatesByBook`: a refresh after "Show more" keeps 60 results. Removing either fix makes its test fail. The view reads the chosen book from the model, because `currentItem` can still be the old row's delegate right after new results |
 | `qmllint` on the module's QML | No warnings |
 | `appMyBooksLibrary --import (3 fixtures) --search tcp/ip --inspect-first --screenshot …` (Debug and Release, real SDK) | Exit 0, no QML warnings. One contents-only result, `contents-book`: "3 Networking with TCP/IP · Page 15" |
 

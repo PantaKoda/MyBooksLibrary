@@ -57,3 +57,8 @@ target_compile_definitions(tst_inspectorpane PRIVATE MBL_SOURCE_DIR="${PROJECT_S
 
 mbl_add_test(tst_searchcontroller presentation/tst_searchcontroller.cpp)
 target_link_libraries(tst_searchcontroller PRIVATE mbl_presentation)
+
+# Loads the real search results QML (offscreen) against the presentation module.
+mbl_add_test(tst_searchresultsview presentation/tst_searchresultsview.cpp)
+target_link_libraries(tst_searchresultsview PRIVATE mbl_presentation mbl_presentationplugin Qt6::Quick)
+target_compile_definitions(tst_searchresultsview PRIVATE MBL_SOURCE_DIR="${PROJECT_SOURCE_DIR}")

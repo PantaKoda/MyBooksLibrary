@@ -48,6 +48,8 @@ public:
     void statesChanged();  // Books' processing states changed.
 
     static QVariantMap chapterMap(const domain::ChapterHit& hit);
+    Q_INVOKABLE int rowOfBook(const QString& bookId) const;  // -1 when absent.
+    Q_INVOKABLE QString bookIdAt(int row) const;             // Empty when out of range.
 
 signals:
     void countChanged();

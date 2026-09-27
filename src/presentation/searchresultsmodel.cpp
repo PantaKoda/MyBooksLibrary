@@ -93,6 +93,20 @@ QHash<int, QByteArray> SearchResultsModel::roleNames() const
     };
 }
 
+int SearchResultsModel::rowOfBook(const QString& bookId) const
+{
+    for (qsizetype row = 0; row < m_books.size(); ++row) {
+        if (m_books.at(row).book.toString() == bookId)
+            return int(row);
+    }
+    return -1;
+}
+
+QString SearchResultsModel::bookIdAt(int row) const
+{
+    return row >= 0 && row < m_books.size() ? m_books.at(row).book.toString() : QString();
+}
+
 void SearchResultsModel::setResults(QList<BookHit> books)
 {
     const qsizetype before = m_books.size();

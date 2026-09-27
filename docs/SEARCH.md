@@ -53,7 +53,8 @@ Suggested empty-state wording: "No matches in indexed titles and contents."
 - **Newest wins:** each request carries a new generation, and a response is applied only if it is still the newest. `clear()` also drops a response in flight.
 - **Where it runs:** on the database thread; results are applied on the GUI thread.
 - **Pagination:** 50 books per page; "Show more" appends the next page.
-- **Re-runs:** the current query runs again after each book-list refresh (imports and publications), so new titles and contents entries show up.
+- **Re-runs:** the current query runs again after each book-list refresh (imports and publications), so new titles and contents entries show up. A re-run keeps as many results as are loaded, so pages added with "Show more" stay.
+- **Highlight:** the results view remembers the chosen book by ID. When new results arrive (a changed query or a re-run) it highlights that book where it now is, or nothing if it is no longer a result, never whatever book now sits in the same row.
 
 `SearchResultsModel` has one row per book: title, how it matched ("Title or author", "Contents", or both), the book's processing state from the book list (so pending, partial or unavailable metadata and contents are visible), up to five chapter hits, and "and *n* more matching entries".
 

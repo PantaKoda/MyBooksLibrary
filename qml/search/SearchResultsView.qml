@@ -28,9 +28,24 @@ ListView {
         if (selectFirst && count > 0 && currentIndex < 0)
             currentIndex = 0
     }
+    // The chosen book, by ID: new results (a changed query, a background
+    // re-run) keep it highlighted where it now is, or highlight nothing, so
+    // the highlight never lands on another book the inspector is not showing.
+    property string chosenBookId: ""
     onCurrentIndexChanged: {
-        if (currentIndex >= 0 && currentItem)
-            view.bookChosen((currentItem as ResultRow).bookId)
+        // From the model, not currentItem: right after new results the
+        // current delegate may still be the old row's.
+        const bookId = view.search.results.bookIdAt(currentIndex)
+        if (bookId.length > 0) {
+            chosenBookId = bookId
+            view.bookChosen(bookId)
+        }
+    }
+    Connections {
+        target: view.search.results
+        function onModelReset() {
+            view.currentIndex = view.search.results.rowOfBook(view.chosenBookId)
+        }
     }
 
     component ResultRow: ItemDelegate {
