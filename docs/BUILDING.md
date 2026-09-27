@@ -6,7 +6,7 @@
 | --- | --- |
 | Qt | 6.11.2, kit **Desktop Qt 6.11.2 MSVC2022 64bit**. MinGW cannot use the SDK's C++ API. |
 | Compiler | MSVC x64 (Visual Studio 2026), C++17 |
-| pdfbookmark SDK | 0.2.x (`find_package(pdfbookmark 0.2)`), installed folder containing `include/`, `lib/cmake/pdfbookmark/`, `bin/`, `share/` |
+| pdfbookmark SDK | 0.3.x (`find_package(pdfbookmark 0.3)`), installed folder containing `include/`, `lib/cmake/pdfbookmark/`, `bin/`, `share/` |
 
 ## Telling CMake where the SDK is
 
@@ -19,10 +19,10 @@ Configuration fails with a clear message when neither is set. A nonempty cached 
 
 ## Switching SDK versions
 
-Install each SDK version in its own folder (for example `…\pdfbookmark-sdk\0.2.0\`) instead of overwriting the old one, so you can switch back. Then:
+Install each SDK version in its own folder (for example `…\pdfbookmark-sdk\0.3.0\`) instead of overwriting the old one, so you can switch back. Then:
 
 1. Point `PDFBOOKMARK_SDK` at the new folder. In an existing build folder, pass `-DPDFBOOKMARK_SDK=…` again, or change it under Qt Creator's **Projects → Build → CMake → Current Configuration** and run CMake.
-2. **Rebuild from clean**: delete the build folder, or use Qt Creator's **Build → Clear CMake Configuration** and then **Rebuild All**. The C++ API passes option structs by value, and 0.2.0 changed their size. Objects compiled against older headers must not be linked with the new DLL.
+2. **Rebuild from clean**: delete the build folder, or use Qt Creator's **Build → Clear CMake Configuration** and then **Rebuild All**. The C++ API passes option structs by value, and its binary interface is not guaranteed between versions (0.2.0 changed the option structs' size). Objects compiled against older headers must not be linked with the new DLL.
 3. Check with `appMyBooksLibrary --sdk-check`: `sdk.header_version` and `sdk.loaded_version` must be equal.
 
 ## Qt Creator
@@ -93,7 +93,7 @@ On this Windows setup, the Qt Test plain-text logger prints nothing to a console
 It finds MSVC itself (through `vswhere`/`vcvars64` when `cl.exe` is not on `PATH`), along with CMake and Ninja (Qt's `Tools` folder or Visual Studio's). It prints the verified commit and exits 0 only if every step passed.
 
 ```powershell
-pwsh scripts/verify.ps1 -SdkDir C:\Dev\pdfbookmark-sdk\0.2.0              # Release, build\verify-release
+pwsh scripts/verify.ps1 -SdkDir C:\Dev\pdfbookmark-sdk\0.3.0              # Release, build\verify-release
 pwsh scripts/verify.ps1 -Configuration Debug -Clean                        # SDK from PDFBOOKMARK_SDK
 ```
 

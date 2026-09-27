@@ -122,3 +122,7 @@ With about 11 GB of commit headroom left, the **memory-pressure risk above is mu
 In one package run (text PDF, no OCR), the process ended with `0xC0000005` on a Qt Quick worker thread during teardown of `qml_pdf_module`. The stack was Qt6Core thread start → Qt6Quick → Qt6Gui, with no SDK module. It did not recur in 50 further package runs or in 1,500 naive create/destroy cycles (`--qml-cycles 300 --qml-naive-teardown`, 5 processes).
 
 The check now destroys the view before its document (a `Loader` in `ReaderCheckView.qml`), but that is not a proven fix. **M06 must own document lifetime explicitly and stress-test opening and closing books in a visible window.**
+
+## SDK 0.3.0 re-verification (2026-09-27)
+
+All `--reader-check` checks pass against SDK 0.3.0 in Release and Debug (clean builds): render, SDK alone, concurrent viewing, cancel while viewing, shutdown during analysis, QML PDF module and non-ASCII path. 0.3.0 adds only `analyze_book()`; the other headers are unchanged. See IMPLEMENTATION_PROGRESS.md, "SDK 0.3.0 update".

@@ -28,8 +28,8 @@ env:
   AQT_SOURCE: git+https://github.com/miurahr/aqtinstall.git@076e1659807d0b362a3ed684d54c2e9c775eb9c7
   # The pdfbookmark SDK is a public release of PantaKoda/PDFMegine, downloaded
   # at run time and checked against this digest; nothing is committed.
-  PDFBOOKMARK_SDK_VERSION: 0.2.0
-  PDFBOOKMARK_SDK_SHA256: 728f5c5115e77082074e355621dfde810363e7fdc0f844fda578bcc9bdb374e0
+  PDFBOOKMARK_SDK_VERSION: 0.3.0
+  PDFBOOKMARK_SDK_SHA256: 998508d45f28ef36ea1d4ae27840814e81df95fbea1e6f3b5895669aa957e744
 
 jobs:
   build-and-test:

@@ -284,3 +284,18 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - No v4 index: the window function avoids a migration, and SQLite 3.53 through QSQLITE supports it.
   - All open jobs are held in the activity model. That is bounded by the library size, and finished rows are still capped at 200.
 - **Verified:** `tst_catalog::latestJobsPicksTheNewestPerBookAndKind`, `tst_librarycontroller::pendingCountIncludesTheWholeBacklog` and `refreshesAreCoalesced`. Each fails with its fix reverted: the old query took 8.0 s against a 3 s guard in Debug; without the open jobs `pendingCount` is 100 instead of 150; without coalescing, 20 reloads ran instead of 2.
+
+## 2026-09-27 — SDK baseline moves to pdfbookmark 0.3.0
+
+- **Change:**
+  - `find_package(pdfbookmark 0.3 CONFIG REQUIRED)`.
+  - CI downloads `pdfbookmark-sdk-0.3.0-win64.zip`, checked against SHA-256 `998508d4…957e744`.
+  - AGENTS.md records tag `v0.3.0` = `bd46d90` (PR #4, merge `dfcd6f8`).
+  - CLAUDE.md imports the 0.3.0 SDK brief.
+- **Why:**
+  - 0.3.0 adds `analyze_book()`, which runs metadata and TOC analysis on one session and OCRs each page once (PDFMegine issue #3). M05 will use it for the import's processing.
+  - Requiring 0.3 keeps a build from silently picking up 0.2 headers that lack it.
+- **Assumptions:**
+  - The change is additive: only `engine/book.hpp`, the facade's `using` lines, the C API additions and `version.hpp` differ from 0.2.0. No application code changes.
+  - SDK 0.2.0 stays installed next to 0.3.0 for comparison.
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, "SDK 0.3.0 update".
