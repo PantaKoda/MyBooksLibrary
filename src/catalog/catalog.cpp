@@ -276,6 +276,8 @@ Result<Computed> compute(QSqlDatabase& db, const BookRow& row)
     s.displayTitleFromFileName = !s.metadata.title;
     s.displayTitle = s.metadata.title ? *s.metadata.title : fileNameTitle(row.originalFileName);
     s.hasMetadataRun = row.activeMetadataRun.has_value();
+    if (c.extracted)
+        s.extractedTitleStatus = c.extracted->titleStatus;
     s.hasTocRun = row.activeTocRun.has_value();
     s.tocEntryCount = c.toc ? int(c.toc->analysis.entries.size()) : 0;
     return c;

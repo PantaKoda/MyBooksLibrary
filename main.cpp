@@ -3,7 +3,9 @@
 //                                            --library, MYBOOKSLIBRARY_ROOT or the default
 //                                            (src/app/libraryroot.h).
 //                     [--import <pdf>]...    development: import files once the library is open
-//                     [--screenshot <png>]   development: save the window when idle, then quit
+//                     [--screenshot <png>]   development: save the window when idle (imports and
+//                                            metadata jobs finished), then quit
+//                     [--activity]           development: open with the activity panel shown
 //   appMyBooksLibrary --sdk-check [<pdf>]    no window: print the pdfbookmark SDK identity and,
 //                                            with a PDF, its identity and extracted title.
 //                                            Exit 0 on success, 1 on an SDK error.
@@ -21,6 +23,7 @@
 #include "app/libraryroot.h"
 #include "infrastructure/sqlitecapabilities.h"
 #include "processing/sdk/sdkinfo.h"
+#include "processing/sdk/sdkmetadataextractor.h"
 #include "presentation/librarycontroller.h"
 #include "reader/readercheck.h"
 
@@ -159,8 +162,10 @@ int main(int argc, char *argv[])
     QCoreApplication::setApplicationName(QStringLiteral("MyBooksLibrary"));
     const QStringList args = QCoreApplication::arguments();
 
-    // Composition root: the library session and its window.
+    // Composition root: the library session, its SDK extractor and its window.
     mbl::presentation::LibraryController library;
+    library.setMetadataExtractor(std::make_shared<mbl::sdk::SdkMetadataExtractor>(),
+                                 mbl::sdk::querySdkIdentity().modelsFound);
     QQmlApplicationEngine engine;
     QObject::connect(
         &engine,
@@ -177,9 +182,12 @@ int main(int argc, char *argv[])
     library.open(root.path);
 
     // Development smoke mode: --import <pdf> (repeatable) queues files once the
-    // library is ready; --screenshot <png> saves the window when idle and quits.
+    // library is ready; --screenshot <png> saves the window when idle and quits;
+    // --activity shows the activity panel.
     QStringList imports;
     QString screenshot;
+    if (args.contains(QLatin1String("--activity")))
+        engine.rootObjects().constFirst()->setProperty("showActivity", true);
     for (qsizetype i = 1; i + 1 < args.size(); ++i) {
         if (args.at(i) == QLatin1String("--import"))
             imports << args.at(i + 1);

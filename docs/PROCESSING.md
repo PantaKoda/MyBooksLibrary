@@ -1,5 +1,7 @@
 # Processing coordinator (A4)
 
+In the application, `presentation::LibraryController` owns the coordinator; see UI.md. Each import queues its book's first metadata job **in the import transaction** (`catalog::completeImport`, through `detail::queueJob`), so a crash right after an import cannot lose the request. The controller creates the coordinator when the library opens, runs `recover()`, then `start()`, and calls `start()` again after each import.
+
 `processing::ProcessingCoordinator` runs the durable processing jobs. M04 part 1 covers metadata jobs. TOC jobs (M05) use the same queue; until then a claimed TOC job fails with outcome `unsupported`.
 
 ## Threads

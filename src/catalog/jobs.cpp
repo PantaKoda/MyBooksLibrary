@@ -138,11 +138,8 @@ QString compact(const QJsonArray& array)
 
 } // namespace
 
-Result<JobRecord> enqueueJob(QSqlDatabase& db, const BookId& book, JobKind kind)
+Result<JobRecord> detail::queueJob(QSqlDatabase& db, const BookId& book, JobKind kind)
 {
-    Transaction tx(db);
-    if (!tx.begun())
-        return sqlError(db, QStringLiteral("begin"));
     auto open = openJobFor(db, book, kind);
     if (!open)
         return open.error();
@@ -151,12 +148,20 @@ Result<JobRecord> enqueueJob(QSqlDatabase& db, const BookId& book, JobKind kind)
     auto ticket = detail::bumpGeneration(db, book, kind == JobKind::Metadata);
     if (!ticket)
         return ticket.error();
-    auto inserted = insertQueuedJob(db, ticket.value(), kind);
-    if (!inserted)
-        return inserted;
+    return insertQueuedJob(db, ticket.value(), kind);
+}
+
+Result<JobRecord> enqueueJob(QSqlDatabase& db, const BookId& book, JobKind kind)
+{
+    Transaction tx(db);
+    if (!tx.begun())
+        return sqlError(db, QStringLiteral("begin"));
+    auto queued = detail::queueJob(db, book, kind);
+    if (!queued)
+        return queued;
     if (!tx.commit())
         return sqlError(db, QStringLiteral("commit"));
-    return inserted;
+    return queued;
 }
 
 Result<std::optional<JobRecord>> claimNextJob(QSqlDatabase& db)
@@ -360,6 +365,19 @@ Result<JobRecovery> interruptJob(QSqlDatabase& db, const JobId& id)
     if (!tx.commit())
         return sqlError(db, QStringLiteral("commit"));
     return counts;
+}
+
+Result<QList<JobRecord>> latestJobs(QSqlDatabase& db)
+{
+    QSqlQuery q(db);
+    if (!q.exec(QStringLiteral("SELECT %1 FROM jobs j WHERE j.rowid = (SELECT rowid FROM jobs "
+                               "WHERE book_id = j.book_id AND kind = j.kind ORDER BY created_at DESC, rowid DESC LIMIT 1)")
+                    .arg(kColumns)))
+        return sqlError(q);
+    QList<JobRecord> jobs;
+    while (q.next())
+        jobs << readJob(q);
+    return jobs;
 }
 
 Result<QStringList> referencedReportPaths(QSqlDatabase& db)

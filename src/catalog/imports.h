@@ -27,7 +27,8 @@ domain::Status markImportVerified(QSqlDatabase& db, const domain::ImportId& id, 
                                   qint64 byteSize, const domain::AssetId& assetId);
 
 // Verified -> Registered, in one transaction with inserting the asset and book
-// and projecting the book into search. Fails with Duplicate (nothing changed)
+// and projecting the book into search, and queues the book's first metadata
+// job (docs/PROCESSING.md). Fails with Duplicate (nothing changed)
 // if a book with the same SHA-256 exists.
 domain::Result<domain::BookId> completeImport(QSqlDatabase& db, const domain::ImportId& id,
                                               const domain::NewBook& book);

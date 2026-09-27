@@ -8,14 +8,40 @@ namespace mbl::presentation {
 
 namespace {
 
-QString stateText(const domain::BookSummary& book)
+QString tr(const char* text)
 {
-    // M03 has no processing yet; metadata and contents arrive with M04/M05.
-    if (!book.hasMetadataRun && !book.hasTocRun)
-        return QCoreApplication::translate("BookListModel", "Imported · not analyzed yet");
-    if (!book.hasTocRun)
-        return QCoreApplication::translate("BookListModel", "Metadata ready · contents not analyzed");
-    return QCoreApplication::translate("BookListModel", "%n contents entries", nullptr, book.tocEntryCount);
+    return QCoreApplication::translate("BookListModel", text);
+}
+
+// Metadata availability and the latest metadata job are separate states: a
+// published result stays shown while a rerun waits, runs or fails.
+QString stateText(const domain::BookSummary& book, const domain::JobRecord* job)
+{
+    using domain::JobState;
+    if (job && job->state == JobState::Queued)
+        return tr("Waiting to read title and authors");
+    if (job && job->state == JobState::Running)
+        return tr("Reading title and authors…");
+    if (job && job->state == JobState::CancelRequested)
+        return tr("Cancelling…");
+    if (book.hasTocRun)
+        return QCoreApplication::translate("BookListModel", "%n contents entries", nullptr, book.tocEntryCount);
+    if (book.hasMetadataRun) {
+        if (!book.displayTitleFromFileName)
+            return tr("Metadata ready · contents not analyzed");
+        if (book.metadata.titleSource == domain::ValueSource::Cleared)
+            return tr("Title cleared · contents not analyzed");
+        if (book.extractedTitleStatus == domain::FieldStatus::Ambiguous)
+            return tr("Title uncertain: several candidates · contents not analyzed");
+        return tr("No title found in the document · contents not analyzed");
+    }
+    if (job && job->state == JobState::Failed)
+        return tr("Title and authors could not be read");
+    if (job && job->state == JobState::Cancelled)
+        return tr("Metadata extraction cancelled");
+    if (job && job->state == JobState::Interrupted)
+        return tr("Metadata extraction interrupted");
+    return tr("Imported · not analyzed yet");
 }
 
 } // namespace
@@ -46,8 +72,10 @@ QVariant BookListModel::data(const QModelIndex& index, int role) const
             names << c.name;
         return names.join(QStringLiteral(", "));
     }
-    case ProcessingStateRole:
-        return stateText(book);
+    case ProcessingStateRole: {
+        const auto job = m_metadataJobs.constFind(book.id);
+        return stateText(book, job == m_metadataJobs.cend() ? nullptr : &job.value());
+    }
     }
     return {};
 }
@@ -116,6 +144,55 @@ void BookListModel::setBooks(QList<domain::BookSummary> books)
 
     if (m_books.size() != oldCount)
         emit countChanged();
+}
+
+bool BookListModel::acceptJob(const domain::JobRecord& job)
+{
+    if (job.kind != domain::JobKind::Metadata)
+        return false;
+    const auto current = m_metadataJobs.constFind(job.book);
+    if (current != m_metadataJobs.cend()) {
+        // A different, older job never replaces the latest one; the same
+        // job only moves forward in time.
+        if (current->id != job.id ? job.createdAt < current->createdAt : job.updatedAt < current->updatedAt)
+            return false;
+    }
+    m_metadataJobs.insert(job.book, job);
+    return true;
+}
+
+void BookListModel::setLatestJobs(const QList<domain::JobRecord>& jobs)
+{
+    bool changed = false;
+    for (const domain::JobRecord& job : jobs)
+        changed = acceptJob(job) || changed;
+    if (changed && !m_books.isEmpty())
+        emit dataChanged(index(0), index(int(m_books.size() - 1)), {ProcessingStateRole});
+}
+
+void BookListModel::updateJob(const domain::JobRecord& job)
+{
+    if (acceptJob(job))
+        emitStateChanged(job.book);
+}
+
+void BookListModel::emitStateChanged(const domain::BookId& id)
+{
+    for (qsizetype row = 0; row < m_books.size(); ++row) {
+        if (m_books.at(row).id == id) {
+            emit dataChanged(index(int(row)), index(int(row)), {ProcessingStateRole});
+            return;
+        }
+    }
+}
+
+QString BookListModel::titleOf(const domain::BookId& id) const
+{
+    for (const domain::BookSummary& book : m_books) {
+        if (book.id == id)
+            return book.displayTitle;
+    }
+    return {};
 }
 
 int BookListModel::rowOfBook(const QString& bookId) const

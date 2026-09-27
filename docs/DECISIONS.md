@@ -253,3 +253,19 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - Migration 3 is unreleased (PR #9 is not merged), so it is edited in place rather than followed by a v4. A development catalog created from the earlier branch head keeps the wider index. A retry during a cancel there fails with a constraint error; delete such a test library.
   - An interrupted job is requeued immediately rather than left `running` for `recover()`, so the catalog never shows a job as running when no worker runs it.
 - **Verified:** New tests `stopKeepsWorkForRestart`, `stopDoesNotDiscardACompletedResult`, `destructionDuringAJobInterruptsIt` (replacing `destructionDuringAJobCancelsIt`), `retryWhileCancellingIsNotLost`, `cancelRacingTheClaimReachesTheSdk`, `cancelAllCancelsRunningAndQueued` and `extractorExceptionFailsTheJob`. Reverting each fix makes its tests fail (see IMPLEMENTATION_PROGRESS.md). The `runLoop` catch was checked by inspection only.
+
+## 2026-09-27 — M04 part 2: metadata jobs in the application
+
+- **Change:**
+  - `catalog::completeImport` queues the new book's metadata job in the import transaction.
+  - `LibraryController` takes a `MetadataExtractor` from the composition root. It owns the `ProcessingCoordinator`, runs job recovery before starting it, and exposes `JobListModel` with cancel, retry and cancel-all commands.
+  - `BookListModel` shows each book's state from its catalog summary plus its latest metadata job. `BookSummary` gains `extractedTitleStatus`, so an ambiguous title is not reported as "not found".
+  - Closing calls `prepareToClose()`, which uses `ProcessingCoordinator::stop()`.
+- **Why:**
+  - The M04 gate: durable queue, extraction with models, independent publication, cancellation and restart persistence.
+  - AGENTS.md sections 5 (pending jobs registered with the book), 8 (queued delivery, indeterminate progress, a responsive close) and 9 (nonblocking job queue with cancel and retry).
+- **Assumptions:**
+  - Retry is offered only for failed or cancelled jobs with no newer job of that book. A succeeded extraction is not rerun from the UI until corrections and reruns (M07).
+  - Presentation text keeps the project's `(s)` plural form until translations are added.
+  - The extractor is optional, so presentation tests without the SDK still run. Jobs then stay queued and are shown as waiting.
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, M04 part 2.

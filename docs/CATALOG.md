@@ -42,7 +42,7 @@ Migrations live in `catalog/migrations.cpp`. `PRAGMA user_version` records the a
 
 ## Publication rules
 
-- `catalog::completeImport` inserts the asset, the book and its projection and marks the import `registered` in **one transaction**. It fails with `Duplicate`, changing nothing, if the SHA-256 is already catalogued. `registerBook` also reports `Duplicate` (previously `InvalidArgument`).
+- `catalog::completeImport` inserts the asset, the book, its projection and its first queued metadata job, and marks the import `registered`, in **one transaction**. It fails with `Duplicate`, changing nothing, if the SHA-256 is already catalogued. `registerBook` also reports `Duplicate` (previously `InvalidArgument`).
 - `requestMetadataRun` / `requestTocRun` increment that component's generation and return a `PublishTicket` (book, generation, asset SHA-256).
 - `publishToc` requires `TocAnalysis.outcome == RunIdentity.outcome` (otherwise `InvalidArgument`). The outcome is stored once and read back unchanged.
 - `publishMetadata` / `publishToc` succeed only when all of these hold: the ticket's generation is current (`StaleGeneration` otherwise), the book is not trashed (`Trashed`), and the ticket's and run's digests equal the asset's (`SourceMismatch`). The new run, the active-run pointer, the revision bump and the search projection are written in **one transaction**.

@@ -21,12 +21,15 @@ ApplicationWindow {
     visible: true
     title: qsTr("MyBooksLibrary")
 
-    // Closing while work runs: cancel, stay responsive, close when idle.
+    property bool showActivity: false
+
+    // Closing while work runs: cancel imports and stop processing (queued
+    // metadata jobs resume next time), stay responsive, close when idle.
     onClosing: (close) => {
         if (window.library.busy) {
             close.accepted = false
             window.closeRequested = true
-            window.library.cancelImports()
+            window.library.prepareToClose()
         }
     }
     Connections {
@@ -73,92 +76,211 @@ ApplicationWindow {
         }
     }
 
-    DropArea {
-        id: dropArea
+    ColumnLayout {
         anchors.fill: parent
-        enabled: window.library.ready && !window.closeRequested
-        onDropped: (drop) => {
-            if (drop.hasUrls) {
-                window.library.importUrls(drop.urls)
-                drop.acceptProposedAction()
+        spacing: 0
+
+        DropArea {
+            id: dropArea
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            enabled: window.library.ready && !window.closeRequested
+            onDropped: (drop) => {
+                if (drop.hasUrls) {
+                    window.library.importUrls(drop.urls)
+                    drop.acceptProposedAction()
+                }
+            }
+
+            ListView {
+                id: bookList
+                anchors.fill: parent
+                anchors.margins: 8
+                clip: true
+                focus: true
+                spacing: 2
+                model: window.library.books
+                keyNavigationEnabled: true
+                currentIndex: -1
+                ScrollBar.vertical: ScrollBar {}
+
+                delegate: ItemDelegate {
+                    id: row
+                    required property int index
+                    required property string bookId
+                    required property string title
+                    required property bool titleFromFileName
+                    required property string contributors
+                    required property string processingState
+
+                    width: ListView.view.width
+                    highlighted: ListView.isCurrentItem
+                    onClicked: bookList.currentIndex = index
+
+                    contentItem: ColumnLayout {
+                        spacing: 2
+                        Label {
+                            Layout.fillWidth: true
+                            text: row.title
+                            textFormat: Text.PlainText   // Extracted text is never markup.
+                            font.bold: true
+                            elide: Text.ElideRight
+                        }
+                        Label {
+                            Layout.fillWidth: true
+                            textFormat: Text.PlainText
+                            text: row.titleFromFileName
+                                  ? qsTr("From the file name · %1").arg(row.processingState)
+                                  : (row.contributors.length > 0 ? row.contributors + " · " + row.processingState
+                                                                 : row.processingState)
+                            opacity: 0.7
+                            elide: Text.ElideRight
+                        }
+                    }
+                }
+
+                // Keep the selection on the same book when the list refreshes.
+                property string selectedBookId: ""
+                onCurrentIndexChanged: selectedBookId = model ? model.bookIdAt(currentIndex) : ""
+                Connections {
+                    target: window.library.books
+                    function onModelReset() {
+                        bookList.currentIndex = window.library.books.rowOfBook(bookList.selectedBookId)
+                    }
+                }
+
+                Label {
+                    anchors.centerIn: parent
+                    width: parent.width * 0.7
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                    visible: bookList.count === 0
+                    opacity: 0.7
+                    text: window.library.opening ? qsTr("Opening the library…")
+                          : window.library.failed ? qsTr("The library could not be opened.")
+                          : qsTr("No books yet. Choose “Import PDFs…” or drop PDF files here.")
+                }
+            }
+
+            Rectangle {
+                anchors.fill: parent
+                visible: dropArea.containsDrag
+                color: window.palette.highlight
+                opacity: 0.15
             }
         }
 
-        ListView {
-            id: bookList
-            anchors.fill: parent
-            anchors.margins: 8
-            clip: true
-            focus: true
-            spacing: 2
-            model: window.library.books
-            keyNavigationEnabled: true
-            currentIndex: -1
-            ScrollBar.vertical: ScrollBar {}
+        // Processing activity: metadata jobs with Cancel and Retry.
+        Pane {
+            id: activityPane
+            Layout.fillWidth: true
+            Layout.preferredHeight: 220
+            visible: window.showActivity
+            padding: 8
 
-            delegate: ItemDelegate {
-                id: row
-                required property int index
-                required property string bookId
-                required property string title
-                required property bool titleFromFileName
-                required property string contributors
-                required property string processingState
+            ColumnLayout {
+                anchors.fill: parent
+                spacing: 4
 
-                width: ListView.view.width
-                highlighted: ListView.isCurrentItem
-                onClicked: bookList.currentIndex = index
-
-                contentItem: ColumnLayout {
-                    spacing: 2
+                RowLayout {
+                    Layout.fillWidth: true
                     Label {
-                        Layout.fillWidth: true
-                        text: row.title
-                        textFormat: Text.PlainText   // Extracted text is never markup.
+                        text: qsTr("Activity")
                         font.bold: true
-                        elide: Text.ElideRight
                     }
                     Label {
                         Layout.fillWidth: true
-                        textFormat: Text.PlainText
-                        text: row.titleFromFileName
-                              ? qsTr("From the file name · %1").arg(row.processingState)
-                              : (row.contributors.length > 0 ? row.contributors + " · " + row.processingState
-                                                             : row.processingState)
+                        text: window.library.processingAvailable && !window.library.ocrAvailable
+                              ? qsTr("OCR models were not found: title pages that are scanned images cannot be read.")
+                              : ""
+                        wrapMode: Text.WordWrap
                         opacity: 0.7
-                        elide: Text.ElideRight
+                    }
+                    Button {
+                        text: qsTr("Cancel all")
+                        visible: window.library.jobs.pendingCount > 0
+                        enabled: !window.closeRequested
+                        onClicked: window.library.cancelAllJobs()
+                        Accessible.description: qsTr("Cancel every waiting and running metadata extraction")
+                    }
+                }
+
+                ListView {
+                    id: jobList
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+                    spacing: 2
+                    model: window.library.jobs
+                    keyNavigationEnabled: true
+                    ScrollBar.vertical: ScrollBar {}
+
+                    delegate: ItemDelegate {
+                        id: jobRow
+                        required property int index
+                        required property string jobId
+                        required property string bookTitle
+                        required property string kindText
+                        required property string stateText
+                        required property string detail
+                        required property bool running
+                        required property bool canCancel
+                        required property bool canRetry
+
+                        width: ListView.view.width
+                        highlighted: ListView.isCurrentItem
+                        onClicked: jobList.currentIndex = index
+
+                        contentItem: RowLayout {
+                            spacing: 8
+                            BusyIndicator {
+                                running: jobRow.running
+                                visible: jobRow.running
+                                implicitWidth: 20
+                                implicitHeight: 20
+                            }
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 0
+                                Label {
+                                    Layout.fillWidth: true
+                                    text: jobRow.bookTitle
+                                    textFormat: Text.PlainText
+                                    elide: Text.ElideRight
+                                }
+                                Label {
+                                    Layout.fillWidth: true
+                                    text: jobRow.detail.length > 0
+                                          ? qsTr("%1 · %2: %3").arg(jobRow.kindText).arg(jobRow.stateText).arg(jobRow.detail)
+                                          : qsTr("%1 · %2").arg(jobRow.kindText).arg(jobRow.stateText)
+                                    textFormat: Text.PlainText
+                                    elide: Text.ElideRight
+                                    opacity: 0.7
+                                }
+                            }
+                            Button {
+                                visible: jobRow.canCancel
+                                enabled: !window.closeRequested
+                                text: qsTr("Cancel")
+                                onClicked: window.library.cancelJob(jobRow.jobId)
+                            }
+                            Button {
+                                visible: jobRow.canRetry
+                                enabled: !window.closeRequested
+                                text: qsTr("Retry")
+                                onClicked: window.library.retryJob(jobRow.jobId)
+                            }
+                        }
+                    }
+
+                    Label {
+                        anchors.centerIn: parent
+                        visible: jobList.count === 0
+                        opacity: 0.7
+                        text: qsTr("No metadata extraction yet.")
                     }
                 }
             }
-
-            // Keep the selection on the same book when the list refreshes.
-            property string selectedBookId: ""
-            onCurrentIndexChanged: selectedBookId = model ? model.bookIdAt(currentIndex) : ""
-            Connections {
-                target: window.library.books
-                function onModelReset() {
-                    bookList.currentIndex = window.library.books.rowOfBook(bookList.selectedBookId)
-                }
-            }
-
-            Label {
-                anchors.centerIn: parent
-                width: parent.width * 0.7
-                horizontalAlignment: Text.AlignHCenter
-                wrapMode: Text.WordWrap
-                visible: bookList.count === 0
-                opacity: 0.7
-                text: window.library.opening ? qsTr("Opening the library…")
-                      : window.library.failed ? qsTr("The library could not be opened.")
-                      : qsTr("No books yet. Choose “Import PDFs…” or drop PDF files here.")
-            }
-        }
-
-        Rectangle {
-            anchors.fill: parent
-            visible: dropArea.containsDrag
-            color: window.palette.highlight
-            opacity: 0.15
         }
     }
 
@@ -198,6 +320,33 @@ ApplicationWindow {
                     visible: window.library.importing
                     text: qsTr("Cancel")
                     onClicked: window.library.cancelImports()
+                }
+            }
+            // Metadata extraction: the SDK reports no percentage, so none is shown.
+            RowLayout {
+                Layout.fillWidth: true
+                visible: window.library.processingAvailable && window.library.ready
+                BusyIndicator {
+                    running: window.library.jobs.pendingCount > 0 && !window.closeRequested
+                    visible: running
+                    implicitWidth: 24
+                    implicitHeight: 24
+                }
+                Label {
+                    Layout.fillWidth: true
+                    text: window.library.jobs.summary.length > 0 ? window.library.jobs.summary
+                                                                 : qsTr("Metadata extraction idle.")
+                    textFormat: Text.PlainText
+                    elide: Text.ElideRight
+                    opacity: 0.8
+                }
+                Button {
+                    flat: true
+                    checkable: true
+                    checked: window.showActivity
+                    text: qsTr("Activity")
+                    onToggled: window.showActivity = checked
+                    Accessible.description: qsTr("Show or hide metadata extraction jobs")
                 }
             }
             // At most a few problem lines here, so the book list keeps its
