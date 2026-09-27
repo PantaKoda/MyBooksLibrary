@@ -12,7 +12,7 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | M04 Metadata jobs | Merged: part 1 [PR #9](https://github.com/PantaKoda/MyBooksLibrary/pull/9) (merge `6b5d740`); part 2 [PR #10](https://github.com/PantaKoda/MyBooksLibrary/pull/10) (merge `578e951`) | `feat/m04-a4-metadata-jobs`; `feat/m04-presentation-metadata-jobs` | See "M04" |
 | SDK 0.3.0 update | Merged | `chore/sdk-0.3.0` / [PR #11](https://github.com/PantaKoda/MyBooksLibrary/pull/11), merge `a4b7d59` | See "SDK 0.3.0 update" |
 | M05 Contents | Merged: part 1 [PR #12](https://github.com/PantaKoda/MyBooksLibrary/pull/12) (merge `9feb9b3`); part 2 [PR #13](https://github.com/PantaKoda/MyBooksLibrary/pull/13) (merge `8ba9f49`) | `feat/m05-a4-contents-analysis`; `feat/m05-presentation-contents-inspector` | See "M05" |
-| M06 Search/read | Part 1 Merged ([PR #14](https://github.com/PantaKoda/MyBooksLibrary/pull/14), merge `c8dc23e`); part 2 AwaitingReview (reader, chapter navigation, reading position) | `feat/m06-presentation-search`; `feat/m06-reader-chapter-navigation` | See "M06" |
+| M06 Search/read | Part 1 Merged ([PR #14](https://github.com/PantaKoda/MyBooksLibrary/pull/14), merge `c8dc23e`); part 2 AwaitingReview ([PR #15](https://github.com/PantaKoda/MyBooksLibrary/pull/15), reader, chapter navigation, reading position) | `feat/m06-presentation-search`; `feat/m06-reader-chapter-navigation` | See "M06" |
 | M07–M11 | NotStarted | | |
 
 ## M06 — Search and reading
