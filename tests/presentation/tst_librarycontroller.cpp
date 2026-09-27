@@ -8,6 +8,7 @@
 #include "presentation/booklistmodel.h"
 #include "presentation/joblistmodel.h"
 #include "presentation/librarycontroller.h"
+#include "presentation/searchcontroller.h"
 #include "processing/contentsanalyzer.h"
 #include "processing/metadataextractor.h"
 #include "storage/filecopy.h"
@@ -24,6 +25,8 @@
 
 using mbl::presentation::BookInspector;
 using mbl::presentation::BookListModel;
+using mbl::presentation::SearchController;
+using mbl::presentation::SearchResultsModel;
 using mbl::presentation::JobListModel;
 using mbl::presentation::LibraryController;
 using mbl::processing::ContentsAnalysis;
@@ -185,6 +188,7 @@ private slots:
     void refreshesAreCoalesced();
     void inspectorShowsWhatWasPublished();
     void inspectorFollowsProcessingAndSelection();
+    void searchUpdatesWhenContentsArePublished();
 
 private:
     void openAndWait(LibraryController& c, const QString& root)
@@ -797,6 +801,40 @@ void TestLibraryController::inspectorFollowsProcessingAndSelection()
     inspector->select(QString());
     QVERIFY(!inspector->hasBook());
     QCOMPARE(inspector->title(), QString());
+}
+
+// A search entered before processing finishes shows the chapter once the
+// contents are published, with the book's processing state beside it.
+void TestLibraryController::searchUpdatesWhenContentsArePublished()
+{
+    QTemporaryDir dir;
+    auto fake = std::make_shared<FakeExtractor>();
+    fake->block = true;
+    auto analyzer = std::make_shared<FakeAnalyzer>(fake);
+    LibraryController c;
+    c.setProcessors(fake, analyzer, true);
+    openAndWait(c, dir.path());
+    SearchController* search = c.search();
+    QSignalSpy applied(search, &SearchController::responseApplied);
+    search->setText(QStringLiteral("introduction"));
+    search->refresh();
+    QTRY_VERIFY_WITH_TIMEOUT(!applied.isEmpty(), 5000);
+    QCOMPARE(search->results()->rowCount(), 0);
+    QCOMPARE(search->statusText(), QStringLiteral("No matches in indexed titles and contents."));
+
+    c.importFiles({fixture("title-page.pdf")});
+    QTRY_VERIFY_WITH_TIMEOUT(fake->started.load(), 20000);
+    fake->block = false;
+    QTRY_COMPARE_WITH_TIMEOUT(search->results()->rowCount(), 1, 20000);
+    const QModelIndex row = search->results()->index(0);
+    QCOMPARE(search->results()->data(row, SearchResultsModel::TitleRole).toString(), QStringLiteral("Extracted Title"));
+    const QVariantMap hit = search->results()->data(row, SearchResultsModel::ChaptersRole).toList().first().toMap();
+    QCOMPARE(hit.value(QStringLiteral("title")).toString(), QStringLiteral("1 Introduction"));
+    QCOMPARE(hit.value(QStringLiteral("pageText")).toString(), QStringLiteral("Page 1"));
+    QTRY_COMPARE_WITH_TIMEOUT(search->results()->data(search->results()->index(0), SearchResultsModel::ProcessingStateRole)
+                                  .toString(),
+                              QStringLiteral("Metadata ready · 2 contents entries"), 10000);
+    QTRY_VERIFY_WITH_TIMEOUT(!c.busy(), 10000);
 }
 
 QTEST_GUILESS_MAIN(TestLibraryController)

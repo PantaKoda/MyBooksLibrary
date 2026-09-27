@@ -54,3 +54,6 @@ target_link_libraries(tst_toctreemodel PRIVATE mbl_presentation)
 mbl_add_test(tst_inspectorpane presentation/tst_inspectorpane.cpp)
 target_link_libraries(tst_inspectorpane PRIVATE mbl_presentation mbl_presentationplugin Qt6::Quick)
 target_compile_definitions(tst_inspectorpane PRIVATE MBL_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+
+mbl_add_test(tst_searchcontroller presentation/tst_searchcontroller.cpp)
+target_link_libraries(tst_searchcontroller PRIVATE mbl_presentation)

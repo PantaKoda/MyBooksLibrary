@@ -11,8 +11,32 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | M03 Import/library shell | Merged: part 1 [PR #6](https://github.com/PantaKoda/MyBooksLibrary/pull/6) (merge `515ff43`); part 2 [PR #7](https://github.com/PantaKoda/MyBooksLibrary/pull/7) (merge `f39b141`) | `feat/m03-a1-managed-import`; `feat/m03-presentation-library-shell` | See "M03" |
 | M04 Metadata jobs | Merged: part 1 [PR #9](https://github.com/PantaKoda/MyBooksLibrary/pull/9) (merge `6b5d740`); part 2 [PR #10](https://github.com/PantaKoda/MyBooksLibrary/pull/10) (merge `578e951`) | `feat/m04-a4-metadata-jobs`; `feat/m04-presentation-metadata-jobs` | See "M04" |
 | SDK 0.3.0 update | Merged | `chore/sdk-0.3.0` / [PR #11](https://github.com/PantaKoda/MyBooksLibrary/pull/11), merge `a4b7d59` | See "SDK 0.3.0 update" |
-| M05 Contents | Part 1 Merged ([PR #12](https://github.com/PantaKoda/MyBooksLibrary/pull/12), merge `9feb9b3`); part 2 AwaitingReview ([PR #13](https://github.com/PantaKoda/MyBooksLibrary/pull/13), inspector and contents tree) | `feat/m05-a4-contents-analysis`; `feat/m05-presentation-contents-inspector` | See "M05" |
-| M06–M11 | NotStarted | | |
+| M05 Contents | Merged: part 1 [PR #12](https://github.com/PantaKoda/MyBooksLibrary/pull/12) (merge `9feb9b3`); part 2 [PR #13](https://github.com/PantaKoda/MyBooksLibrary/pull/13) (merge `8ba9f49`) | `feat/m05-a4-contents-analysis`; `feat/m05-presentation-contents-inspector` | See "M05" |
+| M06 Search/read | Part 1 AwaitingReview (search in the application); part 2 NotStarted (reader, chapter navigation, reading position) | `feat/m06-presentation-search` | See "M06" |
+| M07–M11 | NotStarted | | |
+
+## M06 — Search and reading
+
+### Part 1: search in the application (presentation)
+
+**Scope:**
+- `SearchController` and `SearchResultsModel`, and `SearchResultsView.qml`;
+- the toolbar search field and scope, Ctrl+F and Esc, results in place of the book list;
+- `BookListModel::processingStateOf`;
+- `--search`.
+
+**Touched paths:** `src/presentation/`, `qml/search/`, `Main.qml`, `main.cpp`, `CMakeLists.txt`, `tests/presentation/`, `tests/CMakeLists.txt`, `docs/`.
+
+| Command | Result |
+| --- | --- |
+| `pwsh scripts/verify.ps1 -Clean` (Release) and `-Configuration Debug` | VERIFY PASSED in both; 15/15 `ctest` suites |
+| `tst_searchcontroller` (new, 6 cases, model tester) | Typing is debounced (nothing runs while typing; one response for "c", "co", "cooking"); with two requests in flight only the newer is applied; `clear()` drops a response in flight. Chapter hits: page index 0 → "Page 1" with the printed label kept; an unresolved entry → "Page not found", no page, "Listed on page 5 of the PDF"; ambiguous → "Page uncertain". "No matches…" and the punctuation-only text; a blank query returns to the book list. Scope re-runs the query; 60 books page as 50 + "Show more" → 60 |
+| `tst_librarycontroller::searchUpdatesWhenContentsArePublished` | A query entered before processing shows the chapter once the contents are published, with "Page 1" and the book's state "Metadata ready · 2 contents entries" |
+| Mutations, each reverted | Stale responses applied, no debounce, no re-run after publications, page shown as the index: each makes its test fail |
+| `qmllint` on the module's QML | No warnings |
+| `appMyBooksLibrary --import (3 fixtures) --search tcp/ip --inspect-first --screenshot …` (Debug and Release, real SDK) | Exit 0, no QML warnings. One contents-only result, `contents-book`: "3 Networking with TCP/IP · Page 15" |
+
+**Next action:** M06 part 2. The embedded reader (Qt PDF) behind an adapter that owns document lifetime; "Open chapter" to the physical page and "Show source TOC page" for unresolved entries, from search results and the inspector; the reading position saved per book; stress-testing opening and closing books in a visible window (READER.md).
 
 ## M05 — Contents
 

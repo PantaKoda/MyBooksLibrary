@@ -12,6 +12,8 @@
 | `BookInspector` | `src/presentation/bookinspector.*` | The selected book, loaded on the database thread: effective metadata with where each value came from, the evidence and candidates behind it (at most five candidates, then a count), and the contents summary and notes. Loads are tagged, so only the newest selection or reload is applied. It reloads after each book-list refresh, and rebuilds the tree only when the active contents run changed, so expanded branches and the current entry survive other updates. |
 | `TocTreeModel` | `src/presentation/toctreemodel.*` | The **catalog's** contents as a tree (never the PDF's own bookmarks). It is built in two passes, so a parent may be listed after its child. A missing parent, a self-reference or a cycle keeps the entry at the top level with the note "parent not found"; an entry below a cycle member stays attached; Unknown hierarchy stays at the top level. Roles: title, page text, physical page (index + 1), source page, printed label, state text, uncertain, in plan, plain-language details and technical details. |
 | `BookInspectorPane.qml` | `qml/inspector/` | The inspector: title and file, then two tabs. **Title and authors** shows each field's value and source, with "Why?" revealing its evidence and candidates. **Contents** shows the summary, the notes, the tree, and the selected entry's reasons. Display only. |
+| `SearchController`, `SearchResultsModel` | `src/presentation/search*` | The search field: debounced, newest request wins, paginated, re-run after catalog changes. See SEARCH.md, "In the application". |
+| `SearchResultsView.qml` | `qml/search/` | Results: book, how it matched, its processing state, and chapter hits with the physical page, or "Page not found" and where it is listed. Choosing a result shows the book in the inspector. |
 | `Main.qml` | repository root | The list-first window. QML only reads properties and calls `importUrls`, `cancelImports`, `refresh`, `cancelJob`, `retryJob`, `cancelAllJobs` and `prepareToClose`. There is no SQL, file or SDK work in QML. |
 
 `mbl_presentation` is a static QML module (`MyBooksLibrary.Presentation`), so `Main.qml` uses typed `LibraryController`/`BookListModel` and `qmllint` checks its member accesses. Both types are uncreatable from QML.
@@ -39,6 +41,9 @@
   - Extracted text is rendered as plain text.
   - The selection follows the book ID across refreshes.
   - Empty state: "No books yet. Choose "Import PDFs…" or drop PDF files here."
+- **Search:** a search field and a scope (All, Titles, Authors, Contents) are always in the toolbar; Ctrl+F focuses the field and Esc clears it.
+  - While a query is entered, the results replace the book list; clearing it shows the book list and its selection again.
+  - Search covers titles, authors and contents entries, not the full text; the field's accessible description says so.
 - **Inspector:** selecting a book shows it beside the list.
   - Metadata values say where they came from: "From the document", "Your correction", "Cleared by you", "Uncertain: several candidates, none chosen" or "Not found in the pages searched".
   - The contents tab summarizes coverage ("5 contents entries, every page confirmed."), lists what is uncertain ("No page found: 1 of 5."), and says whether a bookmarked copy could be made, with the plan's blockers.
@@ -49,7 +54,7 @@
 
 ## Not yet
 
-Search field and reader (M06), editing metadata and contents (M07), restoring a duplicate from Trash (M08), and keyboard shortcuts beyond list navigation.
+The embedded reader and opening a chapter from search or the inspector (M06 part 2), editing metadata and contents (M07), restoring a duplicate from Trash (M08), and keyboard shortcuts beyond list navigation.
 
 ## Screenshots (Release build, `--screenshot`, library at `C:\MBL-demo\Library`)
 
@@ -72,3 +77,7 @@ After M05 part 1, with the same three test PDFs: each book shows its metadata st
 The inspector's Contents tab after importing `contents-book.pdf` (Release, real SDK, `--inspect-first`):
 
 ![Inspector contents](images/m05-inspector-contents.png)
+
+Searching "tcp/ip" after importing the three test PDFs: a contents-only match, with its physical page (Release, real SDK, `--search tcp/ip --inspect-first`):
+
+![Search results](images/m06-search-results.png)

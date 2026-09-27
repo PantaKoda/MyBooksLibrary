@@ -7,6 +7,7 @@
 //                                            metadata jobs finished), then quit
 //                     [--activity]           development: open with the activity panel shown
 //                     [--inspect-first]      development: select the first book (inspector shown)
+//                     [--search <text>]      development: search once the library is ready
 //   appMyBooksLibrary --sdk-check [<pdf>]    no window: print the pdfbookmark SDK identity and,
 //                                            with a PDF, its identity and extracted title.
 //                                            Exit 0 on success, 1 on an SDK error.
@@ -200,11 +201,22 @@ int main(int argc, char *argv[])
     }
     if (!imports.isEmpty())
         library.importFiles(imports);  // Queued until the library is ready.
+    // Development: --search <text> runs a search once the library is ready
+    // (at once, not debounced, so --screenshot shows its results).
+    if (const qsizetype at = args.indexOf(QLatin1String("--search")); at >= 0 && at + 1 < args.size()) {
+        const QString query = args.at(at + 1);
+        QObject::connect(&library, &mbl::presentation::LibraryController::stateChanged, &library, [&library, query] {
+            if (library.ready() && library.search()->text() != query) {
+                library.search()->setText(query);
+                library.search()->refresh();
+            }
+        });
+    }
     if (!screenshot.isEmpty()) {
         auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().constFirst());
         auto trySave = std::make_shared<std::function<void()>>();
         *trySave = [&library, window, screenshot, trySave] {
-            if (library.busy() || library.opening()) {
+            if (library.busy() || library.opening() || library.search()->searching()) {
                 QTimer::singleShot(200, *trySave);
                 return;
             }

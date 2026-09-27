@@ -44,3 +44,22 @@ Each book lists at most `chapterHitsPerBook` chapter hits (best first) and repor
 Chapter hits include unresolved, ambiguous and export-omitted entries. Only a `Resolved` hit carries `destinationPage` (zero-based; show it as index + 1). Other hits carry `sourceTocPage` when known. No page is ever guessed.
 
 Suggested empty-state wording: "No matches in indexed titles and contents."
+
+## In the application (M06)
+
+`presentation::SearchController` backs the search field.
+
+- **Debounce:** typing restarts a 250 ms timer, so a query runs once typing pauses. Changing the scope, `refresh()` and "Show more" run at once.
+- **Newest wins:** each request carries a new generation, and a response is applied only if it is still the newest. `clear()` also drops a response in flight.
+- **Where it runs:** on the database thread; results are applied on the GUI thread.
+- **Pagination:** 50 books per page; "Show more" appends the next page.
+- **Re-runs:** the current query runs again after each book-list refresh (imports and publications), so new titles and contents entries show up.
+
+`SearchResultsModel` has one row per book: title, how it matched ("Title or author", "Contents", or both), the book's processing state from the book list (so pending, partial or unavailable metadata and contents are visible), up to five chapter hits, and "and *n* more matching entries".
+
+A chapter hit shows "Page *n*" (physical, index + 1) only when resolved. Otherwise it shows "Page uncertain" or "Page not found", plus "Listed on page *m* of the PDF" when the source contents page is known. No page is guessed.
+
+Status texts:
+- "*n* book(s) found in titles, authors and contents."
+- "No matches in indexed titles and contents."
+- For punctuation only: "Type letters or numbers to search titles, authors and contents."

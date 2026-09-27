@@ -223,6 +223,15 @@ void BookListModel::emitStateChanged(const domain::BookId& id)
     }
 }
 
+QString BookListModel::processingStateOf(const domain::BookId& id) const
+{
+    for (qsizetype row = 0; row < m_books.size(); ++row) {
+        if (m_books.at(row).id == id)
+            return data(index(int(row)), ProcessingStateRole).toString();
+    }
+    return {};
+}
+
 QString BookListModel::titleOf(const domain::BookId& id) const
 {
     for (const domain::BookSummary& book : m_books) {
