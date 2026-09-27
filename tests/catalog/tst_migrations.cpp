@@ -1,4 +1,5 @@
 // A2 migrations: versioned, transactional, never destructive.
+#include "catalog/jobs.h"
 #include "catalog/library.h"
 #include "catalog/migrations.h"
 
@@ -45,6 +46,7 @@ private slots:
     void freshLibraryReachesLatest();
     void reopeningIsIdempotent();
     void version1CatalogUpgradesWithDataIntact();
+    void version2CatalogGainsJobs();
     void newerSchemaIsRefusedUnchanged();
     void failedMigrationRollsBack();
     void nonConsecutiveListIsRejected();
@@ -106,6 +108,39 @@ void TestMigrations::version1CatalogUpgradesWithDataIntact()
     }).result();
     QCOMPARE(counts.first, 1);
     QCOMPARE(counts.second, 0);
+}
+
+// A catalog left by the M03 release (schema 2) gains the job queue and the
+// metadata evidence tables; its books can be queued at once.
+void TestMigrations::version2CatalogGainsJobs()
+{
+    QTemporaryDir dir;
+    const QString path = dir.filePath(QLatin1StringView(Library::kCatalogFileName));
+    withConnection(path, [](QSqlDatabase& db) {
+        QVERIFY(migrate(db, catalogMigrations().mid(0, 2)));
+        QCOMPARE(schemaVersion(db), 2);
+        QVERIFY(!tableExists(db, QStringLiteral("jobs")));
+        QSqlQuery q(db);
+        QVERIFY(q.exec(QStringLiteral(
+            "INSERT INTO assets(id, sha256, byte_size, managed_path, created_at) VALUES "
+            "('a1', '0000000000000000000000000000000000000000000000000000000000000001', 10, 'files/a1/source.pdf', 'x')")));
+        QVERIFY(q.exec(QStringLiteral(
+            "INSERT INTO books(id, asset_id, original_file_name, original_path, created_at, updated_at) VALUES "
+            "('5b1c3c1e-0d6a-4c7e-9a52-3f1d2b7e8a01', 'a1', 'old.pdf', 'C:/old.pdf', 'x', 'x')")));
+    });
+
+    auto library = Library::open(dir.path());
+    QVERIFY2(library, library ? "" : qPrintable(library.error().message));
+    QCOMPARE(library.value()->schemaVersion(), latestSchemaVersion());
+    QVERIFY(latestSchemaVersion() >= 3);
+    const auto queued = library.value()->run([](QSqlDatabase& db) {
+        const bool tables = tableExists(db, QStringLiteral("jobs")) && tableExists(db, QStringLiteral("metadata_field_details"));
+        const auto book = mbl::domain::BookId::fromString(QStringLiteral("5b1c3c1e-0d6a-4c7e-9a52-3f1d2b7e8a01"));
+        auto job = enqueueJob(db, book, mbl::domain::JobKind::Metadata);
+        return qMakePair(tables, job ? job.value().generation : -1);
+    }).result();
+    QVERIFY(queued.first);
+    QCOMPARE(queued.second, 1);  // The first metadata request of the upgraded book.
 }
 
 void TestMigrations::newerSchemaIsRefusedUnchanged()

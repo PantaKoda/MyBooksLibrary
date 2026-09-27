@@ -4,6 +4,7 @@
 
 #include <QList>
 #include <QString>
+#include <QStringList>
 
 #include <optional>
 
@@ -47,6 +48,29 @@ struct ExtractedMetadata {
 };
 
 enum class MetadataField { Title, Subtitle, Contributors, Edition, PublicationYear, CopyrightYear };
+
+// Evidence and candidates behind one field of one extraction run, kept so
+// the user can see why a value was (or was not) chosen. Scores rank
+// candidates; they are not probabilities.
+struct MetadataEvidence {
+    int pageIndex = 0;   // Zero-based physical page.
+    QString text;        // Supporting text as read.
+    QString reason;
+};
+
+struct MetadataCandidate {
+    QString value;       // Display text of the candidate value.
+    double score = 0;
+    QList<MetadataEvidence> evidence;
+    QStringList reasons;
+};
+
+struct MetadataFieldDetail {
+    MetadataField field = MetadataField::Title;  // Title covers title and subtitle.
+    QList<MetadataEvidence> evidence;             // Support for the resolved value.
+    QList<MetadataCandidate> alternatives;        // Other or competing candidates.
+    QStringList reasons;                          // Why the field has its status.
+};
 
 // Auto: no override, use extraction. Value: user value. Cleared: deliberately
 // empty; must not fall back to any extracted value.

@@ -153,7 +153,46 @@ QList<Migration> buildMigrations()
         QStringLiteral("CREATE INDEX import_operations_open ON import_operations(phase) "
                        "WHERE phase IN ('copying', 'verified')"),
     };
-    return {v1, v2};
+
+    Migration v3;
+    v3.version = 3;
+    v3.name = QStringLiteral("processing jobs and metadata evidence");
+    v3.statements = {
+        // Durable jobs: persisted before they run, recovered after a crash.
+        QStringLiteral(R"(CREATE TABLE jobs (
+            id TEXT PRIMARY KEY,
+            book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+            kind TEXT NOT NULL CHECK (kind IN ('metadata', 'toc')),
+            state TEXT NOT NULL CHECK (state IN ('queued', 'running', 'cancel_requested', 'succeeded', 'failed',
+                                                 'cancelled', 'interrupted')),
+            generation INTEGER NOT NULL,
+            source_sha256 TEXT NOT NULL CHECK (length(source_sha256) = 64),
+            attempt INTEGER NOT NULL DEFAULT 0,
+            outcome TEXT,
+            error TEXT,
+            run_id TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            started_at TEXT,
+            finished_at TEXT,
+            CHECK (state <> 'succeeded' OR run_id IS NOT NULL)))"),
+        // At most one open job per book and kind.
+        QStringLiteral("CREATE UNIQUE INDEX jobs_one_open ON jobs(book_id, kind) "
+                       "WHERE state IN ('queued', 'running')"),
+        QStringLiteral("CREATE INDEX jobs_by_state ON jobs(state, created_at)"),
+
+        // Evidence, candidates and reasons behind each metadata field of a run
+        // (JSON arrays; see catalog/jobs.cpp for the shape).
+        QStringLiteral(R"(CREATE TABLE metadata_field_details (
+            run_id TEXT NOT NULL REFERENCES metadata_runs(id) ON DELETE CASCADE,
+            field TEXT NOT NULL CHECK (field IN ('title', 'contributors', 'edition', 'publication_year',
+                                                 'copyright_year')),
+            evidence_json TEXT NOT NULL,
+            alternatives_json TEXT NOT NULL,
+            reasons_json TEXT NOT NULL,
+            PRIMARY KEY (run_id, field)))"),
+    };
+    return {v1, v2, v3};
 }
 
 } // namespace

@@ -6,7 +6,7 @@
 | --- | --- |
 | `library.sqlite`, `library.lock` | Catalog and writer lock (A2, see CATALOG.md) |
 | `files/<asset-id>/source.pdf` | Immutable managed copy of an imported PDF |
-| `reports/<run-id>.json` | Immutable SDK reports (M04) |
+| `reports/<run-id>.json` | Immutable SDK reports, written once through `QSaveFile` before their run is published (`storage/reportstore`); unreferenced ones are removed by job recovery (PROCESSING.md) |
 | `derivatives/<asset-id>/<export-id>.pdf` | Generated copies (M09) |
 | `staging/<import-id>/` | An import in progress |
 | `cache/` | Rebuildable artifacts only |

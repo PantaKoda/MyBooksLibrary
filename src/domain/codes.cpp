@@ -1,6 +1,7 @@
 // Stable storage codes for domain enums. Never change an existing code.
 #include "domain/book.h"
 #include "domain/importing.h"
+#include "domain/jobs.h"
 #include "domain/metadata.h"
 #include "domain/toc.h"
 
@@ -80,7 +81,27 @@ const std::pair<ImportPhase, const char*> kImportPhase[] = {
     {ImportPhase::Abandoned, "abandoned"},
 };
 
+const std::pair<JobKind, const char*> kJobKind[] = {
+    {JobKind::Metadata, "metadata"},
+    {JobKind::Toc, "toc"},
+};
+const std::pair<JobState, const char*> kJobState[] = {
+    {JobState::Queued, "queued"},
+    {JobState::Running, "running"},
+    {JobState::CancelRequested, "cancel_requested"},
+    {JobState::Succeeded, "succeeded"},
+    {JobState::Failed, "failed"},
+    {JobState::Cancelled, "cancelled"},
+    {JobState::Interrupted, "interrupted"},
+};
+
 } // namespace
+
+QString toCode(JobKind v) { return name(v, kJobKind); }
+std::optional<JobKind> jobKindFromCode(const QString& c) { return find(c, kJobKind); }
+QString toCode(JobState v) { return name(v, kJobState); }
+std::optional<JobState> jobStateFromCode(const QString& c) { return find(c, kJobState); }
+bool isOpen(JobState s) { return s == JobState::Queued || s == JobState::Running || s == JobState::CancelRequested; }
 
 QString toCode(ImportPhase v) { return name(v, kImportPhase); }
 std::optional<ImportPhase> importPhaseFromCode(const QString& c) { return find(c, kImportPhase); }
