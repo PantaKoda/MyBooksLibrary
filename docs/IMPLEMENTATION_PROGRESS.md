@@ -9,8 +9,33 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | M02 Contracts/persistence | Merged | `feat/m02-a2-catalog-persistence` / [PR #3](https://github.com/PantaKoda/MyBooksLibrary/pull/3), merge `b643446` | See below |
 | SDK 0.2.0 update | Merged | `chore/m01-sdk-0.2.0` / [PR #5](https://github.com/PantaKoda/MyBooksLibrary/pull/5), merge `4f87975` | See "SDK 0.2.0 update" |
 | M03 Import/library shell | Merged: part 1 [PR #6](https://github.com/PantaKoda/MyBooksLibrary/pull/6) (merge `515ff43`); part 2 [PR #7](https://github.com/PantaKoda/MyBooksLibrary/pull/7) (merge `f39b141`) | `feat/m03-a1-managed-import`; `feat/m03-presentation-library-shell` | See "M03" |
-| M04 Metadata jobs | Part 1 Merged ([PR #9](https://github.com/PantaKoda/MyBooksLibrary/pull/9), merge `6b5d740`); part 2 AwaitingReview ([PR #10](https://github.com/PantaKoda/MyBooksLibrary/pull/10), presentation) | `feat/m04-a4-metadata-jobs`; `feat/m04-presentation-metadata-jobs` | See "M04" |
+| M04 Metadata jobs | Merged: part 1 [PR #9](https://github.com/PantaKoda/MyBooksLibrary/pull/9) (merge `6b5d740`); part 2 [PR #10](https://github.com/PantaKoda/MyBooksLibrary/pull/10) (merge `578e951`) | `feat/m04-a4-metadata-jobs`; `feat/m04-presentation-metadata-jobs` | See "M04" |
+| SDK 0.3.0 update | AwaitingReview | `chore/sdk-0.3.0` | See "SDK 0.3.0 update" |
 | M05–M11 | NotStarted | | |
+
+## SDK 0.3.0 update (2026-09-27)
+
+**Why:** PDFMegine released SDK **0.3.0** (tag `v0.3.0` = `bd46d90`; PR #4, merge `dfcd6f8`) for PDFMegine issue #3. It adds `analyze_book()`, which extracts metadata and analyzes the TOC on one session, so each page is read and OCR'd once. M05 will use it.
+
+| Item | Value |
+| --- | --- |
+| Release asset | `pdfbookmark-sdk-0.3.0-win64.zip`, SHA-256 `998508d45f28ef36ea1d4ae27840814e81df95fbea1e6f3b5895669aa957e744` (matches the release), unpacked to `…\Dev\pdfbookmark-sdk\0.3.0\`; 0.2.0 kept. `PDFBOOKMARK_SDK` (user environment) points at 0.3.0 |
+| Header changes from 0.2.0 | New `engine/book.hpp`; `using` lines in `pdfbookmark.hpp`; C API additions in `pdfbookmark.h`; `version.hpp`. All other headers byte-identical |
+| Header / loaded version | `0.3.0` / `0.3.0` (Debug and Release) |
+
+**Changes:** `find_package(pdfbookmark 0.3)`; the CI SDK version and digest; the AGENTS.md baseline; the CLAUDE.md SDK brief path; BUILDING.md and the `verify.ps1` example. No application code changes.
+
+**Verification** (clean build folders, SDK taken from the `PDFBOOKMARK_SDK` environment variable):
+
+| Command | Result |
+| --- | --- |
+| `pwsh scripts/verify.ps1 -Clean` (Release) and `-Configuration Debug -Clean`, at `578e951` with `find_package(pdfbookmark 0.2)`, and again on this branch with `0.3` | VERIFY PASSED in all four: 11/11 `ctest` suites, no `warning C…`, and every `--reader-check` check passes |
+| `qt-cmake … -DPDFBOOKMARK_SDK=<sdk 0.2.0>` on this branch | Refused at configure: "Could not find a configuration file for package \"pdfbookmark\" that is compatible with requested version \"0.3\"" (found 0.2.0) |
+| App smoke with models, Release: import `title-page.pdf`, `contents-book.pdf` and `image-only.pdf` | Exit 0, no QML warnings. Same results as on 0.2.0: one title resolved and two ambiguous; OCR ran on `image-only.pdf`; page counts 3/27/4; 15 field-detail rows |
+| Close during OCR on `image-only.pdf`, then restart (Release) | Closed after 5.5 s (6.8 s on 0.2.0) while responding, exit 0. The job was requeued and succeeded after restart |
+| Throwaway harness outside the repo: `extract_metadata()` + `analyze()` vs `analyze_book()`, Release, models | On `image-only.pdf` (4 scanned pages), 59.1 s and 58.0 s became **29.0 s and 29.3 s**, with 4 OCR attempts instead of 8 (`pages_reused` 4). Metadata reports identical. Analysis reports identical except `ocr_attempts_used` (0), `acquisition.ocr_budget` (the stage's allowance, 60 instead of 64) and the configuration string of reused pages (`ocr_budget=16`, from the metadata stage). Reported on PDFMegine issue #3 |
+
+**Limitations:** the application does not call `analyze_book()` yet (M05). Issue #3 stays open until the in-app timing is confirmed.
 
 ## M04 — Metadata jobs
 
