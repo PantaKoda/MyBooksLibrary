@@ -10,8 +10,42 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | SDK 0.2.0 update | Merged | `chore/m01-sdk-0.2.0` / [PR #5](https://github.com/PantaKoda/MyBooksLibrary/pull/5), merge `4f87975` | See "SDK 0.2.0 update" |
 | M03 Import/library shell | Merged: part 1 [PR #6](https://github.com/PantaKoda/MyBooksLibrary/pull/6) (merge `515ff43`); part 2 [PR #7](https://github.com/PantaKoda/MyBooksLibrary/pull/7) (merge `f39b141`) | `feat/m03-a1-managed-import`; `feat/m03-presentation-library-shell` | See "M03" |
 | M04 Metadata jobs | Merged: part 1 [PR #9](https://github.com/PantaKoda/MyBooksLibrary/pull/9) (merge `6b5d740`); part 2 [PR #10](https://github.com/PantaKoda/MyBooksLibrary/pull/10) (merge `578e951`) | `feat/m04-a4-metadata-jobs`; `feat/m04-presentation-metadata-jobs` | See "M04" |
-| SDK 0.3.0 update | AwaitingReview | `chore/sdk-0.3.0` | See "SDK 0.3.0 update" |
-| M05–M11 | NotStarted | | |
+| SDK 0.3.0 update | Merged | `chore/sdk-0.3.0` / [PR #11](https://github.com/PantaKoda/MyBooksLibrary/pull/11), merge `a4b7d59` | See "SDK 0.3.0 update" |
+| M05 Contents | Part 1 AwaitingReview ([PR #12](https://github.com/PantaKoda/MyBooksLibrary/pull/12), contents jobs, one SDK call per book); part 2 NotStarted (inspector and contents tree) | `feat/m05-a4-contents-analysis` | See "M05" |
+| M06–M11 | NotStarted | | |
+
+## M05 — Contents
+
+### Part 1: contents jobs and one SDK call per book (A4 + A2 + A1)
+
+**Scope:**
+- schema 4 (contents evidence and plan columns);
+- `completeTocJob`, `claimQueuedJob`; import queues metadata and contents jobs;
+- the coordinator's paired runs with a group cancel flag, per-job publication, throttled progress;
+- `ContentsAnalyzer`, `sdk::SdkContentsAnalyzer` (`analyze`, `analyze_book`) and `sdk::normalizeContents`;
+- presentation wiring: the analyzer is injected, Retry works for contents jobs, and book rows and the activity list show contents states and pages read.
+
+**Touched paths:** `src/domain/toc.h`, `src/catalog/`, `src/processing/`, `src/presentation/`, `main.cpp`, `Main.qml`, `CMakeLists.txt`, `tests/`, `docs/`.
+
+| Command | Result |
+| --- | --- |
+| `pwsh scripts/verify.ps1` (Release) and `-Configuration Debug` | VERIFY PASSED in both; 12/12 `ctest` suites |
+| `tst_processingcoordinator` (fakes, 27 cases, 7 new) | A paired run makes one `analyzeBook` call and no separate metadata call, publishes the metadata while the contents stage still runs, and attributes progress by stage. Cancelling only the contents lets the metadata publish and then stops the call; cancelling only the metadata keeps the call for the contents. A contents-only job uses `analyze` and reports progress. Closing during the contents stage keeps the metadata and requeues the contents. A contents entry past the last page fails as `publish_failed`. Entries and evidence survive a restart, including page 0, a parent listed after its child, ambiguous alternatives, and omissions |
+| `tst_sdkcontentsanalyzer` (real SDK 0.3.0, 6 cases) | A constructed report joins by ID with mappings out of order and keeps every entry. `contents-book.pdf`: `plan_ready`, 5 entries, label "1" → page index 3, a known parent, all in the plan. `analyze_book` delivers the metadata once, during the metadata stage, with the same contents as `analyze`. `title-page.pdf` gives `no_toc_found_in_search` with no entries. A pre-set cancel makes both results cancelled. End-to-end import publishes both |
+| `tst_librarycontroller` (19 cases) | Adapted to two jobs per book with a fake analyzer: the paired run, closing and resuming (2 interrupted, 4 succeeded), cancelling only the metadata then retrying it alone, crash recovery, and waiting without an extractor |
+| `tst_importservice`, `tst_migrations` | Import and recovery queue one job of each kind; a schema 3 catalog's contents run loads after the upgrade |
+| Mutations, each reverted | Group flag raised by any member, join by position, every refusal treated as a cancel, page count recorded after the check: each makes its test fail |
+| Review fix (PR #12): the footer counts waiting **books**, not jobs | `withoutAnExtractorJobsWait`: 3 books give 6 pending jobs and "3 book(s) waiting"; `closingDuringExtractionResumesNextSession`: "Reading title and authors: … · 1 book(s) waiting". Counting jobs again makes both fail (6 and 2) |
+| `appMyBooksLibrary` smoke, Release, real SDK and models: the three fixtures | Exit 0, no QML warnings, all 6 jobs `succeeded/published`. `contents-book.pdf` `plan_ready` with 5 entries and a stored plan; the other two `no_toc_found_in_search`; 6 reports |
+| Same, `image-only.pdf` alone (issue #3 in-app timing) | Metadata and contents in **24.1 s** of app time, startup included (separate SDK calls: about 58 s) |
+| Close during the paired OCR run, then restart (Debug) | Closed after 8.8 s, responding; both jobs `interrupted` and requeued; after restart both `succeeded/published` |
+
+**Limitations:**
+- There is no contents view yet (part 2).
+- Titles of a large import appear book by book, because each book's call includes its contents analysis.
+- Stage names are not shown.
+
+**Next action:** M05 part 2. A book inspector with the contents tree (two-pass, so a parent may come after its child, with cycle checks), per-entry states and reasons, and metadata evidence.
 
 ## SDK 0.3.0 update (2026-09-27)
 

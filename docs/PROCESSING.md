@@ -1,8 +1,19 @@
 # Processing coordinator (A4)
 
-In the application, `presentation::LibraryController` owns the coordinator; see UI.md. Each import queues its book's first metadata job **in the import transaction** (`catalog::completeImport`, through `detail::queueJob`), so a crash right after an import cannot lose the request. The controller creates the coordinator when the library opens, runs `recover()`, then `start()`, and calls `start()` again after each import.
+In the application, `presentation::LibraryController` owns the coordinator; see UI.md. Each import queues its book's first **metadata** and **contents** (TOC) jobs **in the import transaction** (`catalog::completeImport`, through `detail::queueJob`), so a crash right after an import cannot lose the requests. The controller creates the coordinator when the library opens, runs `recover()`, then `start()`, and calls `start()` again after each import.
 
-`processing::ProcessingCoordinator` runs the durable processing jobs. M04 part 1 covers metadata jobs. TOC jobs (M05) use the same queue; until then a claimed TOC job fails with outcome `unsupported`.
+`processing::ProcessingCoordinator` runs the durable processing jobs: metadata jobs (`MetadataExtractor`) and contents jobs (`ContentsAnalyzer`). Without an analyzer, a claimed contents job fails with outcome `unsupported`.
+
+## One SDK call for both jobs of a book
+
+When the worker claims a metadata job and the same book has a contents job queued, it claims that one too (`catalog::claimQueuedJob`) and serves both with **one** `ContentsAnalyzer::analyzeBook` call (SDK `analyze_book`). The pages are read, and OCR'd, once; on the 4-page scanned fixture this halves the time (about 58 s → 29 s). A book whose metadata job runs alone uses `MetadataExtractor::extract`; a contents job whose metadata job is not waiting uses `ContentsAnalyzer::analyze`.
+
+Each job still keeps its own generation, publication, cancel and outcome:
+
+- **Metadata first.** `analyzeBook` calls back as soon as the metadata stage is done, before the contents analysis starts. The coordinator publishes the metadata right then, so the title shows while the contents are still being analyzed. If the metadata stage fails, both jobs fail; if only the contents analysis fails, the metadata stays published.
+- **Shared cancel.** The call's cancel flag is a **group** flag (`CancelFlags::group`). It is raised only when every job that still needs the call is cancelled, or at `stop()`. A job leaves the group once it has its result (`settle`). Cancelling only the contents job during the metadata stage lets the metadata finish and publish, then stops the call. Cancelling only the metadata job lets the call continue for the contents and discards the metadata result.
+- **Progress** of the SDK's `"metadata"` stage goes to the metadata job, the rest to the contents job (`jobProgress`: stage and pages acquired in it; no total exists). It is throttled to about four updates a second plus every change of stage.
+- **Scheduling.** Metadata jobs are claimed before contents jobs, oldest first, so an import of several books is processed book by book, each with one call.
 
 ## Threads
 
@@ -21,7 +32,7 @@ States: `queued`, `running`, `cancel_requested`, `succeeded`, `failed`, `cancell
 
 1. `enqueueMetadata(book)` → `catalog::enqueueJob`. If a pending job exists it is returned unchanged. Otherwise (including while an earlier job is still `cancel_requested`), in one transaction, the book's metadata **request generation** is incremented and a queued job records that generation and the asset's SHA-256. Trashed books are refused.
 2. The worker claims the next job (metadata before TOC, then oldest). Queued jobs of trashed books are cancelled with outcome `trashed` instead of running.
-3. The worker reads the managed path and calls the extractor with the job's cancel flag.
+3. The worker reads the managed path and calls the SDK step with the job's (or the pair's group) cancel flag.
 4. The result is handled as follows:
 
 | Result | Job state / outcome |
@@ -33,11 +44,12 @@ States: `queued`, `running`, `cancel_requested`, `succeeded`, `failed`, `cancell
 | Report file cannot be written | `failed` / `report_write_failed` |
 | Published | `succeeded` / `published`, with the run ID |
 | Refused: job no longer running (cancel requested meanwhile) | `cancelled` / `cancelled` |
+| Refused: the result itself is invalid (e.g. a contents entry pointing past the last page) | `failed` / `publish_failed`, with the reason |
 | Refused: newer request generation | `cancelled` / `superseded` |
 | Refused: book trashed | `cancelled` / `trashed` |
-| The extractor threw | `failed` / `exception` |
+| The SDK step threw | `failed` / `exception` |
 
-A refused publication removes the report it wrote. "Not found" on the first pages is a normal completed extraction whose fields have status `not_found_in_search`; it is not retried.
+A refused publication removes the report it wrote. "Not found" on the first pages is a normal completed extraction whose fields have status `not_found_in_search`, and a book without printed contents is a normal completed analysis with outcome `no_toc_found_in_search`; neither is retried.
 
 ## Publication
 
@@ -51,6 +63,8 @@ A refused publication removes the report it wrote. "Not found" on the first page
 - the job becomes `succeeded`.
 
 Overrides are read when effective metadata is computed, so corrections made while the SDK ran are kept, including **Cleared**. The TOC component is untouched.
+
+`catalog::completeTocJob` is the same for contents: in one transaction it records the page count if it was unknown (first, so that destinations are checked against it), publishes **every parsed entry** with its evidence (`toc_entries.evidence_json`) and the run's parse completeness, search coverage, plan blockers, stop reasons and SDK plan (`toc_runs`), updates the search projection, and marks the job succeeded. The metadata component is untouched.
 
 ## Restart and shutdown
 
@@ -98,3 +112,12 @@ It converts the SDK path from `QString::toStdWString()` on Windows, or explicit 
 The raw `metadata_report_json` is stored as the run's immutable report.
 
 Missing models are not a failure. The extraction completes, and scanned title pages then give `not_found_in_search`. The run records its options (`models: false`) and an empty model identity.
+
+`sdk::SdkContentsAnalyzer` calls `pdfbookmark::analyze`, or `pdfbookmark::analyze_book` for a pair, with the settings of AGENTS.md section 4 for automatic analysis: `models` set explicitly, titles as printed, `allow_partial = false`, `flat_outline_for_unknown_hierarchy = false`, and the SDK's finite limits (40 pages, then 20 more, up to 200; 64 OCR attempts for the whole run). These settings only shape the plan; every parsed entry is still returned and stored. `sdk::normalizeContents`:
+
+- keeps **every parsed entry**, joined to its mapping **by entry ID**, never by position;
+- keeps hierarchy (root, known parent, unknown) and destination (resolved, ambiguous, unresolved) states, and gives a page only to resolved entries; printed labels stay labels;
+- records source pages (the first one is the source TOC page), reasons, uncertain printed labels, the resolution method, alternative pages of ambiguous entries, and why the plan omitted an entry;
+- marks an entry "in the export plan" when the plan (draft or ready) has a node for it, and stores the plan as `plan_to_json`.
+
+The raw `analysis_report_json` is stored as the run's immutable report.

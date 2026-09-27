@@ -61,4 +61,9 @@ domain::Result<domain::RunId> publishMetadataRun(QSqlDatabase& db, const domain:
                                                  const domain::RunIdentity& run,
                                                  const domain::ExtractedMetadata& metadata);
 
+// publishToc() without its own transaction, with a caller-chosen run ID.
+domain::Result<domain::RunId> publishTocRun(QSqlDatabase& db, const domain::RunId& id,
+                                            const domain::PublishTicket& ticket, const domain::RunIdentity& run,
+                                            const domain::TocAnalysis& toc);
+
 } // namespace mbl::catalog::detail

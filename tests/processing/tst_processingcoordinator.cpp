@@ -22,6 +22,8 @@
 
 using namespace mbl::domain;
 using mbl::catalog::Library;
+using mbl::processing::ContentsAnalysis;
+using mbl::processing::ContentsAnalyzer;
 using mbl::processing::MetadataExtraction;
 using mbl::processing::MetadataExtractor;
 using mbl::processing::ProcessingCoordinator;
@@ -76,6 +78,132 @@ MetadataExtraction success(const QString& path, const QString& title)
     return r;
 }
 
+// Contents of a 3-page book: page 0 is a valid destination; "1.1 Scope" names
+// a parent that is listed after it; "Index" is unresolved and left out of the
+// plan with a reason; "Appendix" is ambiguous between two pages.
+ContentsAnalysis sampleContents(const QString& path)
+{
+    ContentsAnalysis r;
+    r.status = ContentsAnalysis::Status::Completed;
+    r.sourceSha256 = storage::sha256OfFile(path).value_or(QString());
+    r.pageCount = 3;
+    r.toc.outcome = QStringLiteral("analysis_partial");
+    r.toc.planReady = false;
+    r.toc.parseComplete = true;
+    r.toc.searchCoveredDocument = true;
+    r.toc.planBlockers << QStringLiteral("2 entries have no confirmed page");
+    r.toc.stopReasons << QStringLiteral("searched every page");
+    r.toc.planJson = QByteArrayLiteral("{\"nodes\":[]}");
+    auto entry = [](const char* id, int order, const char* title, HierarchyState h) {
+        TocEntry e;
+        e.sdkEntryId = QString::fromLatin1(id);
+        e.order = order;
+        e.title = QString::fromUtf8(title);
+        e.hierarchy = h;
+        e.sourceTocPage = 1;
+        e.evidence.sourcePages = {1};
+        return e;
+    };
+    TocEntry intro = entry("e0", 0, "1 Introduction", HierarchyState::Root);
+    intro.printedLabel = QStringLiteral("1");
+    intro.destinationState = DestinationState::Resolved;
+    intro.destinationPage = 0;
+    intro.inExportPlan = true;
+    intro.evidence.destinationMethod = QStringLiteral("inferred_offset");
+    intro.evidence.hierarchyReasons << QStringLiteral("Aligned to column root margin");
+    TocEntry scope = entry("e1", 1, "1.1 Scope", HierarchyState::KnownParent);
+    scope.parentSdkEntryId = QStringLiteral("e2");  // Listed after its child.
+    scope.printedLabel = QStringLiteral("2");
+    scope.destinationState = DestinationState::Resolved;
+    scope.destinationPage = 1;
+    scope.inExportPlan = true;
+    TocEntry methods = entry("e2", 2, "2 Méthodes", HierarchyState::Root);
+    methods.printedLabel = QStringLiteral("3");
+    methods.destinationState = DestinationState::Resolved;
+    methods.destinationPage = 2;
+    methods.inExportPlan = true;
+    TocEntry appendix = entry("e3", 3, "Appendix", HierarchyState::Root);
+    appendix.printedLabel = QStringLiteral("A-1");
+    appendix.destinationState = DestinationState::Ambiguous;
+    appendix.evidence.alternativePages = {1, 2};
+    appendix.evidence.destinationReasons << QStringLiteral("two pages carry the label");
+    appendix.evidence.omissionReason = QStringLiteral("no confirmed page");
+    TocEntry index = entry("e4", 4, "Index", HierarchyState::Unknown);
+    index.printedLabel = QStringLiteral("xii");
+    index.evidence.printedLabelUncertain = true;
+    index.evidence.destinationReasons << QStringLiteral("no page shows the label xii");
+    index.evidence.omissionReason = QStringLiteral("unresolved");
+    r.toc.entries = {intro, scope, methods, appendix, index};
+    r.reportJson = QByteArrayLiteral("{\"kind\":\"fake-analysis\"}");
+    r.sdkVersion = QStringLiteral("fake");
+    r.optionsJson = QStringLiteral("{}");
+    r.outcome = r.toc.outcome;
+    return r;
+}
+
+// Contents step with gates: a test holds a stage by clearing its release
+// flag and observes the cancel flag the coordinator passes in.
+class FakeAnalyzer : public ContentsAnalyzer {
+public:
+    std::atomic_int analyzeCalls{0};
+    std::atomic_int bookCalls{0};
+    std::atomic_bool releaseMetadata{true};
+    std::atomic_bool releaseContents{true};
+    std::atomic_bool inMetadataStage{false};
+    std::atomic_bool inContentsStage{false};
+    std::atomic_bool cancelSeenInMetadataStage{false};
+    std::function<MetadataExtraction(const QString&)> metadata;
+    std::function<ContentsAnalysis(const QString&)> contents = [](const QString& p) { return sampleContents(p); };
+
+    ContentsAnalysis analyze(const QString& path, const std::atomic_bool& cancel, const Progress& progress) override
+    {
+        ++analyzeCalls;
+        if (progress)
+            progress(QStringLiteral("search"), 3);
+        return contentsStage(path, cancel);
+    }
+
+    ContentsAnalysis analyzeBook(const QString& path, const std::atomic_bool& cancel, const Progress& progress,
+                                 const MetadataReady& onMetadata) override
+    {
+        ++bookCalls;
+        if (progress)
+            progress(QStringLiteral("metadata"), 1);
+        inMetadataStage = true;
+        while (!releaseMetadata.load() && !cancel.load())
+            QThread::msleep(2);
+        cancelSeenInMetadataStage = cancel.load();
+        inMetadataStage = false;
+        if (cancel.load()) {
+            MetadataExtraction m;
+            m.status = MetadataExtraction::Status::Cancelled;
+            onMetadata(m);
+            ContentsAnalysis c;
+            c.status = ContentsAnalysis::Status::Cancelled;
+            return c;
+        }
+        onMetadata(metadata(path));
+        if (progress)
+            progress(QStringLiteral("search"), 2);
+        return contentsStage(path, cancel);
+    }
+
+private:
+    ContentsAnalysis contentsStage(const QString& path, const std::atomic_bool& cancel)
+    {
+        inContentsStage = true;
+        while (!releaseContents.load() && !cancel.load())
+            QThread::msleep(2);
+        inContentsStage = false;
+        if (cancel.load()) {
+            ContentsAnalysis c;
+            c.status = ContentsAnalysis::Status::Cancelled;
+            return c;
+        }
+        return contents(path);
+    }
+};
+
 // Blocks until `release` is set or the job is cancelled (if `honourCancel`).
 void waitFor(const std::atomic_bool& release, const std::atomic_bool& cancel, bool honourCancel)
 {
@@ -113,10 +241,20 @@ private slots:
     void cancelAllCancelsRunningAndQueued();
     void extractorExceptionFailsTheJob();
 
+    void pairedRunPublishesMetadataFirstThenContents();
+    void cancellingOnlyTheContentsKeepsTheMetadata();
+    void cancellingOnlyTheMetadataKeepsTheContents();
+    void contentsOnlyJobUsesAnalyzeAndReportsProgress();
+    void stopDuringContentsInterruptsOnlyContents();
+    void rejectedContentsFailNotCancelled();
+    void contentsAndEvidenceSurviveRestart();
+
 private:
     template <typename Task>
     auto db(Task task) { return m_library->run(std::move(task)).result(); }
-    BookId importBook(const char* fixtureName);
+    // Metadata tests drop the contents job the import queues, so they see one
+    // job per book; contents tests keep it.
+    BookId importBook(const char* fixtureName, bool keepContentsJob = false);
     JobRecord jobOf(const JobId& id) { return db([id](QSqlDatabase& d) { return catalog::job(d, id); }).value(); }
     BookDetails detailsOf(const BookId& id)
     {
@@ -136,6 +274,26 @@ private:
     std::unique_ptr<QTemporaryDir> m_root;
     std::unique_ptr<Library> m_library;
     std::shared_ptr<FakeExtractor> m_fake;
+    std::shared_ptr<FakeAnalyzer> m_analyzer;
+    void dropJobs(const BookId& book)  // As if the book's earlier jobs had long finished.
+    {
+        QVERIFY(db([book](QSqlDatabase& d) {
+            QSqlQuery q(d);
+            q.prepare(QStringLiteral("DELETE FROM jobs WHERE book_id = ?"));
+            q.addBindValue(book.toString());
+            return q.exec();
+        }));
+    }
+    JobRecord jobOfKind(const BookId& book, JobKind kind)
+    {
+        const auto jobs = db([](QSqlDatabase& d) { return catalog::listJobs(d, false, -1); }).value();
+        for (const JobRecord& j : jobs) {  // Newest first.
+            if (j.book == book && j.kind == kind)
+                return j;
+        }
+        qFatal("no job of that kind");
+        return {};
+    }
 };
 
 void TestProcessingCoordinator::init()
@@ -145,21 +303,34 @@ void TestProcessingCoordinator::init()
     QVERIFY2(opened, opened ? "" : qPrintable(opened.error().message));
     m_library = std::move(opened.value());
     m_fake = std::make_shared<FakeExtractor>();
+    m_analyzer = std::make_shared<FakeAnalyzer>();
+    m_analyzer->metadata = [](const QString& p) { return success(p, QStringLiteral("From The Book Run")); };
 }
 
 void TestProcessingCoordinator::cleanup()
 {
     m_fake.reset();
+    m_analyzer.reset();
     m_library.reset();
     m_root.reset();
 }
 
-BookId TestProcessingCoordinator::importBook(const char* fixtureName)
+BookId TestProcessingCoordinator::importBook(const char* fixtureName, bool keepContentsJob)
 {
     storage::ImportService importer(*m_library);
     const auto r = importer.importFile(fixture(fixtureName));
     if (!r.book)
         qFatal("import failed: %s", qPrintable(r.error));
+    if (!keepContentsJob) {
+        const bool removed = db([book = *r.book](QSqlDatabase& d) {
+            QSqlQuery q(d);
+            q.prepare(QStringLiteral("DELETE FROM jobs WHERE book_id = ? AND kind = 'toc'"));
+            q.addBindValue(book.toString());
+            return q.exec();
+        });
+        if (!removed)
+            qFatal("could not drop the contents job");
+    }
     return *r.book;
 }
 
@@ -707,6 +878,204 @@ void TestProcessingCoordinator::extractorExceptionFailsTheJob()
     // The worker survives and runs the next request.
     m_fake->behavior = [](const QString& p, const std::atomic_bool&) { return success(p, QStringLiteral("Next")); };
     QCOMPARE(runToEnd(c, book).state, JobState::Succeeded);
+}
+
+// A book with both jobs queued is served by one analyzeBook call: the
+// metadata is published as soon as its stage ends, before the contents.
+void TestProcessingCoordinator::pairedRunPublishesMetadataFirstThenContents()
+{
+    const BookId book = importBook("title-page.pdf", true);
+    m_analyzer->releaseContents = false;  // Hold the contents stage.
+    m_fake->behavior = [](const QString& p, const std::atomic_bool&) { return success(p, QStringLiteral("Unused")); };
+    ProcessingCoordinator c(*m_library, m_fake, m_analyzer);
+    QSignalSpy metadataPublished(&c, &ProcessingCoordinator::metadataPublished);
+    QSignalSpy contentsPublished(&c, &ProcessingCoordinator::contentsPublished);
+    QSignalSpy progress(&c, &ProcessingCoordinator::jobProgress);
+    c.start();
+    QTRY_VERIFY_WITH_TIMEOUT(m_analyzer->inContentsStage.load(), 10000);
+    // Early metadata: visible while the contents analysis still runs.
+    QTRY_COMPARE_WITH_TIMEOUT(metadataPublished.size(), 1, 5000);
+    QCOMPARE(*detailsOf(book).summary.metadata.title, QStringLiteral("From The Book Run"));
+    QCOMPARE(jobOfKind(book, JobKind::Metadata).state, JobState::Succeeded);
+    QCOMPARE(jobOfKind(book, JobKind::Toc).state, JobState::Running);
+    QVERIFY(!detailsOf(book).toc);
+
+    m_analyzer->releaseContents = true;
+    QTRY_COMPARE_WITH_TIMEOUT(contentsPublished.size(), 1, 10000);
+    QTRY_VERIFY_WITH_TIMEOUT(!c.busy(), 5000);
+    QCOMPARE(m_analyzer->bookCalls.load(), 1);  // One SDK call for both...
+    QCOMPARE(m_analyzer->analyzeCalls.load(), 0);
+    QCOMPARE(m_fake->calls.load(), 0);           // ...and no separate metadata call.
+    const JobRecord toc = jobOfKind(book, JobKind::Toc);
+    QCOMPARE(toc.state, JobState::Succeeded);
+    QCOMPARE(toc.attempt, 1);
+    const BookDetails d = detailsOf(book);
+    QVERIFY(d.toc);
+    QCOMPARE(d.toc->entries.size(), 5);  // Unresolved and omitted entries included.
+    QCOMPARE(d.summary.tocEntryCount, 5);
+    QCOMPARE(d.asset.pageCount, 3);
+    QCOMPARE(reportFiles().size(), 2);  // One report per run.
+    // Progress: the "metadata" stage belongs to the metadata job, the rest to the contents job.
+    QVERIFY(progress.size() >= 2);
+    QCOMPARE(progress.first().at(0).value<JobId>(), jobOfKind(book, JobKind::Metadata).id);
+    QCOMPARE(progress.first().at(1).toString(), QStringLiteral("metadata"));
+    QCOMPARE(progress.last().at(0).value<JobId>(), toc.id);
+}
+
+// Cancelling the contents job while the metadata stage runs must not cancel
+// the shared SDK call before the metadata is in: the metadata is published,
+// then the call stops and the contents job ends cancelled.
+void TestProcessingCoordinator::cancellingOnlyTheContentsKeepsTheMetadata()
+{
+    const BookId book = importBook("title-page.pdf", true);
+    m_analyzer->releaseMetadata = false;
+    m_analyzer->releaseContents = false;
+    ProcessingCoordinator c(*m_library, m_fake, m_analyzer);
+    c.start();
+    QTRY_VERIFY_WITH_TIMEOUT(m_analyzer->inMetadataStage.load(), 10000);
+    const JobId toc = jobOfKind(book, JobKind::Toc).id;
+    c.cancelJob(toc);
+    QTRY_COMPARE_WITH_TIMEOUT(jobOf(toc).state, JobState::CancelRequested, 5000);
+    QTest::qWait(100);
+    QVERIFY(m_analyzer->inMetadataStage.load());  // The call was not cancelled.
+    m_analyzer->releaseMetadata = true;
+    QTRY_VERIFY_WITH_TIMEOUT(!c.busy(), 10000);
+    QVERIFY(!m_analyzer->cancelSeenInMetadataStage.load());
+    QCOMPARE(jobOfKind(book, JobKind::Metadata).state, JobState::Succeeded);
+    QCOMPARE(*detailsOf(book).summary.metadata.title, QStringLiteral("From The Book Run"));
+    QCOMPARE(jobOf(toc).state, JobState::Cancelled);
+    QVERIFY(!detailsOf(book).toc);
+    QCOMPARE(reportFiles().size(), 1);
+}
+
+// Cancelling only the metadata job keeps the call running for the contents;
+// the metadata result is discarded.
+void TestProcessingCoordinator::cancellingOnlyTheMetadataKeepsTheContents()
+{
+    const BookId book = importBook("title-page.pdf", true);
+    m_analyzer->releaseMetadata = false;
+    ProcessingCoordinator c(*m_library, m_fake, m_analyzer);
+    c.start();
+    QTRY_VERIFY_WITH_TIMEOUT(m_analyzer->inMetadataStage.load(), 10000);
+    const JobId metadata = jobOfKind(book, JobKind::Metadata).id;
+    c.cancelJob(metadata);
+    QTRY_COMPARE_WITH_TIMEOUT(jobOf(metadata).state, JobState::CancelRequested, 5000);
+    QTest::qWait(100);
+    m_analyzer->releaseMetadata = true;
+    QTRY_VERIFY_WITH_TIMEOUT(!c.busy(), 10000);
+    QVERIFY(!m_analyzer->cancelSeenInMetadataStage.load());  // The shared call was not cancelled.
+    QCOMPARE(jobOf(metadata).state, JobState::Cancelled);
+    QVERIFY(!detailsOf(book).extracted);
+    QCOMPARE(jobOfKind(book, JobKind::Toc).state, JobState::Succeeded);
+    QCOMPARE(detailsOf(book).toc->entries.size(), 5);
+}
+
+void TestProcessingCoordinator::contentsOnlyJobUsesAnalyzeAndReportsProgress()
+{
+    const BookId book = importBook("title-page.pdf");
+    dropJobs(book);  // Contents only: no metadata job to pair with.
+    ProcessingCoordinator c(*m_library, m_fake, m_analyzer);
+    QSignalSpy progress(&c, &ProcessingCoordinator::jobProgress);
+    QSignalSpy contentsPublished(&c, &ProcessingCoordinator::contentsPublished);
+    c.enqueueContents(book);
+    QTRY_COMPARE_WITH_TIMEOUT(contentsPublished.size(), 1, 10000);
+    QTRY_VERIFY_WITH_TIMEOUT(!c.busy(), 5000);
+    QCOMPARE(m_analyzer->analyzeCalls.load(), 1);
+    QCOMPARE(m_analyzer->bookCalls.load(), 0);
+    QCOMPARE(progress.size(), 1);
+    QCOMPARE(progress.first().at(1).toString(), QStringLiteral("search"));
+    QCOMPARE(progress.first().at(2).toInt(), 3);
+    QVERIFY(!detailsOf(book).extracted);  // The metadata component is untouched.
+}
+
+// Closing after the metadata is in: the metadata stays published, the
+// contents job is interrupted and queued again.
+void TestProcessingCoordinator::stopDuringContentsInterruptsOnlyContents()
+{
+    const BookId book = importBook("title-page.pdf", true);
+    m_analyzer->releaseContents = false;
+    {
+        ProcessingCoordinator c(*m_library, m_fake, m_analyzer);
+        c.start();
+        QTRY_VERIFY_WITH_TIMEOUT(m_analyzer->inContentsStage.load(), 10000);
+        c.stop();
+        QTRY_VERIFY_WITH_TIMEOUT(!c.busy(), 10000);
+    }
+    QCOMPARE(jobOfKind(book, JobKind::Metadata).state, JobState::Succeeded);
+    const auto jobs = db([](QSqlDatabase& d) { return catalog::listJobs(d, false, -1); }).value();
+    QStringList toc;
+    for (const JobRecord& j : jobs) {
+        if (j.kind == JobKind::Toc)
+            toc << toCode(j.state);
+    }
+    toc.sort();
+    QCOMPARE(toc, (QStringList{QStringLiteral("interrupted"), QStringLiteral("queued")}));
+}
+
+// A contents result the catalog rejects (a destination past the last page)
+// fails the job; it is not reported as a cancellation.
+void TestProcessingCoordinator::rejectedContentsFailNotCancelled()
+{
+    const BookId book = importBook("title-page.pdf");
+    dropJobs(book);  // Contents only: no metadata job to pair with.
+    m_analyzer->contents = [](const QString& p) {
+        ContentsAnalysis r = sampleContents(p);
+        r.toc.entries[0].destinationPage = 7;  // The book has 3 pages.
+        return r;
+    };
+    ProcessingCoordinator c(*m_library, m_fake, m_analyzer);
+    c.enqueueContents(book);
+    QTRY_VERIFY_WITH_TIMEOUT(!isOpen(jobOfKind(book, JobKind::Toc).state), 10000);
+    const JobRecord job = jobOfKind(book, JobKind::Toc);
+    QCOMPARE(job.state, JobState::Failed);
+    QCOMPARE(job.outcome, QStringLiteral("publish_failed"));
+    QVERIFY2(job.error.contains(QStringLiteral("beyond")), qPrintable(job.error));
+    QVERIFY(!detailsOf(book).toc);
+    QVERIFY(reportFiles().isEmpty());
+}
+
+void TestProcessingCoordinator::contentsAndEvidenceSurviveRestart()
+{
+    const BookId book = importBook("title-page.pdf", true);
+    {
+        ProcessingCoordinator c(*m_library, m_fake, m_analyzer);
+        QSignalSpy contentsPublished(&c, &ProcessingCoordinator::contentsPublished);
+        c.start();
+        QTRY_COMPARE_WITH_TIMEOUT(contentsPublished.size(), 1, 10000);
+        QTRY_VERIFY_WITH_TIMEOUT(!c.busy(), 5000);
+    }
+    restartLibrary();
+    const BookDetails d = detailsOf(book);
+    QVERIFY(d.toc);
+    const TocAnalysis& toc = *d.toc;
+    QCOMPARE(toc.outcome, QStringLiteral("analysis_partial"));
+    QVERIFY(!toc.planReady);
+    QCOMPARE(toc.parseComplete, std::optional<bool>(true));
+    QCOMPARE(toc.searchCoveredDocument, std::optional<bool>(true));
+    QCOMPARE(toc.planBlockers, QStringList{QStringLiteral("2 entries have no confirmed page")});
+    QCOMPARE(toc.stopReasons, QStringList{QStringLiteral("searched every page")});
+    QCOMPARE(toc.planJson, QByteArrayLiteral("{\"nodes\":[]}"));
+    QCOMPARE(toc.entries.size(), 5);
+    const TocEntry& intro = toc.entries.at(0);
+    QCOMPARE(intro.destinationPage, std::optional<int>(0));  // Page zero is a destination.
+    QCOMPARE(intro.evidence.destinationMethod, std::optional<QString>(QStringLiteral("inferred_offset")));
+    QCOMPARE(intro.evidence.hierarchyReasons, QStringList{QStringLiteral("Aligned to column root margin")});
+    const TocEntry& scope = toc.entries.at(1);
+    QCOMPARE(scope.hierarchy, HierarchyState::KnownParent);
+    QCOMPARE(scope.parentSdkEntryId, std::optional<QString>(QStringLiteral("e2")));  // Parent after child.
+    QCOMPARE(toc.entries.at(2).title, QStringLiteral("2 Méthodes"));
+    const TocEntry& appendix = toc.entries.at(3);
+    QCOMPARE(appendix.destinationState, DestinationState::Ambiguous);
+    QVERIFY(!appendix.destinationPage);
+    QCOMPARE(appendix.evidence.alternativePages, (QList<int>{1, 2}));
+    QCOMPARE(appendix.evidence.omissionReason, std::optional<QString>(QStringLiteral("no confirmed page")));
+    QVERIFY(!appendix.inExportPlan);
+    const TocEntry& index = toc.entries.at(4);
+    QCOMPARE(index.destinationState, DestinationState::Unresolved);
+    QCOMPARE(index.printedLabel, std::optional<QString>(QStringLiteral("xii")));
+    QVERIFY(index.evidence.printedLabelUncertain);
+    QCOMPARE(index.evidence.sourcePages, QList<int>{1});
+    QCOMPARE(index.sourceTocPage, std::optional<int>(1));
 }
 
 QTEST_GUILESS_MAIN(TestProcessingCoordinator)

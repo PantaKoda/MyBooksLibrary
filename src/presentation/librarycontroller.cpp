@@ -87,11 +87,12 @@ void LibraryController::setBusyFlags(const std::function<void()>& change)
         emit busyChanged();
 }
 
-void LibraryController::setMetadataExtractor(std::shared_ptr<processing::MetadataExtractor> extractor,
-                                             bool ocrAvailable)
+void LibraryController::setProcessors(std::shared_ptr<processing::MetadataExtractor> extractor,
+                                      std::shared_ptr<processing::ContentsAnalyzer> analyzer, bool ocrAvailable)
 {
     Q_ASSERT(m_state == State::Closed);
     m_extractor = std::move(extractor);
+    m_analyzer = std::move(analyzer);
     m_ocrAvailable = ocrAvailable;
 }
 
@@ -165,13 +166,16 @@ void LibraryController::startProcessing()
 {
     if (!m_extractor || m_coordinator)
         return;
-    m_coordinator = std::make_unique<processing::ProcessingCoordinator>(*m_library, m_extractor);
+    m_coordinator = std::make_unique<processing::ProcessingCoordinator>(*m_library, m_extractor, m_analyzer);
     auto* coordinator = m_coordinator.get();
     connect(coordinator, &processing::ProcessingCoordinator::jobChanged, this, [this](const domain::JobRecord& job) {
         m_jobs.upsert(job);
         m_books.updateJob(job);
     });
     connect(coordinator, &processing::ProcessingCoordinator::metadataPublished, this, [this] { refresh(); });
+    connect(coordinator, &processing::ProcessingCoordinator::contentsPublished, this, [this] { refresh(); });
+    connect(coordinator, &processing::ProcessingCoordinator::jobProgress, this,
+            [this](const domain::JobId& job, const QString& stage, int pages) { m_jobs.setProgress(job, stage, pages); });
     connect(coordinator, &processing::ProcessingCoordinator::enqueueFailed, this,
             [this](const domain::BookId&, const QString& error) {
                 setStatus(tr("Metadata extraction could not be requested: %1").arg(error));
@@ -186,7 +190,7 @@ void LibraryController::startProcessing()
         if (!recovery) {
             setStatus(tr("Interrupted metadata jobs could not be recovered: %1").arg(recovery.error().message));
         } else if (recovery.value().jobs.requeued > 0) {
-            setStatus(trn("%n interrupted metadata extraction(s) queued again.", recovery.value().jobs.requeued));
+            setStatus(trn("%n interrupted job(s) queued again.", recovery.value().jobs.requeued));
         }
         m_jobsRecovered = true;
         setBusyFlags([this] { m_recoveringJobs = false; });
@@ -212,8 +216,12 @@ void LibraryController::retryJob(const QString& jobId)
     if (!m_coordinator || m_closing)
         return;
     const auto job = m_jobs.job(domain::JobId::fromString(jobId));
-    if (job && job->kind == domain::JobKind::Metadata)
+    if (!job)
+        return;
+    if (job->kind == domain::JobKind::Metadata)
         m_coordinator->enqueueMetadata(job->book);
+    else
+        m_coordinator->enqueueContents(job->book);
 }
 
 void LibraryController::cancelAllJobs()

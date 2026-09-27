@@ -11,6 +11,8 @@
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
+#include <QHash>
+#include <QSet>
 #include <QSqlQuery>
 #include <QTemporaryDir>
 #include <QTest>
@@ -125,7 +127,7 @@ private slots:
     void checkDigestDistinguishesUnreadable();
     void recoveryDefersUnreadableCopy_data();
     void recoveryDefersUnreadableCopy();
-    void importQueuesOneMetadataJob();
+    void importQueuesMetadataAndContentsJobs();
 
 private:
     QString external(const QString& name, const QString& from = fixture("title-page.pdf"));
@@ -634,9 +636,10 @@ void TestImportService::recoveryDefersUnreadableCopy()
 #endif
 }
 
-// The book's first metadata request is part of the import transaction, also
-// when recovery completes the import; a duplicate queues nothing.
-void TestImportService::importQueuesOneMetadataJob()
+// The book's first metadata and contents requests are part of the import
+// transaction, also when recovery completes the import; a duplicate queues
+// nothing.
+void TestImportService::importQueuesMetadataAndContentsJobs()
 {
     const ImportResult first = m_service->importFile(fixture("title-page.pdf"));
     QCOMPARE(first.outcome, Outcome::Imported);
@@ -647,15 +650,20 @@ void TestImportService::importQueuesOneMetadataJob()
     QCOMPARE(m_service->importFile(fixture("title-page.pdf")).outcome, Outcome::Duplicate);
 
     const auto jobs = db([](QSqlDatabase& d) { return catalog::listJobs(d, false); }).value();
-    QCOMPARE(jobs.size(), 2);
+    QCOMPARE(jobs.size(), 4);  // Two books, one job of each kind.
+    QHash<BookId, QSet<JobKind>> kinds;
     for (const JobRecord& job : jobs) {
-        QCOMPARE(job.kind, JobKind::Metadata);
         QCOMPARE(job.state, JobState::Queued);
         QCOMPARE(job.generation, 1);
+        kinds[job.book].insert(job.kind);
         const BookDetails details = db([book = job.book](QSqlDatabase& d) { return catalog::bookDetails(d, book); }).value();
         QCOMPARE(job.sourceSha256, details.asset.sha256);
         QCOMPARE(details.metadataGeneration, 1);
+        QCOMPARE(details.tocGeneration, 1);
     }
+    QCOMPARE(kinds.size(), 2);
+    for (const auto& set : std::as_const(kinds))
+        QCOMPARE(set, (QSet<JobKind>{JobKind::Metadata, JobKind::Toc}));
 }
 
 QTEST_GUILESS_MAIN(TestImportService)

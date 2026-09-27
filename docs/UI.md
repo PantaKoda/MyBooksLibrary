@@ -20,8 +20,8 @@
   - Files queue and import one at a time off the GUI thread, with "n of m", a per-file progress bar and Cancel.
   - The batch summary ("2 imported, 1 already in the library.") and per-file problems (duplicates, duplicates in Trash, non-PDFs, failures) are listed under it.
   - File-dialog URLs are converted with `toLocalFile()`.
-- **Metadata extraction:** every imported book gets a metadata job, queued in the import transaction. Jobs run one at a time and start once recovery has run.
-  - The footer shows "Reading title and authors: *book*" and "*n* books waiting", with an indeterminate busy indicator. The SDK reports no metadata progress, so no percentage is shown.
+- **Processing:** every imported book gets a metadata job and a contents job, queued in the import transaction. Jobs run one at a time and start once recovery has run; a book's two jobs share one SDK call (PROCESSING.md), and its title appears before its contents analysis ends.
+  - The footer shows "Reading title and authors: *book*" or "Analyzing contents: *book*", with "*n* pages read" when the SDK reports it, and "*n* books waiting", with an indeterminate busy indicator. The SDK reports no totals, so no percentage is shown.
   - **Activity** opens a panel listing each job's book, task and state ("Waiting", "Reading the first pages…", "Done", "Failed: …", "Cancelled", "Interrupted when the application closed; queued again"). It has **Cancel** for waiting and running jobs, **Retry** for failed or cancelled jobs that have no newer job, and **Cancel all**.
   - When OCR models were not found, the panel says that title pages that are scanned images cannot be read.
 - **Book list:**
@@ -30,7 +30,8 @@
     - "Metadata ready";
     - "Title uncertain: several candidates" (ambiguous; never accepted automatically);
     - "No title found in the document";
-    - "Title and authors could not be read" and "Metadata extraction cancelled".
+    - "Title and authors could not be read" and "Metadata extraction cancelled";
+    followed by the contents state: "contents waiting", "analyzing contents…", "*n* contents entries", "no printed contents found", "contents could not be analyzed", "contents analysis cancelled" or "contents not analyzed".
     A published result stays shown while a rerun waits, runs or fails.
   - Extracted text is rendered as plain text.
   - The selection follows the book ID across refreshes.
@@ -39,7 +40,7 @@
 
 ## Not yet
 
-Search field (M06), inspector with metadata evidence and contents (M05/M07), contents jobs (M05), restoring a duplicate from Trash (M08), and keyboard shortcuts beyond list navigation.
+Search field (M06), the book inspector with the contents tree, reasons and metadata evidence (M05 part 2), restoring a duplicate from Trash (M08), and keyboard shortcuts beyond list navigation.
 
 ## Screenshots (Release build, `--screenshot`, library at `C:\MBL-demo\Library`)
 
@@ -54,3 +55,7 @@ After importing two PDFs and a duplicate:
 After importing the three test PDFs with the real SDK and OCR models (`--activity` shows the panel). "Title uncertain" means the SDK reported several candidates:
 
 ![Metadata extracted](images/m04-metadata-extracted.png)
+
+After M05 part 1, with the same three test PDFs: each book shows its metadata state and its contents state, and each has a "Title and authors" and a "Contents" job, served by one SDK call:
+
+![Contents analyzed](images/m05-contents-analyzed.png)

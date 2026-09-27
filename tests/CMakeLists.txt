@@ -41,3 +41,8 @@ mbl_add_test(tst_sdkmetadataextractor processing/tst_sdkmetadataextractor.cpp)
 target_link_libraries(tst_sdkmetadataextractor PRIVATE mbl_sdk)
 pdfbookmark_deploy_runtime(tst_sdkmetadataextractor)
 target_compile_definitions(tst_sdkmetadataextractor PRIVATE MBL_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+
+mbl_add_test(tst_sdkcontentsanalyzer processing/tst_sdkcontentsanalyzer.cpp)
+target_link_libraries(tst_sdkcontentsanalyzer PRIVATE mbl_sdk)
+pdfbookmark_deploy_runtime(tst_sdkcontentsanalyzer)
+target_compile_definitions(tst_sdkcontentsanalyzer PRIVATE MBL_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")

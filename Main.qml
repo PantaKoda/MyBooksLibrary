@@ -170,7 +170,7 @@ ApplicationWindow {
             }
         }
 
-        // Processing activity: metadata jobs with Cancel and Retry.
+        // Processing activity: metadata and contents jobs with Cancel and Retry.
         Pane {
             id: activityPane
             Layout.fillWidth: true
@@ -201,7 +201,7 @@ ApplicationWindow {
                         visible: window.library.jobs.pendingCount > 0
                         enabled: !window.closeRequested
                         onClicked: window.library.cancelAllJobs()
-                        Accessible.description: qsTr("Cancel every waiting and running metadata extraction")
+                        Accessible.description: qsTr("Cancel every waiting and running job")
                     }
                 }
 
@@ -277,7 +277,7 @@ ApplicationWindow {
                         anchors.centerIn: parent
                         visible: jobList.count === 0
                         opacity: 0.7
-                        text: qsTr("No metadata extraction yet.")
+                        text: qsTr("No processing yet.")
                     }
                 }
             }
@@ -322,7 +322,7 @@ ApplicationWindow {
                     onClicked: window.library.cancelImports()
                 }
             }
-            // Metadata extraction: the SDK reports no percentage, so none is shown.
+            // Processing: the SDK reports no totals, so no percentage is shown.
             RowLayout {
                 Layout.fillWidth: true
                 visible: window.library.processingAvailable && window.library.ready
@@ -335,7 +335,7 @@ ApplicationWindow {
                 Label {
                     Layout.fillWidth: true
                     text: window.library.jobs.summary.length > 0 ? window.library.jobs.summary
-                                                                 : qsTr("Metadata extraction idle.")
+                                                                 : qsTr("Processing idle.")
                     textFormat: Text.PlainText
                     elide: Text.ElideRight
                     opacity: 0.8
@@ -346,7 +346,7 @@ ApplicationWindow {
                     checked: window.showActivity
                     text: qsTr("Activity")
                     onToggled: window.showActivity = checked
-                    Accessible.description: qsTr("Show or hide metadata extraction jobs")
+                    Accessible.description: qsTr("Show or hide processing jobs")
                 }
             }
             // At most a few problem lines here, so the book list keeps its

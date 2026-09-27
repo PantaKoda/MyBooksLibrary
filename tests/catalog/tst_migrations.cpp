@@ -1,4 +1,5 @@
 // A2 migrations: versioned, transactional, never destructive.
+#include "catalog/catalog.h"
 #include "catalog/jobs.h"
 #include "catalog/library.h"
 #include "catalog/migrations.h"
@@ -47,6 +48,7 @@ private slots:
     void reopeningIsIdempotent();
     void version1CatalogUpgradesWithDataIntact();
     void version2CatalogGainsJobs();
+    void version3ContentsRunsLoadAfterUpgrade();
     void newerSchemaIsRefusedUnchanged();
     void failedMigrationRollsBack();
     void nonConsecutiveListIsRejected();
@@ -141,6 +143,53 @@ void TestMigrations::version2CatalogGainsJobs()
     }).result();
     QVERIFY(queued.first);
     QCOMPARE(queued.second, 1);  // The first metadata request of the upgraded book.
+}
+
+// A contents run stored by the M04 release (schema 3) still loads after the
+// upgrade: its entries get empty evidence, its run unknown parse status.
+void TestMigrations::version3ContentsRunsLoadAfterUpgrade()
+{
+    const QString book = QStringLiteral("7c9e6679-7425-40de-944b-e07fc1f90ae7");
+    const QString run = QStringLiteral("9b2f4e1a-58d3-4b6f-a1c2-3d4e5f607182");
+    QTemporaryDir dir;
+    const QString path = dir.filePath(QLatin1StringView(Library::kCatalogFileName));
+    withConnection(path, [&](QSqlDatabase& db) {
+        QVERIFY(migrate(db, catalogMigrations().mid(0, 3)));
+        QCOMPARE(schemaVersion(db), 3);
+        QSqlQuery q(db);
+        QVERIFY(q.exec(QStringLiteral(
+            "INSERT INTO assets(id, sha256, byte_size, page_count, managed_path, created_at) VALUES "
+            "('a1', '0000000000000000000000000000000000000000000000000000000000000001', 10, 5, 'files/a1/source.pdf', 'x')")));
+        QVERIFY(q.exec(QStringLiteral("INSERT INTO books(id, asset_id, original_file_name, original_path, created_at, "
+                                      "updated_at) VALUES ('%1', 'a1', 'old.pdf', 'C:/old.pdf', 'x', 'x')").arg(book)));
+        QVERIFY(q.exec(QStringLiteral(
+            "INSERT INTO toc_runs(id, book_id, generation, source_sha256, sdk_version, model_identity, options_json, "
+            "outcome, created_at, plan_ready) VALUES ('%1', '%2', 1, "
+            "'0000000000000000000000000000000000000000000000000000000000000001', '0.2.0', '', '{}', 'plan_ready', 'x', 1)")
+                           .arg(run, book)));
+        QVERIFY(q.exec(QStringLiteral(
+            "INSERT INTO toc_entries(run_id, sdk_entry_id, entry_order, title, hierarchy, destination_state, "
+            "destination_page, source_toc_page, in_export_plan) VALUES ('%1', 'e0', 0, 'Old chapter', 'root', "
+            "'resolved', 0, 1, 1)").arg(run)));
+        QVERIFY(q.exec(QStringLiteral("UPDATE books SET active_toc_run_id = '%1' WHERE id = '%2'").arg(run, book)));
+    });
+
+    auto library = Library::open(dir.path());
+    QVERIFY2(library, library ? "" : qPrintable(library.error().message));
+    QVERIFY(latestSchemaVersion() >= 4);
+    auto details = library.value()->run([book](QSqlDatabase& db) {
+        return bookDetails(db, mbl::domain::BookId::fromString(book));
+    }).result();
+    QVERIFY2(details, details ? "" : qPrintable(details.error().message));
+    QVERIFY(details.value().toc);
+    const mbl::domain::TocAnalysis& toc = *details.value().toc;
+    QCOMPARE(toc.entries.size(), 1);
+    QCOMPARE(toc.entries.first().title, QStringLiteral("Old chapter"));
+    QCOMPARE(toc.entries.first().destinationPage, std::optional<int>(0));
+    QVERIFY(toc.entries.first().evidence.sourcePages.isEmpty());
+    QVERIFY(!toc.parseComplete);
+    QVERIFY(toc.planBlockers.isEmpty());
+    QVERIFY(toc.planJson.isEmpty());
 }
 
 void TestMigrations::newerSchemaIsRefusedUnchanged()

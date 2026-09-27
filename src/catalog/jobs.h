@@ -8,6 +8,7 @@
 #include "domain/jobs.h"
 #include "domain/metadata.h"
 #include "domain/result.h"
+#include "domain/toc.h"
 
 #include <QList>
 #include <QSqlDatabase>
@@ -48,6 +49,19 @@ domain::Result<domain::RunId> completeMetadataJob(QSqlDatabase& db, const domain
                                                   const domain::ExtractedMetadata& metadata,
                                                   const QList<domain::MetadataFieldDetail>& details,
                                                   std::optional<int> pageCount);
+
+// completeMetadataJob for a contents (TOC) job: records the page count if it
+// was unknown (before the destinations are checked against it), publishes
+// every parsed entry with its evidence, and marks the job Succeeded, in one
+// transaction. Refused, changing nothing, like completeMetadataJob.
+domain::Result<domain::RunId> completeTocJob(QSqlDatabase& db, const domain::JobRecord& job,
+                                             const domain::RunId& runId, const domain::RunIdentity& run,
+                                             const domain::TocAnalysis& toc, std::optional<int> pageCount);
+
+// Claims the book's queued job of `kind`, if any (Running, attempt + 1), so the
+// worker can serve it in the same SDK run as a job it already claimed.
+domain::Result<std::optional<domain::JobRecord>> claimQueuedJob(QSqlDatabase& db, const domain::BookId& book,
+                                                                domain::JobKind kind);
 
 struct JobRecovery {
     int interrupted = 0;  // Running jobs closed as Interrupted...

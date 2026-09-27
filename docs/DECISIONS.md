@@ -299,3 +299,25 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - The change is additive: only `engine/book.hpp`, the facade's `using` lines, the C API additions and `version.hpp` differ from 0.2.0. No application code changes.
   - SDK 0.2.0 stays installed next to 0.3.0 for comparison.
 - **Verified:** See IMPLEMENTATION_PROGRESS.md, "SDK 0.3.0 update".
+
+## 2026-09-27 — M05 part 1: contents jobs, one SDK call per book
+
+- **Change:**
+  - Import queues a contents job next to the metadata job.
+  - When a book has both waiting, the coordinator claims both and runs `analyze_book` once. The metadata is published from the early callback; the contents after the call. Each job keeps its own generation, publication, cancel and outcome.
+  - The call's cancel flag is a group flag, raised only when every job still needing it is cancelled (or at shutdown).
+  - `ContentsAnalyzer` and `sdk::SdkContentsAnalyzer`; `sdk::normalizeContents`.
+  - Schema 4 adds per-entry evidence and per-run parse, coverage, blocker, stop-reason and plan columns.
+  - `completeTocJob` records the page count before publishing, so destinations are checked against it.
+  - A refused publication is a cancellation only if the job is no longer running; an invalid result fails as `publish_failed`.
+  - Analysis progress (stage, pages) is throttled and shown in the activity list and footer.
+- **Why:**
+  - M05 gate: the full parsed TOC and its mapping and evidence persist, with unresolved and omitted entries kept.
+  - PDFMegine issue #3 and AGENTS.md section 8: run metadata first and publish it independently, then the TOC; `analyze_book` reads and OCRs each page once.
+  - AGENTS.md section 4: keep hierarchy and destination states, join by entry ID, store plans and readiness separately.
+- **Assumptions:**
+  - Two jobs sharing one call (rather than one combined job kind) keep the existing contracts: separate generations and reruns, per-kind cancel and retry, no rebuild of the `jobs` table.
+  - Pairing serves books one at a time. A large import therefore shows titles book by book, not all titles first; that is the cost of reading each page once.
+  - Evidence is stored as JSON per entry because it is displayed, never queried.
+  - The SDK's analysis stage names are undocumented, so the UI shows pages read, not stage names.
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, M05 part 1.
