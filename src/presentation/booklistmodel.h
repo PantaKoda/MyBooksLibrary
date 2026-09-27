@@ -48,6 +48,7 @@ public:
     void updateJob(const domain::JobRecord& job);
 
     QString titleOf(const domain::BookId& id) const;  // Empty when absent.
+    QString processingStateOf(const domain::BookId& id) const;  // Empty when absent.
     Q_INVOKABLE int rowOfBook(const QString& bookId) const;  // -1 when absent.
     Q_INVOKABLE QString bookIdAt(int row) const;
 

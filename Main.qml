@@ -42,6 +42,19 @@ ApplicationWindow {
         }
     }
 
+    Shortcut {
+        sequences: [StandardKey.Find]
+        onActivated: searchField.forceActiveFocus()
+    }
+    // Leaving search shows the book selected in the list again.
+    Connections {
+        target: window.library.search
+        function onTextChanged() {
+            if (!window.library.search.active)
+                window.library.inspector.select(bookList.selectedBookId)
+        }
+    }
+
     FileDialog {
         id: importDialog
         title: qsTr("Import PDF files")
@@ -63,10 +76,30 @@ ApplicationWindow {
                 font.pixelSize: 16
             }
             Label {
-                Layout.fillWidth: true
+                Layout.preferredWidth: 160
                 text: window.library.libraryPath
                 elide: Text.ElideMiddle
                 opacity: 0.6
+            }
+            TextField {
+                id: searchField
+                Layout.fillWidth: true
+                Layout.minimumWidth: 160
+                placeholderText: qsTr("Search titles, authors and contents")
+                enabled: window.library.ready
+                text: window.library.search.text
+                onTextEdited: window.library.search.text = text
+                Keys.onEscapePressed: window.library.search.clear()
+                Accessible.name: qsTr("Search")
+                Accessible.description: qsTr("Searches book titles, authors and contents entries, not the full text")
+            }
+            ComboBox {
+                id: scopeBox
+                enabled: window.library.ready
+                model: [qsTr("All"), qsTr("Titles"), qsTr("Authors"), qsTr("Contents")]
+                currentIndex: window.library.search.scope
+                onActivated: (index) => window.library.search.scope = index
+                Accessible.name: qsTr("Search in")
             }
             Button {
                 id: importButton
@@ -99,85 +132,100 @@ ApplicationWindow {
                 anchors.fill: parent
                 orientation: Qt.Horizontal
 
-            ListView {
-                id: bookList
+            Item {
                 SplitView.fillWidth: true
                 SplitView.minimumWidth: 240
-                leftMargin: 8
-                topMargin: 8
-                clip: true
-                focus: true
-                spacing: 2
-                model: window.library.books
-                keyNavigationEnabled: true
-                currentIndex: -1
-                ScrollBar.vertical: ScrollBar {}
 
-                delegate: ItemDelegate {
-                    id: row
-                    required property int index
-                    required property string bookId
-                    required property string title
-                    required property bool titleFromFileName
-                    required property string contributors
-                    required property string processingState
+                ListView {
+                    id: bookList
+                    anchors.fill: parent
+                    leftMargin: 8
+                    topMargin: 8
+                    visible: !window.library.search.active
+                    clip: true
+                    focus: true
+                    spacing: 2
+                    model: window.library.books
+                    keyNavigationEnabled: true
+                    currentIndex: -1
+                    ScrollBar.vertical: ScrollBar {}
 
-                    width: ListView.view.width
-                    highlighted: ListView.isCurrentItem
-                    onClicked: bookList.currentIndex = index
+                    delegate: ItemDelegate {
+                        id: row
+                        required property int index
+                        required property string bookId
+                        required property string title
+                        required property bool titleFromFileName
+                        required property string contributors
+                        required property string processingState
 
-                    contentItem: ColumnLayout {
-                        spacing: 2
-                        Label {
-                            Layout.fillWidth: true
-                            text: row.title
-                            textFormat: Text.PlainText   // Extracted text is never markup.
-                            color: row.highlighted ? row.palette.highlightedText : row.palette.windowText
-                            font.bold: true
-                            elide: Text.ElideRight
+                        width: ListView.view.width
+                        highlighted: ListView.isCurrentItem
+                        onClicked: bookList.currentIndex = index
+
+                        contentItem: ColumnLayout {
+                            spacing: 2
+                            Label {
+                                Layout.fillWidth: true
+                                text: row.title
+                                textFormat: Text.PlainText   // Extracted text is never markup.
+                                color: row.highlighted ? row.palette.highlightedText : row.palette.windowText
+                                font.bold: true
+                                elide: Text.ElideRight
+                            }
+                            Label {
+                                Layout.fillWidth: true
+                                textFormat: Text.PlainText
+                                text: row.titleFromFileName
+                                      ? qsTr("From the file name · %1").arg(row.processingState)
+                                      : (row.contributors.length > 0 ? row.contributors + " · " + row.processingState
+                                                                     : row.processingState)
+                                color: row.highlighted ? row.palette.highlightedText : row.palette.windowText
+                                opacity: row.highlighted ? 0.9 : 0.7
+                                elide: Text.ElideRight
+                            }
                         }
-                        Label {
-                            Layout.fillWidth: true
-                            textFormat: Text.PlainText
-                            text: row.titleFromFileName
-                                  ? qsTr("From the file name · %1").arg(row.processingState)
-                                  : (row.contributors.length > 0 ? row.contributors + " · " + row.processingState
-                                                                 : row.processingState)
-                            color: row.highlighted ? row.palette.highlightedText : row.palette.windowText
-                            opacity: row.highlighted ? 0.9 : 0.7
-                            elide: Text.ElideRight
+                    }
+
+                    // Keep the selection on the same book when the list refreshes;
+                    // the inspector shows the selected book.
+                    property string selectedBookId: ""
+                    onCurrentIndexChanged: {
+                        selectedBookId = model ? model.bookIdAt(currentIndex) : ""
+                        window.library.inspector.select(selectedBookId)
+                    }
+                    onCountChanged: {
+                        if (window.inspectFirst && count > 0 && currentIndex < 0)
+                            currentIndex = 0
+                    }
+                    Connections {
+                        target: window.library.books
+                        function onModelReset() {
+                            bookList.currentIndex = window.library.books.rowOfBook(bookList.selectedBookId)
                         }
+                    }
+
+                    Label {
+                        anchors.centerIn: parent
+                        width: parent.width * 0.7
+                        horizontalAlignment: Text.AlignHCenter
+                        wrapMode: Text.WordWrap
+                        visible: bookList.count === 0
+                        opacity: 0.7
+                        text: window.library.opening ? qsTr("Opening the library…")
+                              : window.library.failed ? qsTr("The library could not be opened.")
+                              : qsTr("No books yet. Choose “Import PDFs…” or drop PDF files here.")
                     }
                 }
 
-                // Keep the selection on the same book when the list refreshes;
-                // the inspector shows the selected book.
-                property string selectedBookId: ""
-                onCurrentIndexChanged: {
-                    selectedBookId = model ? model.bookIdAt(currentIndex) : ""
-                    window.library.inspector.select(selectedBookId)
-                }
-                onCountChanged: {
-                    if (window.inspectFirst && count > 0 && currentIndex < 0)
-                        currentIndex = 0
-                }
-                Connections {
-                    target: window.library.books
-                    function onModelReset() {
-                        bookList.currentIndex = window.library.books.rowOfBook(bookList.selectedBookId)
-                    }
-                }
-
-                Label {
-                    anchors.centerIn: parent
-                    width: parent.width * 0.7
-                    horizontalAlignment: Text.AlignHCenter
-                    wrapMode: Text.WordWrap
-                    visible: bookList.count === 0
-                    opacity: 0.7
-                    text: window.library.opening ? qsTr("Opening the library…")
-                          : window.library.failed ? qsTr("The library could not be opened.")
-                          : qsTr("No books yet. Choose “Import PDFs…” or drop PDF files here.")
+                SearchResultsView {
+                    id: searchResults
+                    anchors.fill: parent
+                    anchors.margins: 8
+                    visible: window.library.search.active
+                    search: window.library.search
+                    selectFirst: window.inspectFirst
+                    onBookChosen: (bookId) => window.library.inspector.select(bookId)
                 }
             }
 

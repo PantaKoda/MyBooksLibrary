@@ -102,6 +102,10 @@ qt_add_library(mbl_presentation STATIC
     src/presentation/toctreemodel.cpp
     src/presentation/librarycontroller.h
     src/presentation/librarycontroller.cpp
+    src/presentation/searchcontroller.h
+    src/presentation/searchcontroller.cpp
+    src/presentation/searchresultsmodel.h
+    src/presentation/searchresultsmodel.cpp
 )
 qt_add_qml_module(mbl_presentation
     URI MyBooksLibrary.Presentation
@@ -143,6 +147,7 @@ qt_add_qml_module(appMyBooksLibrary
         Main.qml
         qml/reader/ReaderCheckView.qml
         qml/inspector/BookInspectorPane.qml
+        qml/search/SearchResultsView.qml
 )
 
 set_target_properties(appMyBooksLibrary PROPERTIES

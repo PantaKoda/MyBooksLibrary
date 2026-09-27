@@ -340,3 +340,17 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - Plural wording avoids "(s)" where the count is visible ("No page found: 1 of 5.").
   - Chapter navigation is left to M06; the pane shows the pages it will use.
 - **Verified:** See IMPLEMENTATION_PROGRESS.md, M05 part 2.
+
+## 2026-09-27 — M06 part 1: search in the application
+
+- **Change:**
+  - `SearchController` and `SearchResultsModel` (presentation) and `SearchResultsView.qml`.
+  - The toolbar gets a search field and scope, Ctrl+F and Esc; the results replace the book list while a query is entered.
+  - `BookListModel::processingStateOf` supplies each result's processing state.
+  - Development flag: `--search <text>`.
+- **Why:** AGENTS.md section 7: debounce; paginate; tag requests so stale results never replace a newer query; honest empty-state wording; show whether a book's metadata and contents are pending, partial or unavailable; include unresolved and omitted entries; never guess a page. M06 gate: a chapter-only search finds a book.
+- **Assumptions:**
+  - 250 ms debounce, 50 books per page, five chapter hits per book (the A3 default).
+  - The query re-runs after every book-list refresh, so results follow processing; refreshes are coalesced, which bounds the cost.
+  - Opening a chapter comes in part 2, with the reader.
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, M06 part 1.

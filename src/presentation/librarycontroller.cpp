@@ -45,6 +45,7 @@ LibraryController::LibraryController(QObject* parent) : QObject(parent)
     m_pool.setMaxThreadCount(1);
     m_pool.setObjectName(QStringLiteral("mbl-library-worker"));
     m_jobs.setTitleLookup([this](const domain::BookId& id) { return m_books.titleOf(id); });
+    m_search.results()->setStateLookup([this](const domain::BookId& id) { return m_books.processingStateOf(id); });
 }
 
 LibraryController::~LibraryController()
@@ -156,6 +157,7 @@ void LibraryController::onOpened(std::shared_ptr<catalog::Library> library,
     m_library = std::move(library);
     m_importer = std::move(importer);
     m_inspector.setLibrary(m_library);
+    m_search.setLibrary(m_library);
     setState(State::Ready);
     setStatus(recoveryText.isEmpty() ? tr("Library ready.") : recoveryText);
     refresh();
@@ -172,6 +174,7 @@ void LibraryController::startProcessing()
     connect(coordinator, &processing::ProcessingCoordinator::jobChanged, this, [this](const domain::JobRecord& job) {
         m_jobs.upsert(job);
         m_books.updateJob(job);
+        m_search.results()->statesChanged();
     });
     connect(coordinator, &processing::ProcessingCoordinator::metadataPublished, this, [this] { refresh(); });
     connect(coordinator, &processing::ProcessingCoordinator::contentsPublished, this, [this] { refresh(); });
@@ -290,6 +293,7 @@ void LibraryController::runRefresh()
                 }
             }
             m_inspector.reload();  // The shown book may have new metadata or contents.
+            m_search.refresh();    // New titles or contents entries may match now.
             emit booksRefreshed();
             if (m_refreshAgain && m_library) {
                 m_refreshAgain = false;
