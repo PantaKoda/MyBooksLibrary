@@ -9,7 +9,7 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | M02 Contracts/persistence | Merged | `feat/m02-a2-catalog-persistence` / [PR #3](https://github.com/PantaKoda/MyBooksLibrary/pull/3), merge `b643446` | See below |
 | SDK 0.2.0 update | Merged | `chore/m01-sdk-0.2.0` / [PR #5](https://github.com/PantaKoda/MyBooksLibrary/pull/5), merge `4f87975` | See "SDK 0.2.0 update" |
 | M03 Import/library shell | Merged: part 1 [PR #6](https://github.com/PantaKoda/MyBooksLibrary/pull/6) (merge `515ff43`); part 2 [PR #7](https://github.com/PantaKoda/MyBooksLibrary/pull/7) (merge `f39b141`) | `feat/m03-a1-managed-import`; `feat/m03-presentation-library-shell` | See "M03" |
-| M04 Metadata jobs | Part 1 Merged ([PR #9](https://github.com/PantaKoda/MyBooksLibrary/pull/9), merge `6b5d740`); part 2 AwaitingReview (presentation) | `feat/m04-a4-metadata-jobs`; `feat/m04-presentation-metadata-jobs` | See "M04" |
+| M04 Metadata jobs | Part 1 Merged ([PR #9](https://github.com/PantaKoda/MyBooksLibrary/pull/9), merge `6b5d740`); part 2 AwaitingReview ([PR #10](https://github.com/PantaKoda/MyBooksLibrary/pull/10), presentation) | `feat/m04-a4-metadata-jobs`; `feat/m04-presentation-metadata-jobs` | See "M04" |
 | M05–M11 | NotStarted | | |
 
 ## M04 — Metadata jobs
