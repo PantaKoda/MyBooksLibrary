@@ -6,6 +6,7 @@
 //                     [--screenshot <png>]   development: save the window when idle (imports and
 //                                            metadata jobs finished), then quit
 //                     [--activity]           development: open with the activity panel shown
+//                     [--inspect-first]      development: select the first book (inspector shown)
 //   appMyBooksLibrary --sdk-check [<pdf>]    no window: print the pdfbookmark SDK identity and,
 //                                            with a PDF, its identity and extracted title.
 //                                            Exit 0 on success, 1 on an SDK error.
@@ -189,6 +190,8 @@ int main(int argc, char *argv[])
     QString screenshot;
     if (args.contains(QLatin1String("--activity")))
         engine.rootObjects().constFirst()->setProperty("showActivity", true);
+    if (args.contains(QLatin1String("--inspect-first")))
+        engine.rootObjects().constFirst()->setProperty("inspectFirst", true);
     for (qsizetype i = 1; i + 1 < args.size(); ++i) {
         if (args.at(i) == QLatin1String("--import"))
             imports << args.at(i + 1);

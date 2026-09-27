@@ -46,3 +46,11 @@ mbl_add_test(tst_sdkcontentsanalyzer processing/tst_sdkcontentsanalyzer.cpp)
 target_link_libraries(tst_sdkcontentsanalyzer PRIVATE mbl_sdk)
 pdfbookmark_deploy_runtime(tst_sdkcontentsanalyzer)
 target_compile_definitions(tst_sdkcontentsanalyzer PRIVATE MBL_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+
+mbl_add_test(tst_toctreemodel presentation/tst_toctreemodel.cpp)
+target_link_libraries(tst_toctreemodel PRIVATE mbl_presentation)
+
+# Loads the real inspector QML (offscreen) against the presentation module.
+mbl_add_test(tst_inspectorpane presentation/tst_inspectorpane.cpp)
+target_link_libraries(tst_inspectorpane PRIVATE mbl_presentation mbl_presentationplugin Qt6::Quick)
+target_compile_definitions(tst_inspectorpane PRIVATE MBL_SOURCE_DIR="${PROJECT_SOURCE_DIR}")

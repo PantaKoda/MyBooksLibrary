@@ -11,10 +11,33 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | M03 Import/library shell | Merged: part 1 [PR #6](https://github.com/PantaKoda/MyBooksLibrary/pull/6) (merge `515ff43`); part 2 [PR #7](https://github.com/PantaKoda/MyBooksLibrary/pull/7) (merge `f39b141`) | `feat/m03-a1-managed-import`; `feat/m03-presentation-library-shell` | See "M03" |
 | M04 Metadata jobs | Merged: part 1 [PR #9](https://github.com/PantaKoda/MyBooksLibrary/pull/9) (merge `6b5d740`); part 2 [PR #10](https://github.com/PantaKoda/MyBooksLibrary/pull/10) (merge `578e951`) | `feat/m04-a4-metadata-jobs`; `feat/m04-presentation-metadata-jobs` | See "M04" |
 | SDK 0.3.0 update | Merged | `chore/sdk-0.3.0` / [PR #11](https://github.com/PantaKoda/MyBooksLibrary/pull/11), merge `a4b7d59` | See "SDK 0.3.0 update" |
-| M05 Contents | Part 1 AwaitingReview ([PR #12](https://github.com/PantaKoda/MyBooksLibrary/pull/12), contents jobs, one SDK call per book); part 2 NotStarted (inspector and contents tree) | `feat/m05-a4-contents-analysis` | See "M05" |
+| M05 Contents | Part 1 Merged ([PR #12](https://github.com/PantaKoda/MyBooksLibrary/pull/12), merge `9feb9b3`); part 2 AwaitingReview ([PR #13](https://github.com/PantaKoda/MyBooksLibrary/pull/13), inspector and contents tree) | `feat/m05-a4-contents-analysis`; `feat/m05-presentation-contents-inspector` | See "M05" |
 | M06–M11 | NotStarted | | |
 
 ## M05 — Contents
+
+### Part 2: book inspector and contents tree (presentation)
+
+**Scope:**
+- `BookInspector` and `TocTreeModel` (presentation), and `BookInspectorPane.qml`;
+- `BookDetails.metadataRun` and `tocRun`;
+- the inspector beside the book list in `Main.qml`, the selected-row contrast fix, and `--inspect-first`.
+
+**Touched paths:** `src/presentation/`, `src/domain/book.h`, `src/catalog/catalog.cpp`, `qml/inspector/`, `Main.qml`, `main.cpp`, `CMakeLists.txt`, `tests/presentation/`, `tests/CMakeLists.txt`, `docs/`.
+
+| Command | Result |
+| --- | --- |
+| `pwsh scripts/verify.ps1 -Clean` (Release) and `-Configuration Debug` | VERIFY PASSED in both; 14/14 `ctest` suites |
+| `tst_toctreemodel` (4 cases, model tester) | A parent listed after its child, with a grandchild. A self-reference, a two-entry cycle, a missing parent, and an entry below a cycle member (kept attached). Unknown level. Page texts: index 0 → "Page 1", ambiguous → "Page 5 or 10?", unresolved → "Page not found" with no guessed page. Plain-language details and technical details |
+| `tst_librarycontroller` (21 cases, 2 new) | The inspector shows what processing published: value, source and evidence; candidates capped at five plus "and 2 more"; contents summary and notes; page 0 → "Page 1". A refresh keeps the tree (no reset); a missing book gives a message. Selecting while processing updates when the results publish; a quick second selection drops the first load; clearing the selection empties the pane |
+| Mutations, each reverted | No cycle check, single pass, page shown as the index, stale loads applied, tree rebuilt on every load: each makes its test fail |
+| Review fix (PR #13): the entry details no longer keep the previous book's entry | `tst_inspectorpane` (new) loads the real `BookInspectorPane.qml` offscreen: book A's entry shows "Alpha chapter · Page 1"; after selecting book B the details read "Select an entry…". With the old binding it still showed "Alpha chapter · Page 1" |
+| `qmllint` on the module's `Main.qml` and `BookInspectorPane.qml` | No warnings |
+| `appMyBooksLibrary --import contents-book.pdf --inspect-first --screenshot …` (Debug and Release, real SDK) | Exit 0, no QML warnings. The tree shows 5 entries with "2.1 Installing the Tools" under "2 Getting Started"; "1 Introduction" is "Page 4" (printed "1"), with its reasons |
+
+**Not verified by hand:** mouse and keyboard use of the tabs, the "Why?" toggles, and expanding and collapsing in the tree; screen readers.
+
+**Next action:** M06, search and reading. Chapter search, opening the resolved page in the embedded viewer, and "Show source TOC page" for unresolved entries.
 
 ### Part 1: contents jobs and one SDK call per book (A4 + A2 + A1)
 
