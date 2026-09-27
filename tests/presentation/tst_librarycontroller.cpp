@@ -7,6 +7,7 @@
 #include "presentation/booklistmodel.h"
 #include "presentation/joblistmodel.h"
 #include "presentation/librarycontroller.h"
+#include "processing/contentsanalyzer.h"
 #include "processing/metadataextractor.h"
 #include "storage/filecopy.h"
 #include "storage/importservice.h"
@@ -23,6 +24,7 @@
 using mbl::presentation::BookListModel;
 using mbl::presentation::JobListModel;
 using mbl::presentation::LibraryController;
+using mbl::processing::ContentsAnalysis;
 using mbl::processing::MetadataExtraction;
 
 namespace {
@@ -55,9 +57,9 @@ public:
         ++calls;
         started = true;
         MetadataExtraction r;
-        if (block.load()) {
-            while (!cancel.load())
-                QThread::msleep(2);
+        while (block.load() && !cancel.load())
+            QThread::msleep(2);
+        if (cancel.load()) {
             r.status = MetadataExtraction::Status::Cancelled;
             return r;
         }
@@ -73,6 +75,69 @@ public:
         return r;
     }
 };
+
+// Contents step: its metadata stage is the FakeExtractor (so `block` holds a
+// paired run there), then two entries, one of them unresolved.
+class FakeAnalyzer : public mbl::processing::ContentsAnalyzer {
+public:
+    explicit FakeAnalyzer(std::shared_ptr<FakeExtractor> metadata) : m_metadata(std::move(metadata)) {}
+    std::atomic_int analyzeCalls{0};
+    std::atomic_int bookCalls{0};
+
+    ContentsAnalysis analyze(const QString& path, const std::atomic_bool& cancel, const Progress&) override
+    {
+        ++analyzeCalls;
+        return contents(path, cancel);
+    }
+    ContentsAnalysis analyzeBook(const QString& path, const std::atomic_bool& cancel, const Progress&,
+                                 const MetadataReady& onMetadata) override
+    {
+        ++bookCalls;
+        onMetadata(m_metadata->extract(path, cancel));
+        return contents(path, cancel);
+    }
+
+private:
+    static ContentsAnalysis contents(const QString& path, const std::atomic_bool& cancel)
+    {
+        ContentsAnalysis r;
+        if (cancel.load()) {
+            r.status = ContentsAnalysis::Status::Cancelled;
+            return r;
+        }
+        r.status = ContentsAnalysis::Status::Completed;
+        r.sourceSha256 = mbl::storage::sha256OfFile(path).value_or(QString());
+        r.pageCount = 3;
+        r.toc.outcome = QStringLiteral("analysis_partial");
+        mbl::domain::TocEntry first;
+        first.sdkEntryId = QStringLiteral("e0");
+        first.title = QStringLiteral("1 Introduction");
+        first.hierarchy = mbl::domain::HierarchyState::Root;
+        first.destinationState = mbl::domain::DestinationState::Resolved;
+        first.destinationPage = 0;
+        mbl::domain::TocEntry second;
+        second.sdkEntryId = QStringLiteral("e1");
+        second.order = 1;
+        second.title = QStringLiteral("Index");
+        r.toc.entries = {first, second};
+        r.reportJson = QByteArrayLiteral("{}");
+        r.sdkVersion = QStringLiteral("fake");
+        r.optionsJson = QStringLiteral("{}");
+        r.outcome = r.toc.outcome;
+        return r;
+    }
+    std::shared_ptr<FakeExtractor> m_metadata;
+};
+
+// The row of the newest job of that kind ("Title and authors" or "Contents").
+int rowOfKind(JobListModel* model, const QString& kindText)
+{
+    for (int row = 0; row < model->rowCount(); ++row) {
+        if (model->data(model->index(row), JobListModel::KindTextRole).toString() == kindText)
+            return row;
+    }
+    return -1;
+}
 
 QString stateOf(BookListModel* model, int row)
 {
@@ -410,8 +475,9 @@ void TestLibraryController::importedBookGetsItsExtractedTitle()
 {
     QTemporaryDir dir;
     auto fake = std::make_shared<FakeExtractor>();
+    auto analyzer = std::make_shared<FakeAnalyzer>(fake);
     LibraryController c;
-    c.setMetadataExtractor(fake, false);
+    c.setProcessors(fake, analyzer, false);
     QVERIFY(c.processingAvailable());
     QVERIFY(!c.ocrAvailable());  // Shown as a capability note.
     QAbstractItemModelTester booksTester(c.books());
@@ -423,32 +489,36 @@ void TestLibraryController::importedBookGetsItsExtractedTitle()
     c.importFiles({fixture("title-page.pdf")});
     QTRY_COMPARE_WITH_TIMEOUT(titles(c.books()), QStringList{QStringLiteral("Extracted Title")}, 20000);
     QTRY_VERIFY_WITH_TIMEOUT(!c.busy(), 10000);
-    QCOMPARE(stateOf(c.books(), 0), QStringLiteral("Metadata ready \u00b7 contents not analyzed"));
+    QTRY_COMPARE_WITH_TIMEOUT(stateOf(c.books(), 0), QStringLiteral("Metadata ready \u00b7 2 contents entries"), 5000);
     QVERIFY(!c.books()->data(c.books()->index(0), BookListModel::TitleFromFileNameRole).toBool());
-    QCOMPARE(c.jobs()->rowCount(), 1);
-    QCOMPARE(jobData(c.jobs(), 0, JobListModel::StateRole).toString(), QStringLiteral("succeeded"));
-    QCOMPARE(jobData(c.jobs(), 0, JobListModel::BookTitleRole).toString(), QStringLiteral("Extracted Title"));
-    QVERIFY(!jobData(c.jobs(), 0, JobListModel::CanRetryRole).toBool());
+    QCOMPARE(c.jobs()->rowCount(), 2);  // Title and authors, and contents.
+    for (int row = 0; row < 2; ++row) {
+        QCOMPARE(jobData(c.jobs(), row, JobListModel::StateRole).toString(), QStringLiteral("succeeded"));
+        QCOMPARE(jobData(c.jobs(), row, JobListModel::BookTitleRole).toString(), QStringLiteral("Extracted Title"));
+        QVERIFY(!jobData(c.jobs(), row, JobListModel::CanRetryRole).toBool());
+    }
     QCOMPARE(c.jobs()->pendingCount(), 0);
+    QCOMPARE(analyzer->bookCalls.load(), 1);  // Both jobs served by one run.
     QCOMPARE(fake->calls.load(), 1);
     QCOMPARE(jobModelThread, QThread::currentThread());
 }
 
-// Closing is not cancelling: the running extraction is interrupted and
-// requeued, the waiting one stays queued, and the next session runs both.
+// Closing is not cancelling: the running jobs are interrupted and requeued,
+// the waiting ones stay queued, and the next session runs them all.
 void TestLibraryController::closingDuringExtractionResumesNextSession()
 {
     QTemporaryDir dir;
     auto fake = std::make_shared<FakeExtractor>();
+    auto analyzer = std::make_shared<FakeAnalyzer>(fake);
     fake->block = true;
     {
         LibraryController c;
-        c.setMetadataExtractor(fake, true);
+        c.setProcessors(fake, analyzer, true);
         openAndWait(c, dir.path());
         c.importFiles({fixture("title-page.pdf"), fixture("contents-book.pdf")});
         QTRY_VERIFY_WITH_TIMEOUT(fake->started.load(), 20000);
         QTRY_COMPARE_WITH_TIMEOUT(c.books()->rowCount(), 2, 10000);
-        QTRY_COMPARE_WITH_TIMEOUT(c.jobs()->pendingCount(), 2, 10000);
+        QTRY_COMPARE_WITH_TIMEOUT(c.jobs()->pendingCount(), 4, 10000);
         QVERIFY(c.busy());
         QElapsedTimer closing;
         closing.start();
@@ -460,7 +530,7 @@ void TestLibraryController::closingDuringExtractionResumesNextSession()
     }
     fake->block = false;
     LibraryController again;
-    again.setMetadataExtractor(fake, true);
+    again.setProcessors(fake, analyzer, true);
     openAndWait(again, dir.path());
     QTRY_COMPARE_WITH_TIMEOUT(titles(again.books()),
                               (QStringList{QStringLiteral("Extracted Title"), QStringLiteral("Extracted Title")}), 20000);
@@ -469,38 +539,59 @@ void TestLibraryController::closingDuringExtractionResumesNextSession()
     for (int row = 0; row < again.jobs()->rowCount(); ++row)
         states << jobData(again.jobs(), row, JobListModel::StateRole).toString();
     states.sort();
-    QCOMPARE(states, (QStringList{QStringLiteral("interrupted"), QStringLiteral("succeeded"), QStringLiteral("succeeded")}));
+    QCOMPARE(states, (QStringList{QStringLiteral("interrupted"), QStringLiteral("interrupted"),
+                                  QStringLiteral("succeeded"), QStringLiteral("succeeded"),
+                                  QStringLiteral("succeeded"), QStringLiteral("succeeded")}));
 }
 
+// Cancelling only "Title and authors" while the shared run reads the first
+// pages: the run continues for the contents, the metadata result is dropped,
+// and Retry then extracts the metadata on its own.
 void TestLibraryController::cancelAndRetryFromTheActivityList()
 {
     QTemporaryDir dir;
     auto fake = std::make_shared<FakeExtractor>();
+    auto analyzer = std::make_shared<FakeAnalyzer>(fake);
     fake->block = true;
     LibraryController c;
-    c.setMetadataExtractor(fake, true);
+    c.setProcessors(fake, analyzer, true);
     openAndWait(c, dir.path());
     c.importFiles({fixture("title-page.pdf")});
     QTRY_VERIFY_WITH_TIMEOUT(fake->started.load(), 20000);
-    QTRY_COMPARE_WITH_TIMEOUT(jobData(c.jobs(), 0, JobListModel::StateRole).toString(), QStringLiteral("running"), 10000);
-    QVERIFY(jobData(c.jobs(), 0, JobListModel::CanCancelRole).toBool());
-    QTRY_COMPARE_WITH_TIMEOUT(stateOf(c.books(), 0), QStringLiteral("Reading title and authors\u2026"), 5000);
-    const QString firstJob = jobData(c.jobs(), 0, JobListModel::JobIdRole).toString();
+    const QString metadataKind = QStringLiteral("Title and authors");
+    QTRY_COMPARE_WITH_TIMEOUT(
+        jobData(c.jobs(), rowOfKind(c.jobs(), metadataKind), JobListModel::StateRole).toString(),
+        QStringLiteral("running"), 10000);
+    QVERIFY(jobData(c.jobs(), rowOfKind(c.jobs(), metadataKind), JobListModel::CanCancelRole).toBool());
+    QTRY_COMPARE_WITH_TIMEOUT(stateOf(c.books(), 0), QStringLiteral("Reading title and authors\u2026 \u00b7 analyzing contents\u2026"),
+                              5000);
+    const QString metadataJob = jobData(c.jobs(), rowOfKind(c.jobs(), metadataKind), JobListModel::JobIdRole).toString();
 
-    c.cancelJob(firstJob);
-    QTRY_COMPARE_WITH_TIMEOUT(jobData(c.jobs(), 0, JobListModel::StateRole).toString(), QStringLiteral("cancelled"), 10000);
-    QVERIFY(jobData(c.jobs(), 0, JobListModel::CanRetryRole).toBool());
-    QVERIFY(!jobData(c.jobs(), 0, JobListModel::CanCancelRole).toBool());
-    QCOMPARE(stateOf(c.books(), 0), QStringLiteral("Metadata extraction cancelled"));
+    c.cancelJob(metadataJob);
+    QTRY_COMPARE_WITH_TIMEOUT(
+        jobData(c.jobs(), rowOfKind(c.jobs(), metadataKind), JobListModel::StateRole).toString(),
+        QStringLiteral("cancel_requested"), 10000);
+    fake->block = false;  // The shared run goes on for the contents.
     QTRY_VERIFY_WITH_TIMEOUT(!c.busy(), 10000);
+    QCOMPARE(jobData(c.jobs(), rowOfKind(c.jobs(), metadataKind), JobListModel::StateRole).toString(),
+             QStringLiteral("cancelled"));
+    QVERIFY(jobData(c.jobs(), rowOfKind(c.jobs(), metadataKind), JobListModel::CanRetryRole).toBool());
+    QTRY_COMPARE_WITH_TIMEOUT(stateOf(c.books(), 0), QStringLiteral("Metadata extraction cancelled \u00b7 2 contents entries"),
+                              5000);
+    QCOMPARE(titles(c.books()), QStringList{QStringLiteral("title-page")});
 
-    fake->block = false;
-    c.retryJob(firstJob);
+    c.retryJob(metadataJob);
     QTRY_COMPARE_WITH_TIMEOUT(titles(c.books()), QStringList{QStringLiteral("Extracted Title")}, 20000);
-    QTRY_COMPARE_WITH_TIMEOUT(c.jobs()->rowCount(), 2, 5000);
-    QTRY_COMPARE_WITH_TIMEOUT(jobData(c.jobs(), 0, JobListModel::StateRole).toString(), QStringLiteral("succeeded"), 10000);
-    QCOMPARE(jobData(c.jobs(), 1, JobListModel::JobIdRole).toString(), firstJob);
-    QVERIFY(!jobData(c.jobs(), 1, JobListModel::CanRetryRole).toBool());  // A newer job exists.
+    QTRY_VERIFY_WITH_TIMEOUT(!c.busy(), 10000);
+    QCOMPARE(jobData(c.jobs(), rowOfKind(c.jobs(), metadataKind), JobListModel::StateRole).toString(),
+             QStringLiteral("succeeded"));
+    QVERIFY(jobData(c.jobs(), rowOfKind(c.jobs(), metadataKind), JobListModel::JobIdRole).toString() != metadataJob);
+    for (int row = 0; row < c.jobs()->rowCount(); ++row) {  // The cancelled row lost Retry: a newer job exists.
+        if (jobData(c.jobs(), row, JobListModel::JobIdRole).toString() == metadataJob)
+            QVERIFY(!jobData(c.jobs(), row, JobListModel::CanRetryRole).toBool());
+    }
+    QCOMPARE(analyzer->bookCalls.load(), 1);  // The retry ran metadata alone.
+    QCOMPARE(fake->calls.load(), 2);
 }
 
 // A job left running by a crash is requeued at open and completed.
@@ -513,23 +604,26 @@ void TestLibraryController::startupRequeuesACrashedJob()
         mbl::storage::ImportService service(*library.value());
         QCOMPARE(service.importFile(fixture("title-page.pdf")).outcome, mbl::storage::ImportResult::Outcome::Imported);
         const auto claimed = library.value()->run([](QSqlDatabase& db) { return mbl::catalog::claimNextJob(db); }).result();
-        QVERIFY(claimed && claimed.value());  // The job queued by the import, now "running" when the process dies.
+        QVERIFY(claimed && claimed.value());  // The metadata job, now "running" when the process dies.
     }
     auto fake = std::make_shared<FakeExtractor>();
+    auto analyzer = std::make_shared<FakeAnalyzer>(fake);
     LibraryController c;
-    c.setMetadataExtractor(fake, true);
+    c.setProcessors(fake, analyzer, true);
     QStringList seen;
     connect(&c, &LibraryController::statusTextChanged, this, [&] { seen << c.statusText(); });
     openAndWait(c, dir.path());
     QTRY_COMPARE_WITH_TIMEOUT(titles(c.books()), QStringList{QStringLiteral("Extracted Title")}, 20000);
-    QVERIFY2(seen.join(u'\n').contains(QStringLiteral("1 interrupted metadata extraction(s) queued again.")),
+    QVERIFY2(seen.join(u'\n').contains(QStringLiteral("1 interrupted job(s) queued again.")),
              qPrintable(seen.join(QStringLiteral(" | "))));
-    QTRY_COMPARE_WITH_TIMEOUT(c.jobs()->rowCount(), 2, 5000);  // The interrupted job and its replacement.
-    QCOMPARE(fake->calls.load(), 1);
+    // The interrupted job, its replacement, and the contents job.
+    QTRY_COMPARE_WITH_TIMEOUT(c.jobs()->rowCount(), 3, 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(!c.busy(), 10000);
+    QCOMPARE(analyzer->bookCalls.load(), 1);  // The replacement paired with the contents job.
 }
 
 // Without an extractor (e.g. a build without the SDK), imports still queue
-// their metadata job; it waits and is shown as waiting.
+// their jobs; they wait and are shown as waiting.
 void TestLibraryController::withoutAnExtractorJobsWait()
 {
     QTemporaryDir dir;
@@ -539,8 +633,8 @@ void TestLibraryController::withoutAnExtractorJobsWait()
     c.importFiles({fixture("title-page.pdf")});
     QTRY_COMPARE_WITH_TIMEOUT(c.books()->rowCount(), 1, 20000);
     QTRY_VERIFY_WITH_TIMEOUT(!c.busy(), 10000);
-    QCOMPARE(stateOf(c.books(), 0), QStringLiteral("Waiting to read title and authors"));
-    QCOMPARE(c.jobs()->pendingCount(), 1);
+    QCOMPARE(stateOf(c.books(), 0), QStringLiteral("Waiting to read title and authors \u00b7 contents waiting"));
+    QCOMPARE(c.jobs()->pendingCount(), 2);
 }
 
 // A backlog larger than the "recent jobs" window is counted and listed in

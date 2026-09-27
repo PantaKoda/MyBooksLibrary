@@ -13,9 +13,14 @@ QString tr(const char* text)
     return QCoreApplication::translate("BookListModel", text);
 }
 
-// Metadata availability and the latest metadata job are separate states: a
-// published result stays shown while a rerun waits, runs or fails.
-QString stateText(const domain::BookSummary& book, const domain::JobRecord* job)
+QString trn(const char* text, int n)
+{
+    return QCoreApplication::translate("BookListModel", text, nullptr, n);
+}
+
+// What the catalog holds and what the latest job is doing are separate
+// states: a published result stays shown while a rerun waits, runs or fails.
+QString metadataText(const domain::BookSummary& book, const domain::JobRecord* job)
 {
     using domain::JobState;
     if (job && job->state == JobState::Queued)
@@ -24,16 +29,14 @@ QString stateText(const domain::BookSummary& book, const domain::JobRecord* job)
         return tr("Reading title and authors…");
     if (job && job->state == JobState::CancelRequested)
         return tr("Cancelling…");
-    if (book.hasTocRun)
-        return QCoreApplication::translate("BookListModel", "%n contents entries", nullptr, book.tocEntryCount);
     if (book.hasMetadataRun) {
         if (!book.displayTitleFromFileName)
-            return tr("Metadata ready · contents not analyzed");
+            return tr("Metadata ready");
         if (book.metadata.titleSource == domain::ValueSource::Cleared)
-            return tr("Title cleared · contents not analyzed");
+            return tr("Title cleared");
         if (book.extractedTitleStatus == domain::FieldStatus::Ambiguous)
-            return tr("Title uncertain: several candidates · contents not analyzed");
-        return tr("No title found in the document · contents not analyzed");
+            return tr("Title uncertain: several candidates");
+        return tr("No title found in the document");
     }
     if (job && job->state == JobState::Failed)
         return tr("Title and authors could not be read");
@@ -41,7 +44,40 @@ QString stateText(const domain::BookSummary& book, const domain::JobRecord* job)
         return tr("Metadata extraction cancelled");
     if (job && job->state == JobState::Interrupted)
         return tr("Metadata extraction interrupted");
-    return tr("Imported · not analyzed yet");
+    return {};
+}
+
+QString contentsText(const domain::BookSummary& book, const domain::JobRecord* job)
+{
+    using domain::JobState;
+    if (job && job->state == JobState::Queued)
+        return tr("contents waiting");
+    if (job && job->state == JobState::Running)
+        return tr("analyzing contents…");
+    if (job && job->state == JobState::CancelRequested)
+        return tr("cancelling contents analysis…");
+    if (book.hasTocRun) {
+        return book.tocEntryCount > 0 ? trn("%n contents entries", book.tocEntryCount)
+                                      : tr("no printed contents found");
+    }
+    if (job && job->state == JobState::Failed && job->outcome != QLatin1String("unsupported"))
+        return tr("contents could not be analyzed");
+    if (job && job->state == JobState::Cancelled)
+        return tr("contents analysis cancelled");
+    if (job && job->state == JobState::Interrupted)
+        return tr("contents analysis interrupted");
+    return tr("contents not analyzed");
+}
+
+QString stateText(const domain::BookSummary& book, const domain::JobRecord* metadataJob,
+                  const domain::JobRecord* contentsJob)
+{
+    const QString metadata = metadataText(book, metadataJob);
+    if (metadata.isEmpty() && !contentsJob && !book.hasTocRun)
+        return tr("Imported · not analyzed yet");
+    const QString contents = contentsText(book, contentsJob);
+    return metadata.isEmpty() ? tr("Imported") + QStringLiteral(" · ") + contents
+                              : metadata + QStringLiteral(" · ") + contents;
 }
 
 } // namespace
@@ -73,8 +109,10 @@ QVariant BookListModel::data(const QModelIndex& index, int role) const
         return names.join(QStringLiteral(", "));
     }
     case ProcessingStateRole: {
-        const auto job = m_metadataJobs.constFind(book.id);
-        return stateText(book, job == m_metadataJobs.cend() ? nullptr : &job.value());
+        const auto metadata = m_metadataJobs.constFind(book.id);
+        const auto contents = m_contentsJobs.constFind(book.id);
+        return stateText(book, metadata == m_metadataJobs.cend() ? nullptr : &metadata.value(),
+                         contents == m_contentsJobs.cend() ? nullptr : &contents.value());
     }
     }
     return {};
@@ -148,16 +186,15 @@ void BookListModel::setBooks(QList<domain::BookSummary> books)
 
 bool BookListModel::acceptJob(const domain::JobRecord& job)
 {
-    if (job.kind != domain::JobKind::Metadata)
-        return false;
-    const auto current = m_metadataJobs.constFind(job.book);
-    if (current != m_metadataJobs.cend()) {
+    auto& jobs = job.kind == domain::JobKind::Metadata ? m_metadataJobs : m_contentsJobs;
+    const auto current = jobs.constFind(job.book);
+    if (current != jobs.cend()) {
         // A different, older job never replaces the latest one; the same
         // job only moves forward in time.
         if (current->id != job.id ? job.createdAt < current->createdAt : job.updatedAt < current->updatedAt)
             return false;
     }
-    m_metadataJobs.insert(job.book, job);
+    jobs.insert(job.book, job);
     return true;
 }
 

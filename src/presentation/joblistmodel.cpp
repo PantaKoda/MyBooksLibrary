@@ -35,7 +35,7 @@ QString JobListModel::stateText(const JobRecord& job)
     case JobState::Queued:
         return tr("Waiting");
     case JobState::Running:
-        return tr("Reading the first pages…");
+        return job.kind == JobKind::Metadata ? tr("Reading the first pages…") : tr("Analyzing the contents…");
     case JobState::CancelRequested:
         return tr("Cancelling…");
     case JobState::Succeeded:
@@ -78,7 +78,7 @@ QVariant JobListModel::data(const QModelIndex& index, int role) const
     case StateRole:
         return toCode(job.state);
     case StateTextRole:
-        return stateText(job);
+        return stateTextWithProgress(job);
     case DetailRole:
         return job.state == JobState::Failed ? job.error : QString();
     case RunningRole:
@@ -103,6 +103,29 @@ QHash<int, QByteArray> JobListModel::roleNames() const
     };
 }
 
+QString JobListModel::stateTextWithProgress(const JobRecord& job) const
+{
+    const QString text = stateText(job);
+    const auto progress = m_progress.constFind(job.id);
+    if (job.state != JobState::Running || progress == m_progress.cend() || progress->pages <= 0)
+        return text;
+    return text + QStringLiteral(" · ") + trn("%n page(s) read", progress->pages);
+}
+
+void JobListModel::setProgress(const JobId& id, const QString& stage, int pagesAcquired)
+{
+    for (qsizetype row = 0; row < m_jobs.size(); ++row) {
+        if (m_jobs.at(row).id != id)
+            continue;
+        if (m_jobs.at(row).state != JobState::Running)
+            return;  // A late update for a job that already stopped.
+        m_progress.insert(id, Progress{stage, pagesAcquired});
+        emit dataChanged(index(int(row)), index(int(row)), {StateTextRole});
+        emit summaryChanged();
+        return;
+    }
+}
+
 bool JobListModel::hasNewerJob(const JobRecord& job) const
 {
     for (const JobRecord& other : m_jobs) {
@@ -120,6 +143,8 @@ void JobListModel::upsert(const JobRecord& job)
         if (job.updatedAt < m_jobs.at(row).updatedAt)
             return;  // Older than what is shown.
         m_jobs[row] = job;
+        if (job.state != JobState::Running)
+            m_progress.remove(job.id);
         emit dataChanged(index(int(row)), index(int(row)));
         // Retry availability of the book's other jobs may change too.
         if (!m_jobs.isEmpty())
@@ -190,9 +215,16 @@ QString JobListModel::summary() const
     QString text;
     if (running) {
         const QString title = m_titleOf ? m_titleOf(running->book) : QString();
-        text = running->state == JobState::CancelRequested ? tr("Cancelling metadata extraction…")
-               : title.isEmpty()                           ? tr("Reading title and authors…")
-                                                           : tr("Reading title and authors: %1").arg(title);
+        const bool metadata = running->kind == JobKind::Metadata;
+        if (running->state == JobState::CancelRequested)
+            text = metadata ? tr("Cancelling metadata extraction…") : tr("Cancelling contents analysis…");
+        else if (title.isEmpty())
+            text = metadata ? tr("Reading title and authors…") : tr("Analyzing contents…");
+        else
+            text = metadata ? tr("Reading title and authors: %1").arg(title) : tr("Analyzing contents: %1").arg(title);
+        const auto progress = m_progress.constFind(running->id);
+        if (running->state == JobState::Running && progress != m_progress.cend() && progress->pages > 0)
+            text += QStringLiteral(" · ") + trn("%n page(s) read", progress->pages);
     }
     if (waiting > 0) {
         const QString more = trn("%n book(s) waiting", waiting);

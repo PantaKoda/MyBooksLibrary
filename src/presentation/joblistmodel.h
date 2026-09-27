@@ -8,6 +8,7 @@
 #include "domain/jobs.h"
 
 #include <QAbstractListModel>
+#include <QHash>
 #include <QList>
 #include <QQmlEngine>
 
@@ -52,12 +53,16 @@ public:
     // newer state delivered by jobChanged.
     void upsert(const domain::JobRecord& job);
     void titlesChanged();  // Book titles changed: refresh the title column.
+    // Latest SDK progress of a running job (pages acquired in its stage; no
+    // total exists). Cleared when the job stops running.
+    void setProgress(const domain::JobId& id, const QString& stage, int pagesAcquired);
 
     std::optional<domain::JobRecord> job(const domain::JobId& id) const;
     int pendingCount() const;
     QString summary() const;
 
     static QString stateText(const domain::JobRecord& job);
+    QString stateTextWithProgress(const domain::JobRecord& job) const;
 
 signals:
     void countChanged();
@@ -67,7 +72,12 @@ private:
     bool hasNewerJob(const domain::JobRecord& job) const;
     void trim();
 
+    struct Progress {
+        QString stage;
+        int pages = 0;
+    };
     QList<domain::JobRecord> m_jobs;
+    QHash<domain::JobId, Progress> m_progress;
     TitleLookup m_titleOf;
 };
 

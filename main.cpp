@@ -23,6 +23,7 @@
 #include "app/libraryroot.h"
 #include "infrastructure/sqlitecapabilities.h"
 #include "processing/sdk/sdkinfo.h"
+#include "processing/sdk/sdkcontentsanalyzer.h"
 #include "processing/sdk/sdkmetadataextractor.h"
 #include "presentation/librarycontroller.h"
 #include "reader/readercheck.h"
@@ -164,8 +165,8 @@ int main(int argc, char *argv[])
 
     // Composition root: the library session, its SDK extractor and its window.
     mbl::presentation::LibraryController library;
-    library.setMetadataExtractor(std::make_shared<mbl::sdk::SdkMetadataExtractor>(),
-                                 mbl::sdk::querySdkIdentity().modelsFound);
+    library.setProcessors(std::make_shared<mbl::sdk::SdkMetadataExtractor>(),
+                          std::make_shared<mbl::sdk::SdkContentsAnalyzer>(), mbl::sdk::querySdkIdentity().modelsFound);
     QQmlApplicationEngine engine;
     QObject::connect(
         &engine,

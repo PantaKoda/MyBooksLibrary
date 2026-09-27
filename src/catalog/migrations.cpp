@@ -192,7 +192,24 @@ QList<Migration> buildMigrations()
             reasons_json TEXT NOT NULL,
             PRIMARY KEY (run_id, field)))"),
     };
-    return {v1, v2, v3};
+
+    Migration v4;
+    v4.version = 4;
+    v4.name = QStringLiteral("contents evidence and plans");
+    v4.statements = {
+        // Per entry: sources, reasons, alternatives and omission (JSON object;
+        // see catalog.cpp, tocEvidenceJson). Entries of earlier runs get '{}'.
+        QStringLiteral("ALTER TABLE toc_entries ADD COLUMN evidence_json TEXT NOT NULL DEFAULT '{}'"),
+        // Per run: parse completeness and search coverage (NULL when unknown),
+        // plan blockers and stop reasons (JSON arrays), and the SDK plan itself.
+        QStringLiteral("ALTER TABLE toc_runs ADD COLUMN parse_complete INTEGER CHECK (parse_complete IN (0, 1))"),
+        QStringLiteral("ALTER TABLE toc_runs ADD COLUMN search_covered_document INTEGER "
+                       "CHECK (search_covered_document IN (0, 1))"),
+        QStringLiteral("ALTER TABLE toc_runs ADD COLUMN plan_blockers_json TEXT NOT NULL DEFAULT '[]'"),
+        QStringLiteral("ALTER TABLE toc_runs ADD COLUMN stop_reasons_json TEXT NOT NULL DEFAULT '[]'"),
+        QStringLiteral("ALTER TABLE toc_runs ADD COLUMN plan_json TEXT"),
+    };
+    return {v1, v2, v3, v4};
 }
 
 } // namespace

@@ -6,6 +6,9 @@
 #include <QDateTime>
 #include <QFileInfo>
 #include <QHash>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QSet>
 #include <QSqlError>
 #include <QSqlQuery>
@@ -64,6 +67,83 @@ QVariant requiredText(const QString& v)
 std::optional<int> optInt(const QVariant& v)
 {
     return v.isNull() ? std::nullopt : std::optional<int>(v.toInt());
+}
+
+QJsonArray intArray(const QList<int>& values)
+{
+    QJsonArray out;
+    for (int v : values)
+        out << v;
+    return out;
+}
+
+QList<int> intList(const QJsonValue& v)
+{
+    QList<int> out;
+    for (const QJsonValue& x : v.toArray())
+        out << x.toInt();
+    return out;
+}
+
+QStringList stringList(const QJsonValue& v)
+{
+    QStringList out;
+    for (const QJsonValue& x : v.toArray())
+        out << x.toString();
+    return out;
+}
+
+QString compactJson(const QJsonArray& a)
+{
+    return QString::fromUtf8(QJsonDocument(a).toJson(QJsonDocument::Compact));
+}
+
+// toc_entries.evidence_json: an object; empty lists and absent values are omitted.
+QString tocEvidenceJson(const TocEntryEvidence& e)
+{
+    QJsonObject o;
+    if (!e.sourcePages.isEmpty())
+        o.insert(QStringLiteral("source_pages"), intArray(e.sourcePages));
+    if (!e.hierarchyReasons.isEmpty())
+        o.insert(QStringLiteral("hierarchy_reasons"), QJsonArray::fromStringList(e.hierarchyReasons));
+    if (e.printedLabelUncertain)
+        o.insert(QStringLiteral("printed_label_uncertain"), true);
+    if (!e.printedLabelReasons.isEmpty())
+        o.insert(QStringLiteral("printed_label_reasons"), QJsonArray::fromStringList(e.printedLabelReasons));
+    if (e.destinationMethod)
+        o.insert(QStringLiteral("destination_method"), *e.destinationMethod);
+    if (!e.destinationReasons.isEmpty())
+        o.insert(QStringLiteral("destination_reasons"), QJsonArray::fromStringList(e.destinationReasons));
+    if (!e.alternativePages.isEmpty())
+        o.insert(QStringLiteral("alternative_pages"), intArray(e.alternativePages));
+    if (e.omissionReason)
+        o.insert(QStringLiteral("omission_reason"), *e.omissionReason);
+    if (!e.diagnostics.isEmpty())
+        o.insert(QStringLiteral("diagnostics"), QJsonArray::fromStringList(e.diagnostics));
+    return QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Compact));
+}
+
+TocEntryEvidence tocEvidenceFromJson(const QString& json)
+{
+    const QJsonObject o = QJsonDocument::fromJson(json.toUtf8()).object();
+    TocEntryEvidence e;
+    e.sourcePages = intList(o.value(QStringLiteral("source_pages")));
+    e.hierarchyReasons = stringList(o.value(QStringLiteral("hierarchy_reasons")));
+    e.printedLabelUncertain = o.value(QStringLiteral("printed_label_uncertain")).toBool();
+    e.printedLabelReasons = stringList(o.value(QStringLiteral("printed_label_reasons")));
+    if (o.contains(QStringLiteral("destination_method")))
+        e.destinationMethod = o.value(QStringLiteral("destination_method")).toString();
+    e.destinationReasons = stringList(o.value(QStringLiteral("destination_reasons")));
+    e.alternativePages = intList(o.value(QStringLiteral("alternative_pages")));
+    if (o.contains(QStringLiteral("omission_reason")))
+        e.omissionReason = o.value(QStringLiteral("omission_reason")).toString();
+    e.diagnostics = stringList(o.value(QStringLiteral("diagnostics")));
+    return e;
+}
+
+QVariant nullableBool(const std::optional<bool>& v)
+{
+    return v ? QVariant(*v ? 1 : 0) : QVariant(QMetaType(QMetaType::Int));
 }
 
 std::optional<QString> optText(const QVariant& v)
@@ -198,7 +278,8 @@ Result<StoredToc> loadToc(QSqlDatabase& db, const RunId& run)
 {
     StoredToc toc;
     QSqlQuery q(db);
-    q.prepare(QStringLiteral("SELECT outcome, plan_ready FROM toc_runs WHERE id = ?"));
+    q.prepare(QStringLiteral("SELECT outcome, plan_ready, parse_complete, search_covered_document, "
+                             "plan_blockers_json, stop_reasons_json, plan_json FROM toc_runs WHERE id = ?"));
     q.addBindValue(run.toString());
     if (!q.exec())
         return sqlError(q);
@@ -206,10 +287,17 @@ Result<StoredToc> loadToc(QSqlDatabase& db, const RunId& run)
         return makeError(ErrorCode::NotFound, QStringLiteral("No TOC run %1.").arg(run.toString()));
     toc.analysis.outcome = q.value(0).toString();
     toc.analysis.planReady = q.value(1).toInt() != 0;
+    if (const auto v = optInt(q.value(2)))
+        toc.analysis.parseComplete = *v != 0;
+    if (const auto v = optInt(q.value(3)))
+        toc.analysis.searchCoveredDocument = *v != 0;
+    toc.analysis.planBlockers = stringList(QJsonDocument::fromJson(q.value(4).toString().toUtf8()).array());
+    toc.analysis.stopReasons = stringList(QJsonDocument::fromJson(q.value(5).toString().toUtf8()).array());
+    toc.analysis.planJson = q.value(6).toString().toUtf8();
 
     q.prepare(QStringLiteral(
         "SELECT id, sdk_entry_id, entry_order, title, hierarchy, parent_sdk_entry_id, printed_label, "
-        "destination_state, destination_page, source_toc_page, in_export_plan "
+        "destination_state, destination_page, source_toc_page, in_export_plan, evidence_json "
         "FROM toc_entries WHERE run_id = ? ORDER BY entry_order, id"));
     q.addBindValue(run.toString());
     if (!q.exec())
@@ -227,6 +315,7 @@ Result<StoredToc> loadToc(QSqlDatabase& db, const RunId& run)
         e.destinationPage = optInt(q.value(8));
         e.sourceTocPage = optInt(q.value(9));
         e.inExportPlan = q.value(10).toInt() != 0;
+        e.evidence = tocEvidenceFromJson(q.value(11).toString());
         toc.keys << q.value(0).toLongLong();
         toc.analysis.entries << e;
     }
@@ -677,6 +766,17 @@ Result<RunId> publishToc(QSqlDatabase& db, const PublishTicket& ticket, const Ru
     Transaction tx(db);
     if (!tx.begun())
         return sqlError(db, QStringLiteral("begin"));
+    auto id = detail::publishTocRun(db, RunId::create(), ticket, run, toc);
+    if (!id)
+        return id;
+    if (!tx.commit())
+        return sqlError(db, QStringLiteral("commit"));
+    return id;
+}
+
+Result<RunId> detail::publishTocRun(QSqlDatabase& db, const RunId& id, const PublishTicket& ticket,
+                                    const RunIdentity& run, const TocAnalysis& toc)
+{
     auto row = checkPublishable(db, ticket, run, false);
     if (!row)
         return row.error();
@@ -702,20 +802,26 @@ Result<RunId> publishToc(QSqlDatabase& db, const PublishTicket& ticket, const Ru
         }
     }
 
-    const RunId id = RunId::create();
     QSqlQuery q(db);
     q.prepare(QStringLiteral(
         "INSERT INTO toc_runs(id, book_id, generation, source_sha256, sdk_version, model_identity, "
-        "options_json, outcome, report_path, created_at, plan_ready) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"));
+        "options_json, outcome, report_path, created_at, plan_ready, parse_complete, search_covered_document, "
+        "plan_blockers_json, stop_reasons_json, plan_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"));
     bindRunIdentity(q, id, ticket, run);
     q.addBindValue(toc.planReady ? 1 : 0);
+    q.addBindValue(nullableBool(toc.parseComplete));
+    q.addBindValue(nullableBool(toc.searchCoveredDocument));
+    q.addBindValue(compactJson(QJsonArray::fromStringList(toc.planBlockers)));
+    q.addBindValue(compactJson(QJsonArray::fromStringList(toc.stopReasons)));
+    q.addBindValue(toc.planJson.isEmpty() ? QVariant(QMetaType(QMetaType::QString))
+                                          : QVariant(QString::fromUtf8(toc.planJson)));
     if (!q.exec())
         return sqlError(q);
 
     q.prepare(QStringLiteral(
         "INSERT INTO toc_entries(run_id, sdk_entry_id, entry_order, title, hierarchy, parent_sdk_entry_id, "
-        "printed_label, destination_state, destination_page, source_toc_page, in_export_plan) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"));
+        "printed_label, destination_state, destination_page, source_toc_page, in_export_plan, evidence_json) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"));
     for (const TocEntry& e : normalizeHierarchy(toc.entries)) {
         q.addBindValue(id.toString());
         q.addBindValue(e.sdkEntryId);
@@ -728,6 +834,7 @@ Result<RunId> publishToc(QSqlDatabase& db, const PublishTicket& ticket, const Ru
         q.addBindValue(nullable(e.destinationPage));
         q.addBindValue(nullable(e.sourceTocPage));
         q.addBindValue(e.inExportPlan ? 1 : 0);
+        q.addBindValue(tocEvidenceJson(e.evidence));
         if (!q.exec())
             return makeError(ErrorCode::InvalidArgument,
                              QStringLiteral("TOC entry %1 rejected: %2").arg(e.sdkEntryId, q.lastError().text()));
@@ -742,8 +849,6 @@ Result<RunId> publishToc(QSqlDatabase& db, const PublishTicket& ticket, const Ru
         return s.error();
     if (auto s = refreshProjection(db, ticket.book); !s)
         return s.error();
-    if (!tx.commit())
-        return sqlError(db, QStringLiteral("commit"));
     return id;
 }
 

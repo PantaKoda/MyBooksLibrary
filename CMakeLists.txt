@@ -60,6 +60,7 @@ qt_add_library(mbl_core STATIC
     src/catalog/library.cpp
     src/catalog/migrations.h
     src/catalog/migrations.cpp
+    src/processing/contentsanalyzer.h
     src/processing/metadataextractor.h
     src/processing/processingcoordinator.h
     src/processing/processingcoordinator.cpp
@@ -117,6 +118,12 @@ qt_add_library(mbl_sdk STATIC
     src/processing/sdk/metadatanormalize.cpp
     src/processing/sdk/sdkmetadataextractor.h
     src/processing/sdk/sdkmetadataextractor.cpp
+    src/processing/sdk/sdkcommon.h
+    src/processing/sdk/sdkcommon.cpp
+    src/processing/sdk/contentsnormalize.h
+    src/processing/sdk/contentsnormalize.cpp
+    src/processing/sdk/sdkcontentsanalyzer.h
+    src/processing/sdk/sdkcontentsanalyzer.cpp
 )
 target_link_libraries(mbl_sdk PUBLIC mbl_core pdfbookmark::pdfbookmark)
 

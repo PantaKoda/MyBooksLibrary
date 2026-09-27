@@ -117,10 +117,12 @@ Result<BookId> completeImport(QSqlDatabase& db, const ImportId& id, const NewBoo
     auto inserted = detail::insertBook(db, book);
     if (!inserted)
         return inserted;  // Duplicate or SQL error; the transaction rolls back.
-    // The book's first metadata request is queued with it, so a crash right
-    // after the import cannot lose it.
-    if (auto job = detail::queueJob(db, inserted.value(), JobKind::Metadata); !job)
-        return job.error();
+    // The book's first metadata and contents requests are queued with it, so
+    // a crash right after the import cannot lose them.
+    for (const JobKind kind : {JobKind::Metadata, JobKind::Toc}) {
+        if (auto job = detail::queueJob(db, inserted.value(), kind); !job)
+            return job.error();
+    }
     if (auto s = transition(db, id, ImportPhase::Verified, ImportPhase::Registered, inserted.value(), {}); !s)
         return s.error();
     if (!tx.commit())

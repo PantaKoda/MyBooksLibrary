@@ -26,6 +26,7 @@ namespace mbl::storage {
 class ImportService;
 }
 namespace mbl::processing {
+class ContentsAnalyzer;
 class MetadataExtractor;
 class ProcessingCoordinator;
 }
@@ -70,10 +71,16 @@ public:
     // flow waits for !busy first, so this does not block in normal use.
     ~LibraryController() override;
 
-    // Composition root, before open(): the extractor for metadata jobs, and
-    // whether OCR models were found (shown as a capability note). Without an
-    // extractor, jobs are queued but not run.
-    void setMetadataExtractor(std::shared_ptr<processing::MetadataExtractor> extractor, bool ocrAvailable);
+    // Composition root, before open(): the SDK steps for metadata and
+    // contents jobs, and whether OCR models were found (shown as a capability
+    // note). Without an extractor, jobs are queued but not run; without an
+    // analyzer, contents jobs fail as unsupported.
+    void setProcessors(std::shared_ptr<processing::MetadataExtractor> extractor,
+                       std::shared_ptr<processing::ContentsAnalyzer> analyzer, bool ocrAvailable);
+    void setMetadataExtractor(std::shared_ptr<processing::MetadataExtractor> extractor, bool ocrAvailable)
+    {
+        setProcessors(std::move(extractor), nullptr, ocrAvailable);
+    }
 
     // Opens (and creates if needed) the library at `rootDir` on the worker
     // thread, then recovers interrupted imports and jobs, loads the book
@@ -152,6 +159,7 @@ private:
     BookListModel m_books;
     JobListModel m_jobs;
     std::shared_ptr<processing::MetadataExtractor> m_extractor;
+    std::shared_ptr<processing::ContentsAnalyzer> m_analyzer;
     std::unique_ptr<processing::ProcessingCoordinator> m_coordinator;  // Destroyed before m_library.
     bool m_ocrAvailable = false;
     bool m_recoveringJobs = false;

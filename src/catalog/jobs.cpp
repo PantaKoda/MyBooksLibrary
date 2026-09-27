@@ -236,6 +236,39 @@ Status finishJob(QSqlDatabase& db, const JobId& id, JobState state, const QStrin
     return transition(db, id, {JobState::Running, JobState::CancelRequested}, state, outcome, error);
 }
 
+namespace {
+
+// Records the page count reported by a run if the asset's is still unknown.
+Status fillPageCount(QSqlDatabase& db, const BookId& book, std::optional<int> pageCount)
+{
+    if (!pageCount)
+        return Done{};
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral("UPDATE assets SET page_count = ? WHERE page_count IS NULL AND id = "
+                             "(SELECT asset_id FROM books WHERE id = ?)"));
+    q.addBindValue(*pageCount);
+    q.addBindValue(book.toString());
+    if (!q.exec())
+        return sqlError(q);
+    return Done{};
+}
+
+// Publication requires the job to be still running: a cancel requested while
+// the SDK ran wins over its result.
+Status requireRunning(QSqlDatabase& db, const JobRecord& job)
+{
+    auto current = catalog::job(db, job.id);
+    if (!current)
+        return current.error();
+    if (current.value().state != JobState::Running) {
+        return makeError(ErrorCode::InvalidArgument,
+                         QStringLiteral("Job %1 is %2, not running.").arg(job.id.toString(), toCode(current.value().state)));
+    }
+    return Done{};
+}
+
+} // namespace
+
 Result<RunId> completeMetadataJob(QSqlDatabase& db, const JobRecord& job, const RunId& runId, const RunIdentity& run,
                                   const ExtractedMetadata& metadata, const QList<MetadataFieldDetail>& details,
                                   std::optional<int> pageCount)
@@ -243,14 +276,10 @@ Result<RunId> completeMetadataJob(QSqlDatabase& db, const JobRecord& job, const 
     Transaction tx(db);
     if (!tx.begun())
         return sqlError(db, QStringLiteral("begin"));
-    auto current = catalog::job(db, job.id);
-    if (!current)
-        return current.error();
-    if (current.value().state != JobState::Running) {
-        // CancelRequested: the user cancelled while the SDK ran; do not publish.
-        return makeError(ErrorCode::InvalidArgument,
-                         QStringLiteral("Job %1 is %2, not running.").arg(job.id.toString(), toCode(current.value().state)));
-    }
+    if (auto s = requireRunning(db, job); !s)
+        return s.error();
+    if (job.kind != JobKind::Metadata)
+        return makeError(ErrorCode::InvalidArgument, QStringLiteral("Job %1 is not a metadata job.").arg(job.id.toString()));
     const PublishTicket ticket{job.book, job.generation, job.sourceSha256};
     auto published = detail::publishMetadataRun(db, runId, ticket, run, metadata);
     if (!published)
@@ -277,20 +306,73 @@ Result<RunId> completeMetadataJob(QSqlDatabase& db, const JobRecord& job, const 
             return sqlError(q);
     }
 
-    if (pageCount) {
-        q.prepare(QStringLiteral("UPDATE assets SET page_count = ? WHERE page_count IS NULL AND id = "
-                                 "(SELECT asset_id FROM books WHERE id = ?)"));
-        q.addBindValue(*pageCount);
-        q.addBindValue(job.book.toString());
-        if (!q.exec())
-            return sqlError(q);
-    }
+    if (auto s = fillPageCount(db, job.book, pageCount); !s)
+        return s.error();
     if (auto s = transition(db, job.id, {JobState::Running}, JobState::Succeeded, QStringLiteral("published"), {}, runId);
         !s)
         return s.error();
     if (!tx.commit())
         return sqlError(db, QStringLiteral("commit"));
     return runId;
+}
+
+Result<RunId> completeTocJob(QSqlDatabase& db, const JobRecord& job, const RunId& runId, const RunIdentity& run,
+                             const TocAnalysis& toc, std::optional<int> pageCount)
+{
+    Transaction tx(db);
+    if (!tx.begun())
+        return sqlError(db, QStringLiteral("begin"));
+    if (auto s = requireRunning(db, job); !s)
+        return s.error();
+    if (job.kind != JobKind::Toc)
+        return makeError(ErrorCode::InvalidArgument, QStringLiteral("Job %1 is not a contents job.").arg(job.id.toString()));
+    // First, so that destinations are checked against the page count.
+    if (auto s = fillPageCount(db, job.book, pageCount); !s)
+        return s.error();
+    const PublishTicket ticket{job.book, job.generation, job.sourceSha256};
+    auto published = detail::publishTocRun(db, runId, ticket, run, toc);
+    if (!published)
+        return published;
+    if (auto s = transition(db, job.id, {JobState::Running}, JobState::Succeeded, QStringLiteral("published"), {}, runId);
+        !s)
+        return s.error();
+    if (!tx.commit())
+        return sqlError(db, QStringLiteral("commit"));
+    return runId;
+}
+
+Result<std::optional<JobRecord>> claimQueuedJob(QSqlDatabase& db, const BookId& book, JobKind kind)
+{
+    Transaction tx(db);
+    if (!tx.begun())
+        return sqlError(db, QStringLiteral("begin"));
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral("SELECT id FROM jobs WHERE book_id = ? AND kind = ? AND state = 'queued'"));
+    q.addBindValue(book.toString());
+    q.addBindValue(toCode(kind));
+    if (!q.exec())
+        return sqlError(q);
+    if (!q.next()) {
+        if (!tx.commit())
+            return sqlError(db, QStringLiteral("commit"));
+        return std::optional<JobRecord>();
+    }
+    const JobId id = JobId::fromString(q.value(0).toString());
+    q.finish();
+    const QString stamp = now();
+    q.prepare(QStringLiteral("UPDATE jobs SET state = 'running', attempt = attempt + 1, started_at = ?, "
+                             "updated_at = ? WHERE id = ? AND state = 'queued'"));
+    q.addBindValue(stamp);
+    q.addBindValue(stamp);
+    q.addBindValue(id.toString());
+    if (!q.exec())
+        return sqlError(q);
+    auto claimed = catalog::job(db, id);
+    if (!claimed)
+        return claimed.error();
+    if (!tx.commit())
+        return sqlError(db, QStringLiteral("commit"));
+    return std::optional<JobRecord>(claimed.value());
 }
 
 namespace {

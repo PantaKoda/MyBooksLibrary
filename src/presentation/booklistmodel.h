@@ -40,7 +40,8 @@ public:
     // dataChanged. Must be called on the model's thread.
     void setBooks(QList<domain::BookSummary> books);
 
-    // The latest metadata job of each book, shown in the processing state.
+    // The latest metadata and contents jobs of each book, shown in the
+    // processing state.
     // Both merge: a job older than the one shown for its book is ignored, so
     // a late snapshot cannot undo a newer state.
     void setLatestJobs(const QList<domain::JobRecord>& jobs);
@@ -59,6 +60,7 @@ private:
 
     QList<domain::BookSummary> m_books;
     QHash<domain::BookId, domain::JobRecord> m_metadataJobs;
+    QHash<domain::BookId, domain::JobRecord> m_contentsJobs;
 };
 
 } // namespace mbl::presentation
