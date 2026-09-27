@@ -354,3 +354,24 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - The query re-runs after every book-list refresh, so results follow processing; refreshes are coalesced, which bounds the cost.
   - Opening a chapter comes in part 2, with the reader.
 - **Verified:** See IMPLEMENTATION_PROGRESS.md, M06 part 1.
+
+## 2026-09-27 — M06 part 2: embedded reader, chapter navigation, reading position
+
+- **Change:**
+  - `reader::ReaderController` (presentation library) owns the reading session and document lifetime.
+  - `ReaderPane.qml` holds one `PdfDocument` and a `Loader`-held `PdfMultiPageView`; the view is released before the document changes.
+  - Schema 5 adds `reading_positions`, via `catalog::setReadingPosition` and `readingPosition`.
+  - Entry points:
+    - the inspector's Read, Open chapter, and Show contents page;
+    - Open and Contents page on search hits;
+    - double-click in the book list.
+  - Development flag: `--read-page <n>`.
+- **Why:**
+  - M06 gate: a resolved hit opens the correct page, an unresolved hit offers evidence, and this survives a restart.
+  - AGENTS.md section 9: reading position persistence; distinguish "Open chapter" from "Show source TOC page"; never guess a page.
+  - READER.md: own document lifetime explicitly and stress opening and closing books.
+- **Assumptions:**
+  - The reader replaces the library view (a single window), so the layout is simple; a split reading view can come later.
+  - The position is a physical page index, saved one second after paging stops and at once on switch, close or quit.
+  - For an unresolved entry, the source contents page is the evidence offered. Exact text highlighting is not possible, because the SDK gives no complete geometry (AGENTS.md section 4).
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, M06 part 2.

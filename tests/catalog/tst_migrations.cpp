@@ -2,6 +2,7 @@
 #include "catalog/catalog.h"
 #include "catalog/jobs.h"
 #include "catalog/library.h"
+#include "catalog/reading.h"
 #include "catalog/migrations.h"
 
 #include <QSqlDatabase>
@@ -49,6 +50,7 @@ private slots:
     void version1CatalogUpgradesWithDataIntact();
     void version2CatalogGainsJobs();
     void version3ContentsRunsLoadAfterUpgrade();
+    void version4CatalogGainsReadingPositions();
     void newerSchemaIsRefusedUnchanged();
     void failedMigrationRollsBack();
     void nonConsecutiveListIsRejected();
@@ -190,6 +192,36 @@ void TestMigrations::version3ContentsRunsLoadAfterUpgrade()
     QVERIFY(!toc.parseComplete);
     QVERIFY(toc.planBlockers.isEmpty());
     QVERIFY(toc.planJson.isEmpty());
+}
+
+// A catalog of the M05 release (schema 4) gains reading positions; its books
+// can record one at once.
+void TestMigrations::version4CatalogGainsReadingPositions()
+{
+    const QString book = QStringLiteral("2f1e6d5c-4b3a-4918-8776-655443322110");
+    QTemporaryDir dir;
+    const QString path = dir.filePath(QLatin1StringView(Library::kCatalogFileName));
+    withConnection(path, [&](QSqlDatabase& db) {
+        QVERIFY(migrate(db, catalogMigrations().mid(0, 4)));
+        QCOMPARE(schemaVersion(db), 4);
+        QVERIFY(!tableExists(db, QStringLiteral("reading_positions")));
+        QSqlQuery q(db);
+        QVERIFY(q.exec(QStringLiteral(
+            "INSERT INTO assets(id, sha256, byte_size, page_count, managed_path, created_at) VALUES "
+            "('a1', '0000000000000000000000000000000000000000000000000000000000000001', 10, 8, 'files/a1/source.pdf', 'x')")));
+        QVERIFY(q.exec(QStringLiteral("INSERT INTO books(id, asset_id, original_file_name, original_path, created_at, "
+                                      "updated_at) VALUES ('%1', 'a1', 'old.pdf', 'C:/old.pdf', 'x', 'x')").arg(book)));
+    });
+    auto library = Library::open(dir.path());
+    QVERIFY2(library, library ? "" : qPrintable(library.error().message));
+    QVERIFY(latestSchemaVersion() >= 5);
+    const auto position = library.value()->run([book](QSqlDatabase& db) {
+        const auto id = mbl::domain::BookId::fromString(book);
+        if (!setReadingPosition(db, id, 7))
+            return std::optional<int>(-1);
+        return readingPosition(db, id).value();
+    }).result();
+    QCOMPARE(position, std::optional<int>(7));
 }
 
 void TestMigrations::newerSchemaIsRefusedUnchanged()

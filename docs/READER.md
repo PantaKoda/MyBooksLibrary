@@ -126,3 +126,22 @@ The check now destroys the view before its document (a `Loader` in `ReaderCheckV
 ## SDK 0.3.0 re-verification (2026-09-27)
 
 All `--reader-check` checks pass against SDK 0.3.0 in Release and Debug (clean builds): render, SDK alone, concurrent viewing, cancel while viewing, shutdown during analysis, QML PDF module and non-ASCII path. 0.3.0 adds only `analyze_book()`; the other headers are unchanged. See IMPLEMENTATION_PROGRESS.md, "SDK 0.3.0 update".
+
+## The embedded reader (M06)
+
+`reader::ReaderController` owns the reading session and the **document lifetime**. `qml/reader/ReaderPane.qml` shows it with one `PdfDocument` that lives as long as the pane, and a `PdfMultiPageView` in a `Loader`.
+
+- The view exists only while the controller allows it (`viewActive`) and the document is ready.
+- To switch books or close, the controller first sets `viewActive` to false. It changes or clears the document source only after the pane reports that the view is gone (`viewReleased()`, sent when the `Loader` has no item). **The document is never reloaded or closed under a live view.**
+- Opening is tagged: a newer open, or a close, drops a load in flight.
+- Pages are physical indices; the UI shows index + 1. The requested page is clamped to the page count.
+- `PdfMultiPageView.goToPage()` scrolls only once the view has a size, but it changes `currentPage` either way. In the window, the reader gets its size only as a book opens, so a requested page stays **pending** until the view is laid out (`ReaderView.show()` in `ReaderPane.qml`). Without this, the Release app showed page 1 while reporting page 15.
+- The reading position (`reading_positions`, schema 5) is saved one second after paging stops, and at once when switching books, closing, or quitting. Reopening a book resumes there.
+
+**Stress results:**
+- `tst_readerpane` runs the real pane with Qt PDF on imported copies of `contents-book.pdf` and `title-page.pdf`. It opens the requested physical page, and in 25 rounds switches between the two books at varying pages, closing and reopening every fifth round.
+- Every open checks the real scroll position, not just the view's `currentPage`. One case opens while the pane has no size and lays it out afterwards.
+- It passed 20 times in Debug and 20 in Release offscreen (`ctest --repeat until-fail:20`), and 10 times in a visible window (`QT_QPA_PLATFORM=windows`), without a crash, both before and after that fix.
+- It runs offscreen in CI.
+
+The M01 teardown crash (above) is therefore addressed by construction and by this stress, not only by the check's `Loader`.

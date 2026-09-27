@@ -12,10 +12,42 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | M04 Metadata jobs | Merged: part 1 [PR #9](https://github.com/PantaKoda/MyBooksLibrary/pull/9) (merge `6b5d740`); part 2 [PR #10](https://github.com/PantaKoda/MyBooksLibrary/pull/10) (merge `578e951`) | `feat/m04-a4-metadata-jobs`; `feat/m04-presentation-metadata-jobs` | See "M04" |
 | SDK 0.3.0 update | Merged | `chore/sdk-0.3.0` / [PR #11](https://github.com/PantaKoda/MyBooksLibrary/pull/11), merge `a4b7d59` | See "SDK 0.3.0 update" |
 | M05 Contents | Merged: part 1 [PR #12](https://github.com/PantaKoda/MyBooksLibrary/pull/12) (merge `9feb9b3`); part 2 [PR #13](https://github.com/PantaKoda/MyBooksLibrary/pull/13) (merge `8ba9f49`) | `feat/m05-a4-contents-analysis`; `feat/m05-presentation-contents-inspector` | See "M05" |
-| M06 Search/read | Part 1 AwaitingReview ([PR #14](https://github.com/PantaKoda/MyBooksLibrary/pull/14), search in the application); part 2 NotStarted (reader, chapter navigation, reading position) | `feat/m06-presentation-search` | See "M06" |
+| M06 Search/read | Part 1 Merged ([PR #14](https://github.com/PantaKoda/MyBooksLibrary/pull/14), merge `c8dc23e`); part 2 AwaitingReview (reader, chapter navigation, reading position) | `feat/m06-presentation-search`; `feat/m06-reader-chapter-navigation` | See "M06" |
 | M07–M11 | NotStarted | | |
 
 ## M06 — Search and reading
+
+### Part 2: embedded reader, chapter navigation, reading position (reader + A2)
+
+**Scope:**
+- `ReaderController` and `ReaderPane.qml`, owning document lifetime;
+- schema 5 with `catalog/reading.*`;
+- the entry points in the inspector, search results and book list;
+- `--read-page`.
+
+**Touched paths:** `src/reader/`, `src/catalog/reading.*`, `src/catalog/migrations.cpp`, `src/presentation/librarycontroller.*`, `qml/reader/`, `qml/inspector/`, `qml/search/`, `Main.qml`, `main.cpp`, `CMakeLists.txt`, `tests/`, `docs/`.
+
+| Command | Result |
+| --- | --- |
+| `pwsh scripts/verify.ps1 -Clean` (Release) and `-Configuration Debug` | VERIFY PASSED in both; 18/18 `ctest` suites |
+| `tst_readercontroller` (new, 5 cases) | Covers:<br>- opens where last read (first page if never read); paging is saved after one second;<br>- switching books saves at once; the same book with another page just moves;<br>- **the document never changes before `viewReleased()`**, and close waits for the view, then clears the document; reopening resumes;<br>- a newer open or a close drops a load in flight;<br>- pages are clamped, and an unknown book gives a message. |
+| `tst_readerpane` (new, real Qt PDF, offscreen) | `contents-book.pdf` opens at physical page 15, "3 Networking with TCP/IP" (printed 12), **checked by the real scroll position**; moving to pages 4 and 1 (index 0) works. Opening while the pane has no size, then laying it out, still reaches page 15. 25 rounds of switching books, with close and reopen every fifth, end with each book's position saved and resumed. It passed **20 times** in Debug and **20** in Release (`--repeat until-fail:20`), and **10 times in a visible window** (`QT_QPA_PLATFORM=windows`) |
+| `tst_catalog::readingPositionsPersistAndAreChecked`, `tst_migrations::version4CatalogGainsReadingPositions` | Page index 0 is valid, the last page replaces, past-the-end and negative pages are refused, an unknown page count is accepted, an unknown book gives NotFound; the position survives a restart; a schema 4 catalog upgrades |
+| Mutations, each reverted | No view-release handshake, position not saved on a switch, view ignoring the requested page, and no pending page before layout: each makes its test fail |
+| `qmllint` on the module's QML | No warnings |
+| `appMyBooksLibrary --import contents-book.pdf --read-page 15 --screenshot …` (Debug and Release, real SDK) | Exit 0, no QML warnings. The reader shows physical page 15, "3 Networking with TCP/IP"; the catalog records reading position 14. Five further Release runs show the same page, compared pixel by pixel over the page area |
+
+**Found and fixed while testing:** the first Release screenshot showed page 1 while the page box said 15. `goToPage()` on a view without a size changes `currentPage` but does not scroll, and the reader is laid out only as the book opens. The requested page now stays pending until the view has a size. `tst_readerpane` reproduced it once it checked the real scroll position; it had checked only `currentPage` before.
+
+**M06 gate:**
+- Chapter-only search finds a book (part 1).
+- A resolved hit opens the correct page (Open and Open chapter go to the physical page).
+- An unresolved hit offers evidence (Contents page / Show contents page, the page where it is listed).
+- The results survive a restart (the catalog, search index and reading position persist).
+
+**Not verified by hand:** mouse and keyboard use of the reader's buttons and page box, scrolling through a long book, and screen readers.
+
+**Next action:** M07, corrections and reruns: metadata overrides (Auto, Value, Cleared) and TOC edits in the inspector, reruns that keep edits, and stale results never replacing current data.
 
 ### Part 1: search in the application (presentation)
 

@@ -13,6 +13,9 @@ Pane {
     id: pane
 
     required property BookInspector inspector
+    // Reading: the book where it was last read, or a page as shown (1 = first).
+    signal readRequested()
+    signal openPageRequested(int pageNumber)
     // Development (--inspect-first): make the first entry current when shown.
     property bool selectFirstEntry: false
     padding: 12
@@ -21,13 +24,22 @@ Pane {
         anchors.fill: parent
         spacing: 8
 
-        Label {
+        RowLayout {
             Layout.fillWidth: true
-            text: pane.inspector.title
-            textFormat: Text.PlainText
-            font.bold: true
-            font.pixelSize: 16
-            wrapMode: Text.Wrap
+            Label {
+                Layout.fillWidth: true
+                text: pane.inspector.title
+                textFormat: Text.PlainText
+                font.bold: true
+                font.pixelSize: 16
+                wrapMode: Text.Wrap
+            }
+            Button {
+                text: qsTr("Read")
+                visible: pane.inspector.hasBook && pane.inspector.error.length === 0
+                onClicked: pane.readRequested()
+                Accessible.description: qsTr("Open the book where you last stopped reading")
+            }
         }
         Label {
             Layout.fillWidth: true
@@ -278,6 +290,26 @@ Pane {
                             text: detailsFrame.entry.detail ?? ""
                             textFormat: Text.PlainText
                             wrapMode: Text.Wrap
+                        }
+                        // Two different actions: the chapter itself, or the page
+                        // where the contents list it (for entries without a page).
+                        RowLayout {
+                            spacing: 8
+                            Button {
+                                objectName: "openChapterButton"
+                                visible: (detailsFrame.entry.page ?? -1) > 0
+                                text: qsTr("Open chapter")
+                                onClicked: pane.openPageRequested(detailsFrame.entry.page)
+                                Accessible.description: qsTr("Open the book at this chapter's page")
+                            }
+                            Button {
+                                objectName: "showSourcePageButton"
+                                visible: (detailsFrame.entry.sourcePage ?? -1) > 0
+                                flat: (detailsFrame.entry.page ?? -1) > 0
+                                text: qsTr("Show contents page %1").arg(detailsFrame.entry.sourcePage ?? 0)
+                                onClicked: pane.openPageRequested(detailsFrame.entry.sourcePage)
+                                Accessible.description: qsTr("Open the page where the contents list this entry")
+                            }
                         }
                         Button {
                             visible: detailsFrame.entry.technical !== undefined

@@ -8,6 +8,7 @@
 //                     [--activity]           development: open with the activity panel shown
 //                     [--inspect-first]      development: select the first book (inspector shown)
 //                     [--search <text>]      development: search once the library is ready
+//                     [--read-page <n>]      development: open the first book at page n before --screenshot
 //   appMyBooksLibrary --sdk-check [<pdf>]    no window: print the pdfbookmark SDK identity and,
 //                                            with a PDF, its identity and extracted title.
 //                                            Exit 0 on success, 1 on an SDK error.
@@ -214,13 +215,26 @@ int main(int argc, char *argv[])
     }
     if (!screenshot.isEmpty()) {
         auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().constFirst());
+        // Development: --read-page <n> opens the first book at page n (1 =
+        // first) once processing is idle, before the screenshot.
+        const qsizetype readAt = args.indexOf(QLatin1String("--read-page"));
+        const int readPage = readAt >= 0 && readAt + 1 < args.size() ? args.at(readAt + 1).toInt() : 0;
+        auto readRequested = std::make_shared<bool>(false);
         auto trySave = std::make_shared<std::function<void()>>();
-        *trySave = [&library, window, screenshot, trySave] {
+        *trySave = [&library, window, screenshot, trySave, readPage, readRequested] {
             if (library.busy() || library.opening() || library.search()->searching()) {
                 QTimer::singleShot(200, *trySave);
                 return;
             }
-            QTimer::singleShot(500, [window, screenshot] {  // Let the view settle.
+            if (readPage > 0 && !*readRequested && library.books()->rowCount() > 0) {
+                *readRequested = true;
+                library.reader()->openPageNumber(library.books()->bookIdAt(0), readPage);
+            }
+            if (readPage > 0 && (!*readRequested || !library.reader()->viewActive())) {
+                QTimer::singleShot(200, *trySave);
+                return;
+            }
+            QTimer::singleShot(readPage > 0 ? 1500 : 500, [window, screenshot] {  // Let the view settle and render.
                 const bool saved = window && window->grabWindow().save(screenshot);
                 QTextStream(stdout) << "screenshot=" << (saved ? screenshot : QStringLiteral("FAILED")) << Qt::endl;
                 QCoreApplication::exit(saved ? 0 : 1);

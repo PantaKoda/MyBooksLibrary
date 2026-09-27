@@ -16,6 +16,8 @@ ListView {
     property bool selectFirst: false
     // The book the user picked (its ID), for the inspector.
     signal bookChosen(string bookId)
+    // A chapter hit's page, or the page listing an entry without one (1 = first).
+    signal openPageRequested(string bookId, int pageNumber)
 
     clip: true
     spacing: 6
@@ -104,6 +106,17 @@ ListView {
                         font.italic: hit.modelData.page < 0
                         opacity: 0.75
                         color: row.highlighted ? row.palette.highlightedText : row.palette.windowText
+                    }
+                    Button {
+                        flat: true
+                        padding: 2
+                        visible: hit.modelData.page > 0 || hit.modelData.sourcePage > 0
+                        text: hit.modelData.page > 0 ? qsTr("Open") : qsTr("Contents page")
+                        onClicked: view.openPageRequested(row.bookId, hit.modelData.page > 0 ? hit.modelData.page
+                                                                                           : hit.modelData.sourcePage)
+                        Accessible.description: hit.modelData.page > 0
+                                                ? qsTr("Open the book at this chapter's page")
+                                                : qsTr("Open the page where the contents list this entry")
                     }
                 }
             }

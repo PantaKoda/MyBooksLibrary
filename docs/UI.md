@@ -14,6 +14,8 @@
 | `BookInspectorPane.qml` | `qml/inspector/` | The inspector: title and file, then two tabs. **Title and authors** shows each field's value and source, with "Why?" revealing its evidence and candidates. **Contents** shows the summary, the notes, the tree, and the selected entry's reasons. Display only. |
 | `SearchController`, `SearchResultsModel` | `src/presentation/search*` | The search field: debounced, newest request wins, paginated, re-run after catalog changes. See SEARCH.md, "In the application". |
 | `SearchResultsView.qml` | `qml/search/` | Results: book, how it matched, its processing state, and chapter hits with the physical page, or "Page not found" and where it is listed. Choosing a result shows the book in the inspector. |
+| `ReaderController` | `src/reader/readercontroller.*` | The reading session: the open book, the document, the requested and shown pages (physical indices), and the saved reading position. It owns document lifetime; see READER.md, "The embedded reader". |
+| `ReaderPane.qml` | `qml/reader/` | The reader: "Library" (back), title, previous and next page, an editable page number "of *n*", and the PDF. |
 | `Main.qml` | repository root | The list-first window. QML only reads properties and calls `importUrls`, `cancelImports`, `refresh`, `cancelJob`, `retryJob`, `cancelAllJobs` and `prepareToClose`. There is no SQL, file or SDK work in QML. |
 
 `mbl_presentation` is a static QML module (`MyBooksLibrary.Presentation`), so `Main.qml` uses typed `LibraryController`/`BookListModel` and `qmllint` checks its member accesses. Both types are uncreatable from QML.
@@ -49,12 +51,17 @@
   - The contents tab summarizes coverage ("5 contents entries, every page confirmed."), lists what is uncertain ("No page found: 1 of 5."), and says whether a bookmarked copy could be made, with the plan's blockers.
   - Tree rows show the physical page ("Page 4", although it is printed "1"), "Page 5 or 10?" for ambiguous entries, or "Page not found". Nothing is guessed.
   - The selected entry's reasons are in plain language ("Listed on page 3 of the PDF", "Left out of the bookmarks: …"), with technical details on request.
-  - Opening a chapter or the source contents page comes with the reader (M06).
+  - The selected entry offers **Open chapter** (its physical page) and **Show contents page *n*** (the page where the contents list it). They are two different actions; an unresolved entry offers only the second.
+- **Reading:** the reader replaces the library view while a book is open, and "Library" returns.
+  - A book opens where it was last read: double-click it in the list, or use **Read** in the inspector.
+  - A chapter opens at its physical page ("Open chapter" in the inspector; "Open" on a search hit).
+  - An entry without a confirmed page opens the page where the contents list it ("Show contents page", or "Contents page" on a search hit). No page is guessed.
+  - The position is saved per book and survives a restart.
 - **Closing:** closing while work runs calls `prepareToClose()`, which cancels imports and **stops** processing. Stopping is not cancelling: the running extraction is interrupted and requeued, and waiting jobs stay queued, so the next start continues them. The window shows "Finishing before closing…" and closes when the controller is idle. There is no blocking wait on the GUI thread. The SDK stops at its next checkpoint, so an OCR page in progress finishes first: closing took 6.8 s during OCR of `image-only.pdf` in Release.
 
 ## Not yet
 
-The embedded reader and opening a chapter from search or the inspector (M06 part 2), editing metadata and contents (M07), restoring a duplicate from Trash (M08), and keyboard shortcuts beyond list navigation.
+Editing metadata and contents (M07), restoring a duplicate from Trash (M08), and keyboard shortcuts beyond list navigation.
 
 ## Screenshots (Release build, `--screenshot`, library at `C:\MBL-demo\Library`)
 
@@ -81,3 +88,7 @@ The inspector's Contents tab after importing `contents-book.pdf` (Release, real 
 Searching "tcp/ip" after importing the three test PDFs: a contents-only match, with its physical page (Release, real SDK, `--search tcp/ip --inspect-first`):
 
 ![Search results](images/m06-search-results.png)
+
+The reader after "Open chapter" on "3 Networking with TCP/IP": physical page 15, whose printed page number is 12 (Release, `--read-page 15`):
+
+![Reader at a chapter](images/m06-reader-chapter.png)
