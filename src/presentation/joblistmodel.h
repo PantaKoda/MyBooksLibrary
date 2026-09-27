@@ -23,7 +23,8 @@ class JobListModel : public QAbstractListModel {
     QML_UNCREATABLE("Provided by LibraryController.jobs.")
     Q_PROPERTY(int count READ rowCount NOTIFY countChanged)
     Q_PROPERTY(int pendingCount READ pendingCount NOTIFY summaryChanged)  // Queued or running.
-    Q_PROPERTY(QString summary READ summary NOTIFY summaryChanged)       // One line for the status bar.
+    Q_PROPERTY(QString summary READ summary NOTIFY summaryChanged)       // One line for the status bar;
+                                                                         // counts waiting books, not jobs.
 
 public:
     enum Role {

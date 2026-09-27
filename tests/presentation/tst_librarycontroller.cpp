@@ -519,6 +519,9 @@ void TestLibraryController::closingDuringExtractionResumesNextSession()
         QTRY_VERIFY_WITH_TIMEOUT(fake->started.load(), 20000);
         QTRY_COMPARE_WITH_TIMEOUT(c.books()->rowCount(), 2, 10000);
         QTRY_COMPARE_WITH_TIMEOUT(c.jobs()->pendingCount(), 4, 10000);
+        // One book is being read (both of its jobs run in one call), one waits.
+        QTRY_VERIFY_WITH_TIMEOUT(c.jobs()->summary().startsWith(QStringLiteral("Reading title and authors: ")), 5000);
+        QVERIFY2(c.jobs()->summary().endsWith(QStringLiteral(" · 1 book(s) waiting")), qPrintable(c.jobs()->summary()));
         QVERIFY(c.busy());
         QElapsedTimer closing;
         closing.start();
@@ -623,18 +626,20 @@ void TestLibraryController::startupRequeuesACrashedJob()
 }
 
 // Without an extractor (e.g. a build without the SDK), imports still queue
-// their jobs; they wait and are shown as waiting.
+// their jobs; they wait and are shown as waiting. The footer counts books,
+// not their two jobs each.
 void TestLibraryController::withoutAnExtractorJobsWait()
 {
     QTemporaryDir dir;
     LibraryController c;
     QVERIFY(!c.processingAvailable());
     openAndWait(c, dir.path());
-    c.importFiles({fixture("title-page.pdf")});
-    QTRY_COMPARE_WITH_TIMEOUT(c.books()->rowCount(), 1, 20000);
+    c.importFiles({fixture("title-page.pdf"), fixture("contents-book.pdf"), fixture("image-only.pdf")});
+    QTRY_COMPARE_WITH_TIMEOUT(c.books()->rowCount(), 3, 20000);
     QTRY_VERIFY_WITH_TIMEOUT(!c.busy(), 10000);
     QCOMPARE(stateOf(c.books(), 0), QStringLiteral("Waiting to read title and authors \u00b7 contents waiting"));
-    QCOMPARE(c.jobs()->pendingCount(), 2);
+    QCOMPARE(c.jobs()->pendingCount(), 6);  // Jobs: drives the busy indicator and Cancel all.
+    QCOMPARE(c.jobs()->summary(), QStringLiteral("3 book(s) waiting"));
 }
 
 // A backlog larger than the "recent jobs" window is counted and listed in

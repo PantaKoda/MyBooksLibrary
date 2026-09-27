@@ -1,6 +1,7 @@
 #include "presentation/joblistmodel.h"
 
 #include <QCoreApplication>
+#include <QSet>
 
 namespace mbl::presentation {
 
@@ -204,14 +205,22 @@ int JobListModel::pendingCount() const
 
 QString JobListModel::summary() const
 {
+    // A book has a metadata and a contents job, and a paired run has both
+    // running: show the metadata job while its stage runs, and count waiting
+    // BOOKS (not jobs), leaving out the book being processed.
     const JobRecord* running = nullptr;
-    int waiting = 0;
+    QSet<BookId> waitingBooks;
     for (const JobRecord& j : m_jobs) {
-        if (j.state == JobState::Running || j.state == JobState::CancelRequested)
-            running = &j;
-        else if (j.state == JobState::Queued)
-            ++waiting;
+        if (j.state == JobState::Running || j.state == JobState::CancelRequested) {
+            if (!running || (j.kind == JobKind::Metadata && running->kind != JobKind::Metadata))
+                running = &j;
+        } else if (j.state == JobState::Queued) {
+            waitingBooks.insert(j.book);
+        }
     }
+    if (running)
+        waitingBooks.remove(running->book);
+    const int waiting = int(waitingBooks.size());
     QString text;
     if (running) {
         const QString title = m_titleOf ? m_titleOf(running->book) : QString();

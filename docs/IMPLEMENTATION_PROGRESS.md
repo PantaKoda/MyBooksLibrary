@@ -35,6 +35,7 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | `tst_librarycontroller` (19 cases) | Adapted to two jobs per book with a fake analyzer: the paired run, closing and resuming (2 interrupted, 4 succeeded), cancelling only the metadata then retrying it alone, crash recovery, and waiting without an extractor |
 | `tst_importservice`, `tst_migrations` | Import and recovery queue one job of each kind; a schema 3 catalog's contents run loads after the upgrade |
 | Mutations, each reverted | Group flag raised by any member, join by position, every refusal treated as a cancel, page count recorded after the check: each makes its test fail |
+| Review fix (PR #12): the footer counts waiting **books**, not jobs | `withoutAnExtractorJobsWait`: 3 books give 6 pending jobs and "3 book(s) waiting"; `closingDuringExtractionResumesNextSession`: "Reading title and authors: … · 1 book(s) waiting". Counting jobs again makes both fail (6 and 2) |
 | `appMyBooksLibrary` smoke, Release, real SDK and models: the three fixtures | Exit 0, no QML warnings, all 6 jobs `succeeded/published`. `contents-book.pdf` `plan_ready` with 5 entries and a stored plan; the other two `no_toc_found_in_search`; 6 reports |
 | Same, `image-only.pdf` alone (issue #3 in-app timing) | Metadata and contents in **24.1 s** of app time, startup included (separate SDK calls: about 58 s) |
 | Close during the paired OCR run, then restart (Debug) | Closed after 8.8 s, responding; both jobs `interrupted` and requeued; after restart both `succeeded/published` |
