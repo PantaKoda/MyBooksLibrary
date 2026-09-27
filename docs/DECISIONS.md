@@ -321,3 +321,22 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - Evidence is stored as JSON per entry because it is displayed, never queried.
   - The SDK's analysis stage names are undocumented, so the UI shows pages read, not stage names.
 - **Verified:** See IMPLEMENTATION_PROGRESS.md, M05 part 1.
+
+## 2026-09-27 — M05 part 2: book inspector and contents tree
+
+- **Change:**
+  - `BookInspector` (presentation) loads the selected book on the database thread and applies only the newest load.
+  - `TocTreeModel` shows the catalog contents as a tree built in two passes.
+  - `BookInspectorPane.qml` sits beside the book list, with "Title and authors" and "Contents" tabs.
+  - `BookDetails` gains the active run IDs.
+  - The book list's selected row uses the highlight text colour.
+  - A development flag `--inspect-first` selects the first book and entry for screenshots.
+- **Why:**
+  - M05 gate: unresolved and omitted entries remain visible after restart.
+  - AGENTS.md section 9: show the application's TOC (not the PDF's bookmarks) in a tree that allows a parent after its child and detects invalid references and cycles; explain uncertainty in plain language with technical detail available; display physical pages as index + 1.
+- **Assumptions:**
+  - A cycle's members go to the top level and an entry below them stays attached, so the tree is always finite and nothing is invented.
+  - The metadata candidates are capped at five (the SDK lists them best first), because a noisy title page produced about 25.
+  - Plural wording avoids "(s)" where the count is visible ("No page found: 1 of 5.").
+  - Chapter navigation is left to M06; the pane shows the pages it will use.
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, M05 part 2.

@@ -92,10 +92,14 @@ endif()
 qt_add_library(mbl_presentation STATIC
     src/app/libraryroot.h
     src/app/libraryroot.cpp
+    src/presentation/bookinspector.h
+    src/presentation/bookinspector.cpp
     src/presentation/booklistmodel.h
     src/presentation/booklistmodel.cpp
     src/presentation/joblistmodel.h
     src/presentation/joblistmodel.cpp
+    src/presentation/toctreemodel.h
+    src/presentation/toctreemodel.cpp
     src/presentation/librarycontroller.h
     src/presentation/librarycontroller.cpp
 )
@@ -138,6 +142,7 @@ qt_add_qml_module(appMyBooksLibrary
     QML_FILES
         Main.qml
         qml/reader/ReaderCheckView.qml
+        qml/inspector/BookInspectorPane.qml
 )
 
 set_target_properties(appMyBooksLibrary PROPERTIES

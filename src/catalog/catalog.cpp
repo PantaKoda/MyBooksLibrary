@@ -966,6 +966,8 @@ Result<BookDetails> bookDetails(QSqlDatabase& db, const BookId& book)
     d.overrides = computed.value().overrides;
     if (computed.value().toc)
         d.toc = computed.value().toc->analysis;
+    d.metadataRun = row.value().activeMetadataRun;
+    d.tocRun = row.value().activeTocRun;
     d.metadataGeneration = row.value().metadataGeneration;
     d.tocGeneration = row.value().tocGeneration;
     return d;

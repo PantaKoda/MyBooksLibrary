@@ -6,6 +6,7 @@
 // or on the GUI thread.
 #pragma once
 
+#include "presentation/bookinspector.h"
 #include "presentation/booklistmodel.h"
 #include "presentation/joblistmodel.h"
 
@@ -51,6 +52,7 @@ class LibraryController : public QObject {
     Q_PROPERTY(QStringList problems READ problems NOTIFY problemsChanged)
     Q_PROPERTY(mbl::presentation::BookListModel* books READ books CONSTANT)
     Q_PROPERTY(mbl::presentation::JobListModel* jobs READ jobs CONSTANT)
+    Q_PROPERTY(mbl::presentation::BookInspector* inspector READ inspector CONSTANT)
     Q_PROPERTY(bool processingAvailable READ processingAvailable CONSTANT)
     Q_PROPERTY(bool ocrAvailable READ ocrAvailable CONSTANT)
     Q_PROPERTY(bool closing READ closing NOTIFY closingChanged)
@@ -124,6 +126,7 @@ public:
     QStringList problems() const { return m_problems; }
     BookListModel* books() { return &m_books; }
     JobListModel* jobs() { return &m_jobs; }
+    BookInspector* inspector() { return &m_inspector; }
     bool processingAvailable() const { return m_extractor != nullptr; }
     bool ocrAvailable() const { return m_ocrAvailable; }
     bool closing() const { return m_closing; }
@@ -158,6 +161,7 @@ private:
 
     BookListModel m_books;
     JobListModel m_jobs;
+    BookInspector m_inspector;
     std::shared_ptr<processing::MetadataExtractor> m_extractor;
     std::shared_ptr<processing::ContentsAnalyzer> m_analyzer;
     std::unique_ptr<processing::ProcessingCoordinator> m_coordinator;  // Destroyed before m_library.

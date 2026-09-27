@@ -22,6 +22,8 @@ ApplicationWindow {
     title: qsTr("MyBooksLibrary")
 
     property bool showActivity: false
+    // Development (--inspect-first): select the first book once the list has one.
+    property bool inspectFirst: false
 
     // Closing while work runs: cancel imports and stop processing (queued
     // metadata jobs resume next time), stay responsive, close when idle.
@@ -92,10 +94,17 @@ ApplicationWindow {
                 }
             }
 
+            // Book list, and the selected book's inspector beside it.
+            SplitView {
+                anchors.fill: parent
+                orientation: Qt.Horizontal
+
             ListView {
                 id: bookList
-                anchors.fill: parent
-                anchors.margins: 8
+                SplitView.fillWidth: true
+                SplitView.minimumWidth: 240
+                leftMargin: 8
+                topMargin: 8
                 clip: true
                 focus: true
                 spacing: 2
@@ -123,6 +132,7 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             text: row.title
                             textFormat: Text.PlainText   // Extracted text is never markup.
+                            color: row.highlighted ? row.palette.highlightedText : row.palette.windowText
                             font.bold: true
                             elide: Text.ElideRight
                         }
@@ -133,15 +143,24 @@ ApplicationWindow {
                                   ? qsTr("From the file name · %1").arg(row.processingState)
                                   : (row.contributors.length > 0 ? row.contributors + " · " + row.processingState
                                                                  : row.processingState)
-                            opacity: 0.7
+                            color: row.highlighted ? row.palette.highlightedText : row.palette.windowText
+                            opacity: row.highlighted ? 0.9 : 0.7
                             elide: Text.ElideRight
                         }
                     }
                 }
 
-                // Keep the selection on the same book when the list refreshes.
+                // Keep the selection on the same book when the list refreshes;
+                // the inspector shows the selected book.
                 property string selectedBookId: ""
-                onCurrentIndexChanged: selectedBookId = model ? model.bookIdAt(currentIndex) : ""
+                onCurrentIndexChanged: {
+                    selectedBookId = model ? model.bookIdAt(currentIndex) : ""
+                    window.library.inspector.select(selectedBookId)
+                }
+                onCountChanged: {
+                    if (window.inspectFirst && count > 0 && currentIndex < 0)
+                        currentIndex = 0
+                }
                 Connections {
                     target: window.library.books
                     function onModelReset() {
@@ -160,6 +179,15 @@ ApplicationWindow {
                           : window.library.failed ? qsTr("The library could not be opened.")
                           : qsTr("No books yet. Choose “Import PDFs…” or drop PDF files here.")
                 }
+            }
+
+            BookInspectorPane {
+                inspector: window.library.inspector
+                selectFirstEntry: window.inspectFirst
+                visible: window.library.inspector.hasBook
+                SplitView.preferredWidth: Math.max(320, window.width * 0.55)
+                SplitView.minimumWidth: 280
+            }
             }
 
             Rectangle {

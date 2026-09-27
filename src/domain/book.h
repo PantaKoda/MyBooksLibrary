@@ -71,6 +71,8 @@ struct BookDetails {
     std::optional<ExtractedMetadata> extracted;  // Active metadata run.
     MetadataOverrides overrides;
     std::optional<TocAnalysis> toc;              // Active TOC run.
+    std::optional<RunId> metadataRun;            // IDs of the active runs, e.g. to load their evidence.
+    std::optional<RunId> tocRun;
     qint64 metadataGeneration = 0;
     qint64 tocGeneration = 0;
 };

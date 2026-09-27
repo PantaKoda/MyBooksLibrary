@@ -4,6 +4,7 @@
 #include "catalog/catalog.h"
 #include "catalog/jobs.h"
 #include "catalog/library.h"
+#include "presentation/bookinspector.h"
 #include "presentation/booklistmodel.h"
 #include "presentation/joblistmodel.h"
 #include "presentation/librarycontroller.h"
@@ -21,6 +22,7 @@
 #include <QTest>
 #include <QThread>
 
+using mbl::presentation::BookInspector;
 using mbl::presentation::BookListModel;
 using mbl::presentation::JobListModel;
 using mbl::presentation::LibraryController;
@@ -51,6 +53,7 @@ public:
     std::atomic_int calls{0};
     std::atomic_bool started{false};
     QString title = QStringLiteral("Extracted Title");
+    int alternatives = 0;  // Competing title candidates to report.
 
     MetadataExtraction extract(const QString& path, const std::atomic_bool& cancel) override
     {
@@ -68,6 +71,12 @@ public:
         r.pageCount = 3;
         r.metadata.titleStatus = mbl::domain::FieldStatus::Resolved;
         r.metadata.title = title;
+        mbl::domain::MetadataFieldDetail detail;
+        detail.field = mbl::domain::MetadataField::Title;
+        detail.evidence << mbl::domain::MetadataEvidence{0, title, QStringLiteral("largest text")};
+        for (int i = 0; i < alternatives; ++i)
+            detail.alternatives << mbl::domain::MetadataCandidate{QStringLiteral("Candidate %1").arg(i), 0.1, {}, {}};
+        r.details << detail;
         r.reportJson = QByteArrayLiteral("{}");
         r.sdkVersion = QStringLiteral("fake");
         r.optionsJson = QStringLiteral("{}");
@@ -174,6 +183,8 @@ private slots:
     void withoutAnExtractorJobsWait();
     void pendingCountIncludesTheWholeBacklog();
     void refreshesAreCoalesced();
+    void inspectorShowsWhatWasPublished();
+    void inspectorFollowsProcessingAndSelection();
 
 private:
     void openAndWait(LibraryController& c, const QString& root)
@@ -690,6 +701,102 @@ void TestLibraryController::refreshesAreCoalesced()
     c.refresh();
     QTRY_VERIFY_WITH_TIMEOUT(!c.busy(), 10000);
     QCOMPARE(refreshed.size(), 3);
+}
+
+void TestLibraryController::inspectorShowsWhatWasPublished()
+{
+    QTemporaryDir dir;
+    auto fake = std::make_shared<FakeExtractor>();
+    fake->alternatives = 7;
+    auto analyzer = std::make_shared<FakeAnalyzer>(fake);
+    LibraryController c;
+    c.setProcessors(fake, analyzer, true);
+    openAndWait(c, dir.path());
+    c.importFiles({fixture("title-page.pdf")});
+    QTRY_COMPARE_WITH_TIMEOUT(titles(c.books()), QStringList{QStringLiteral("Extracted Title")}, 20000);
+    QTRY_VERIFY_WITH_TIMEOUT(!c.busy(), 10000);
+
+    BookInspector* inspector = c.inspector();
+    QSignalSpy loaded(inspector, &BookInspector::loaded);
+    QSignalSpy resets(inspector->contents(), &QAbstractItemModel::modelReset);
+    QAbstractItemModelTester treeTester(inspector->contents());
+    inspector->select(c.books()->bookIdAt(0));
+    QVERIFY(inspector->hasBook());
+    QTRY_COMPARE_WITH_TIMEOUT(loaded.size(), 1, 5000);
+    QCOMPARE(inspector->title(), QStringLiteral("Extracted Title"));
+    QCOMPARE(inspector->fileText(), QStringLiteral("title-page.pdf \u00b7 3 pages"));
+
+    const QVariantMap title = inspector->metadataFields().at(0).toMap();
+    QCOMPARE(title.value(QStringLiteral("value")).toString(), QStringLiteral("Extracted Title"));
+    QCOMPARE(title.value(QStringLiteral("sourceText")).toString(), QStringLiteral("From the document"));
+    QCOMPARE(title.value(QStringLiteral("evidence")).toStringList(),
+             QStringList{QStringLiteral("Page 1: \u201cExtracted Title\u201d \u2014 largest text")});
+    const QStringList alternatives = title.value(QStringLiteral("alternatives")).toStringList();
+    QCOMPARE(alternatives.size(), 6);  // The best five, then a count.
+    QCOMPARE(alternatives.last(), QStringLiteral("and 2 more"));
+    const QVariantMap authors = inspector->metadataFields().at(1).toMap();
+    QCOMPARE(authors.value(QStringLiteral("value")).toString(), QStringLiteral("\u2014"));
+    QCOMPARE(authors.value(QStringLiteral("sourceText")).toString(), QStringLiteral("Not found in the pages searched"));
+
+    QCOMPARE(inspector->contentsSummary(), QStringLiteral("2 contents entries, 1 with a confirmed page."));
+    QVERIFY(inspector->contentsNotes().contains(QStringLiteral("No page found: 1 of 2.")));
+    QVERIFY(inspector->contentsNotes().contains(QStringLiteral("Not ready for a bookmarked copy.")));
+    QCOMPARE(inspector->contents()->entryCount(), 2);
+    QCOMPARE(inspector->contents()->data(inspector->contents()->index(0, 0), mbl::presentation::TocTreeModel::PageTextRole)
+                 .toString(),
+             QStringLiteral("Page 1"));  // Page index 0.
+    QCOMPARE(resets.size(), 1);
+
+    // A refresh with the same contents run keeps the tree (expansion, current entry).
+    c.refresh();
+    QTRY_COMPARE_WITH_TIMEOUT(loaded.size(), 2, 5000);
+    QCOMPARE(resets.size(), 1);
+
+    // A book that is gone.
+    inspector->select(mbl::domain::BookId::create().toString());
+    QTRY_COMPARE_WITH_TIMEOUT(loaded.size(), 3, 5000);
+    QCOMPARE(inspector->error(), QStringLiteral("This book is no longer in the library."));
+    QCOMPARE(inspector->contents()->entryCount(), 0);
+}
+
+// Selected while processing: the inspector updates when the results are
+// published. And only the newest selection is ever shown.
+void TestLibraryController::inspectorFollowsProcessingAndSelection()
+{
+    QTemporaryDir dir;
+    auto fake = std::make_shared<FakeExtractor>();
+    fake->block = true;
+    auto analyzer = std::make_shared<FakeAnalyzer>(fake);
+    LibraryController c;
+    c.setProcessors(fake, analyzer, true);
+    openAndWait(c, dir.path());
+    c.importFiles({fixture("title-page.pdf"), fixture("contents-book.pdf")});
+    QTRY_VERIFY_WITH_TIMEOUT(fake->started.load(), 20000);
+    QTRY_COMPARE_WITH_TIMEOUT(c.books()->rowCount(), 2, 10000);
+
+    BookInspector* inspector = c.inspector();
+    QSignalSpy loaded(inspector, &BookInspector::loaded);
+    const QString first = c.books()->bookIdAt(0);
+    const QString second = c.books()->bookIdAt(1);
+    inspector->select(first);
+    inspector->select(second);  // Before the first load arrives.
+    QTRY_VERIFY_WITH_TIMEOUT(!loaded.isEmpty(), 5000);
+    QTest::qWait(100);
+    QCOMPARE(inspector->bookId(), second);
+    QCOMPARE(loaded.size(), 1);  // The first selection's load was dropped.
+    QCOMPARE(inspector->contentsSummary(), QStringLiteral("Contents not analyzed yet."));
+
+    inspector->select(first);
+    QTRY_COMPARE_WITH_TIMEOUT(loaded.size(), 2, 5000);
+    QCOMPARE(inspector->contents()->entryCount(), 0);
+    fake->block = false;  // Let processing publish.
+    QTRY_COMPARE_WITH_TIMEOUT(inspector->contents()->entryCount(), 2, 20000);
+    QCOMPARE(inspector->title(), QStringLiteral("Extracted Title"));
+    QTRY_VERIFY_WITH_TIMEOUT(!c.busy(), 20000);
+
+    inspector->select(QString());
+    QVERIFY(!inspector->hasBook());
+    QCOMPARE(inspector->title(), QString());
 }
 
 QTEST_GUILESS_MAIN(TestLibraryController)
