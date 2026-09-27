@@ -1,11 +1,13 @@
 // A2 catalog and A3 projection behaviour on a real library folder, using
 // synthetic records only.
 #include "catalog/catalog.h"
+#include "catalog/jobs.h"
 #include "catalog/library.h"
 #include "search/searchindex.h"
 
 #include <QCryptographicHash>
 #include <QElapsedTimer>
+#include <QSet>
 #include <QSqlQuery>
 #include <QTemporaryDir>
 #include <QTest>
@@ -97,6 +99,7 @@ private slots:
     void recordsSurviveRestart();
     void tocOutcomeRoundTripsAndMismatchIsRejected();
     void manyContentsOnlyMatchesUseOneTitleRead();
+    void latestJobsPicksTheNewestPerBookAndKind();
 
 private:
     template <typename Task>
@@ -698,6 +701,73 @@ void TestCatalog::manyContentsOnlyMatchesUseOneTitleRead()
     QCOMPARE(tail.value().totalBooks, books);  // The titled book has no chapters.
     QCOMPARE(tail.value().books.size(), 5);
     QCOMPARE(tail.value().books.last().displayTitle, QStringLiteral("book-399"));
+}
+
+// One row per book and kind, the newest by creation time, also when books
+// have several jobs; and linear enough to run on every refresh (the earlier
+// correlated subquery took 16.6 s for 3000 books with 3 jobs each).
+void TestCatalog::latestJobsPicksTheNewestPerBookAndKind()
+{
+    constexpr int kBooks = 3000;
+    QVERIFY(db([](QSqlDatabase& d) {
+        if (!d.transaction())
+            return false;
+        QSqlQuery q(d);
+        for (int i = 0; i < kBooks; ++i) {
+            const QString book = BookId::create().toString();
+            const QString asset = AssetId::create().toString();
+            const QString sha = QStringLiteral("%1").arg(i, 64, 10, QLatin1Char('0'));
+            q.prepare(QStringLiteral("INSERT INTO assets(id, sha256, byte_size, managed_path, created_at) "
+                                     "VALUES (?, ?, 1, ?, 'x')"));
+            q.addBindValue(asset);
+            q.addBindValue(sha);
+            q.addBindValue(QStringLiteral("files/%1/source.pdf").arg(asset));
+            if (!q.exec())
+                return false;
+            q.prepare(QStringLiteral("INSERT INTO books(id, asset_id, original_file_name, original_path, created_at, "
+                                     "updated_at) VALUES (?, ?, 'b.pdf', 'b.pdf', 'x', 'x')"));
+            q.addBindValue(book);
+            q.addBindValue(asset);
+            if (!q.exec())
+                return false;
+            // Two finished attempts, then the current one; created_at out of rowid order on purpose.
+            const QList<std::pair<QString, QString>> jobs{{QStringLiteral("cancelled"), QStringLiteral("2026-01-02")},
+                                                          {QStringLiteral("queued"), QStringLiteral("2026-01-03")},
+                                                          {QStringLiteral("failed"), QStringLiteral("2026-01-01")}};
+            for (const auto& [state, created] : jobs) {
+                q.prepare(QStringLiteral("INSERT INTO jobs(id, book_id, kind, state, generation, source_sha256, "
+                                         "created_at, updated_at) VALUES (?, ?, 'metadata', ?, 1, ?, ?, ?)"));
+                q.addBindValue(JobId::create().toString());
+                q.addBindValue(book);
+                q.addBindValue(state);
+                q.addBindValue(sha);
+                q.addBindValue(created);
+                q.addBindValue(created);
+                if (!q.exec())
+                    return false;
+            }
+        }
+        return d.commit();
+    }));
+
+    QElapsedTimer timer;
+    timer.start();
+    const auto latest = db([](QSqlDatabase& d) { return catalog::latestJobs(d); });
+    const qint64 elapsed = timer.elapsed();
+    QVERIFY(latest);
+    QCOMPARE(latest.value().size(), kBooks);
+    QSet<BookId> books;
+    for (const JobRecord& job : latest.value()) {
+        QCOMPARE(job.state, JobState::Queued);
+        books.insert(job.book);
+    }
+    QCOMPARE(books.size(), kBooks);
+    QVERIFY2(elapsed < 3000, qPrintable(QStringLiteral("latestJobs took %1 ms").arg(elapsed)));
+
+    // listJobs with a negative limit returns every open job.
+    const auto open = db([](QSqlDatabase& d) { return catalog::listJobs(d, true, -1); });
+    QVERIFY(open);
+    QCOMPARE(open.value().size(), kBooks);
 }
 
 QTEST_GUILESS_MAIN(TestCatalog)

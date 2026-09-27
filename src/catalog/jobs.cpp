@@ -138,11 +138,8 @@ QString compact(const QJsonArray& array)
 
 } // namespace
 
-Result<JobRecord> enqueueJob(QSqlDatabase& db, const BookId& book, JobKind kind)
+Result<JobRecord> detail::queueJob(QSqlDatabase& db, const BookId& book, JobKind kind)
 {
-    Transaction tx(db);
-    if (!tx.begun())
-        return sqlError(db, QStringLiteral("begin"));
     auto open = openJobFor(db, book, kind);
     if (!open)
         return open.error();
@@ -151,12 +148,20 @@ Result<JobRecord> enqueueJob(QSqlDatabase& db, const BookId& book, JobKind kind)
     auto ticket = detail::bumpGeneration(db, book, kind == JobKind::Metadata);
     if (!ticket)
         return ticket.error();
-    auto inserted = insertQueuedJob(db, ticket.value(), kind);
-    if (!inserted)
-        return inserted;
+    return insertQueuedJob(db, ticket.value(), kind);
+}
+
+Result<JobRecord> enqueueJob(QSqlDatabase& db, const BookId& book, JobKind kind)
+{
+    Transaction tx(db);
+    if (!tx.begun())
+        return sqlError(db, QStringLiteral("begin"));
+    auto queued = detail::queueJob(db, book, kind);
+    if (!queued)
+        return queued;
     if (!tx.commit())
         return sqlError(db, QStringLiteral("commit"));
-    return inserted;
+    return queued;
 }
 
 Result<std::optional<JobRecord>> claimNextJob(QSqlDatabase& db)
@@ -360,6 +365,22 @@ Result<JobRecovery> interruptJob(QSqlDatabase& db, const JobId& id)
     if (!tx.commit())
         return sqlError(db, QStringLiteral("commit"));
     return counts;
+}
+
+Result<QList<JobRecord>> latestJobs(QSqlDatabase& db)
+{
+    QSqlQuery q(db);
+    // One pass with a window function. A correlated subquery per row is
+    // quadratic: no index covers (book_id, kind, created_at), and this runs on
+    // every library refresh.
+    if (!q.exec(QStringLiteral("SELECT %1 FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY book_id, kind "
+                               "ORDER BY created_at DESC, rowid DESC) AS latest FROM jobs) WHERE latest = 1")
+                    .arg(kColumns)))
+        return sqlError(q);
+    QList<JobRecord> jobs;
+    while (q.next())
+        jobs << readJob(q);
+    return jobs;
 }
 
 Result<QStringList> referencedReportPaths(QSqlDatabase& db)

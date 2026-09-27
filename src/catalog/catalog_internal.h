@@ -3,6 +3,7 @@
 #pragma once
 
 #include "domain/book.h"
+#include "domain/jobs.h"
 #include "domain/result.h"
 
 #include <QSqlDatabase>
@@ -48,6 +49,10 @@ domain::Result<domain::BookId> insertBook(QSqlDatabase& db, const domain::NewBoo
 // Increments the metadata (or TOC) request generation inside the caller's
 // transaction. Fails with Trashed for a trashed book.
 domain::Result<domain::PublishTicket> bumpGeneration(QSqlDatabase& db, const domain::BookId& book, bool metadata);
+
+// enqueueJob() without its own transaction: returns the pending job of that
+// kind, or starts a new request generation and queues a job for it.
+domain::Result<domain::JobRecord> queueJob(QSqlDatabase& db, const domain::BookId& book, domain::JobKind kind);
 
 // publishMetadata() without its own transaction, with a caller-chosen run ID
 // (so the run's report file can be named before publication).

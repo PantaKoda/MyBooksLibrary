@@ -62,12 +62,17 @@ domain::Result<JobRecovery> recoverJobs(QSqlDatabase& db);
 // requeued job; CancelRequested -> Cancelled). Terminal jobs are unchanged.
 domain::Result<JobRecovery> interruptJob(QSqlDatabase& db, const domain::JobId& id);
 
+// The most recent job of each book and kind, whatever its state: what the
+// library view shows as a book's processing state.
+domain::Result<QList<domain::JobRecord>> latestJobs(QSqlDatabase& db);
+
 // Report paths (relative to the library root) that metadata and TOC runs
 // reference. Any other file in reports/ belongs to no run.
 domain::Result<QStringList> referencedReportPaths(QSqlDatabase& db);
 
 domain::Result<domain::JobRecord> job(QSqlDatabase& db, const domain::JobId& id);
 // Newest first. `openOnly` restricts to Queued, Running and CancelRequested.
+// A negative `limit` returns every matching job.
 domain::Result<QList<domain::JobRecord>> listJobs(QSqlDatabase& db, bool openOnly, int limit = 200);
 
 domain::Result<QList<domain::MetadataFieldDetail>> metadataDetails(QSqlDatabase& db, const domain::RunId& run);

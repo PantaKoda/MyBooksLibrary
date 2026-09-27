@@ -9,10 +9,44 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | M02 Contracts/persistence | Merged | `feat/m02-a2-catalog-persistence` / [PR #3](https://github.com/PantaKoda/MyBooksLibrary/pull/3), merge `b643446` | See below |
 | SDK 0.2.0 update | Merged | `chore/m01-sdk-0.2.0` / [PR #5](https://github.com/PantaKoda/MyBooksLibrary/pull/5), merge `4f87975` | See "SDK 0.2.0 update" |
 | M03 Import/library shell | Merged: part 1 [PR #6](https://github.com/PantaKoda/MyBooksLibrary/pull/6) (merge `515ff43`); part 2 [PR #7](https://github.com/PantaKoda/MyBooksLibrary/pull/7) (merge `f39b141`) | `feat/m03-a1-managed-import`; `feat/m03-presentation-library-shell` | See "M03" |
-| M04 Metadata jobs | Part 1 AwaitingReview ([PR #9](https://github.com/PantaKoda/MyBooksLibrary/pull/9), headless jobs); part 2 NotStarted (presentation) | `feat/m04-a4-metadata-jobs` | See "M04" |
+| M04 Metadata jobs | Part 1 Merged ([PR #9](https://github.com/PantaKoda/MyBooksLibrary/pull/9), merge `6b5d740`); part 2 AwaitingReview ([PR #10](https://github.com/PantaKoda/MyBooksLibrary/pull/10), presentation) | `feat/m04-a4-metadata-jobs`; `feat/m04-presentation-metadata-jobs` | See "M04" |
 | M05–M11 | NotStarted | | |
 
 ## M04 — Metadata jobs
+
+### Part 2: metadata jobs in the application (presentation + A2)
+
+**Scope:**
+- the import transaction queues the metadata job;
+- `LibraryController` runs the coordinator: recovery, start, cancel, retry, cancel all, and stop on close;
+- `JobListModel` and the job states in `BookListModel`;
+- the activity panel and footer summary in `Main.qml`;
+- `main.cpp` injects `SdkMetadataExtractor`.
+
+**Touched paths:** `main.cpp`, `Main.qml`, `CMakeLists.txt`, `src/presentation/`, `src/catalog/imports.*`, `src/catalog/jobs.*`, `src/catalog/catalog_internal.h`, `src/catalog/catalog.cpp`, `src/domain/book.h`, `tests/presentation/tst_librarycontroller.cpp`, `tests/storage/tst_importservice.cpp`, `docs/`.
+
+| Command | Result |
+| --- | --- |
+| `pwsh scripts/verify.ps1 -SdkDir <sdk 0.2.0> -Clean` (Release) and `-Configuration Debug` | VERIFY PASSED in both; 11/11 `ctest` suites |
+| `ctest -R "librarycontroller\|processing\|importservice" --repeat until-fail:10` (Debug) | 3/3 passed, 10 times each |
+| `tst_librarycontroller` (fake extractor, 5 new cases) | Import → extracted title in the list, job "Done", models updated on the GUI thread; `prepareToClose` during extraction returns promptly and the next session completes both books (states interrupted, succeeded, succeeded); cancel → "Metadata extraction cancelled" with Retry, retry publishes and the old row loses Retry; a job left running by a crash is reported ("queued again") and completed; without an extractor, jobs wait |
+| `tst_importservice::importQueuesOneMetadataJob` | Import and recovery-completed import each queue one metadata job (generation 1, the asset's digest); a duplicate queues none |
+| `qmllint -I build\verify-debug Main.qml` | No warnings |
+| `appMyBooksLibrary --library <new> --import title-page.pdf --import contents-book.pdf --import image-only.pdf --activity --screenshot …` (Debug and Release, real SDK and models) | Exit 0. "Practical Library Engineering" resolved; the other two ambiguous, shown as "Title uncertain"; `image-only.pdf` read by OCR (model identity recorded); page counts 3, 27 and 4; three reports; 15 field-detail rows; no QML warnings on stderr |
+| Close (`CloseMainWindow`) while OCR runs on `image-only.pdf`, then restart (scripted) | Debug: closed after 8.7 s; Release: after 6.8 s. Exit 0 and responding throughout in both. Jobs `interrupted` + `queued`; after restart `succeeded/published` |
+
+| Review fixes (PR #10) | `tst_catalog::latestJobsPicksTheNewestPerBookAndKind` (3000 books × 3 jobs: one newest row per book, under a 3 s guard; the old query took 8.0 s there), `tst_librarycontroller::pendingCountIncludesTheWholeBacklog` (150 of 150 waiting jobs counted and listed) and `refreshesAreCoalesced` (20 calls, 2 reloads). Each fails with its fix reverted |
+
+**Found and fixed while testing:**
+- QML `String.arg()` takes one argument, so the activity detail line was blank. The calls are now chained, with the free-text error substituted last.
+- Ambiguous titles were shown as "No title found". `BookSummary.extractedTitleStatus` now tells them apart.
+
+**Limitations:**
+- Closing during OCR waits for the page in progress (cooperative SDK cancellation): 6.8 s observed in Release.
+- There is no inspector for metadata evidence yet (field details are stored; M05/M07), and no rerun of a succeeded extraction (M07).
+- The native file dialog, drag and drop, and the activity buttons were exercised through the controller API and tests, not by clicking.
+
+**Next action:** M05, contents. TOC analysis jobs through the same queue, with the full parsed TOC and mappings persisted and shown.
 
 ### Part 1: durable queue, SDK extraction and publication (A4 + A2 + A1)
 

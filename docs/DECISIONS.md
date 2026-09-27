@@ -253,3 +253,34 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - Migration 3 is unreleased (PR #9 is not merged), so it is edited in place rather than followed by a v4. A development catalog created from the earlier branch head keeps the wider index. A retry during a cancel there fails with a constraint error; delete such a test library.
   - An interrupted job is requeued immediately rather than left `running` for `recover()`, so the catalog never shows a job as running when no worker runs it.
 - **Verified:** New tests `stopKeepsWorkForRestart`, `stopDoesNotDiscardACompletedResult`, `destructionDuringAJobInterruptsIt` (replacing `destructionDuringAJobCancelsIt`), `retryWhileCancellingIsNotLost`, `cancelRacingTheClaimReachesTheSdk`, `cancelAllCancelsRunningAndQueued` and `extractorExceptionFailsTheJob`. Reverting each fix makes its tests fail (see IMPLEMENTATION_PROGRESS.md). The `runLoop` catch was checked by inspection only.
+
+## 2026-09-27 — M04 part 2: metadata jobs in the application
+
+- **Change:**
+  - `catalog::completeImport` queues the new book's metadata job in the import transaction.
+  - `LibraryController` takes a `MetadataExtractor` from the composition root. It owns the `ProcessingCoordinator`, runs job recovery before starting it, and exposes `JobListModel` with cancel, retry and cancel-all commands.
+  - `BookListModel` shows each book's state from its catalog summary plus its latest metadata job. `BookSummary` gains `extractedTitleStatus`, so an ambiguous title is not reported as "not found".
+  - Closing calls `prepareToClose()`, which uses `ProcessingCoordinator::stop()`.
+- **Why:**
+  - The M04 gate: durable queue, extraction with models, independent publication, cancellation and restart persistence.
+  - AGENTS.md sections 5 (pending jobs registered with the book), 8 (queued delivery, indeterminate progress, a responsive close) and 9 (nonblocking job queue with cancel and retry).
+- **Assumptions:**
+  - Retry is offered only for failed or cancelled jobs with no newer job of that book. A succeeded extraction is not rerun from the UI until corrections and reruns (M07).
+  - Presentation text keeps the project's `(s)` plural form until translations are added.
+  - The extractor is optional, so presentation tests without the SDK still run. Jobs then stay queued and are shown as waiting.
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, M04 part 2.
+
+## 2026-09-27 — M04 part 2 review fixes (PR #10): linear latestJobs, complete open jobs, coalesced refresh
+
+- **Change:**
+  - `catalog::latestJobs` uses `ROW_NUMBER() OVER (PARTITION BY book_id, kind ORDER BY created_at DESC, rowid DESC)` instead of a correlated subquery.
+  - `LibraryController::refresh()` also loads every open job (`listJobs(db, true, -1)`; a negative limit means no limit).
+  - Refreshes are coalesced: one runs at a time, and at most one more is scheduled.
+- **Why:** PR #10 review.
+  - The subquery was quadratic (no index covers `(book_id, kind, created_at)`) and ran on every refresh: the reviewer measured 16.6 s at 3000 books × 3 jobs, blocking the database thread.
+  - Only the 100 newest jobs were loaded, so a larger backlog was undercounted ("100 book(s) waiting" for 150) and partly not cancellable.
+  - Every import and publication queued a full reload, and closing waited for all of them.
+- **Assumptions:**
+  - No v4 index: the window function avoids a migration, and SQLite 3.53 through QSQLITE supports it.
+  - All open jobs are held in the activity model. That is bounded by the library size, and finished rows are still capped at 200.
+- **Verified:** `tst_catalog::latestJobsPicksTheNewestPerBookAndKind`, `tst_librarycontroller::pendingCountIncludesTheWholeBacklog` and `refreshesAreCoalesced`. Each fails with its fix reverted: the old query took 8.0 s against a 3 s guard in Debug; without the open jobs `pendingCount` is 100 instead of 150; without coalescing, 20 reloads ran instead of 2.

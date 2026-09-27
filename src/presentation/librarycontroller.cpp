@@ -1,7 +1,9 @@
 #include "presentation/librarycontroller.h"
 
 #include "catalog/catalog.h"
+#include "catalog/jobs.h"
 #include "catalog/library.h"
+#include "processing/processingcoordinator.h"
 #include "storage/importservice.h"
 
 #include <QCoreApplication>
@@ -42,6 +44,7 @@ LibraryController::LibraryController(QObject* parent) : QObject(parent)
 {
     m_pool.setMaxThreadCount(1);
     m_pool.setObjectName(QStringLiteral("mbl-library-worker"));
+    m_jobs.setTitleLookup([this](const domain::BookId& id) { return m_books.titleOf(id); });
 }
 
 LibraryController::~LibraryController()
@@ -51,6 +54,7 @@ LibraryController::~LibraryController()
         QMutexLocker lock(&m_queueMutex);
         m_queue.clear();
     }
+    m_coordinator.reset();  // Stops and waits; the window already waited for !busy.
     m_pool.waitForDone();
     m_importer.reset();
     m_library.reset();  // Closes the catalog and releases the lock.
@@ -81,6 +85,14 @@ void LibraryController::setBusyFlags(const std::function<void()>& change)
     change();
     if (busy() != wasBusy)
         emit busyChanged();
+}
+
+void LibraryController::setMetadataExtractor(std::shared_ptr<processing::MetadataExtractor> extractor,
+                                             bool ocrAvailable)
+{
+    Q_ASSERT(m_state == State::Closed);
+    m_extractor = std::move(extractor);
+    m_ocrAvailable = ocrAvailable;
 }
 
 void LibraryController::open(const QString& rootDir)
@@ -146,22 +158,135 @@ void LibraryController::onOpened(std::shared_ptr<catalog::Library> library,
     setStatus(recoveryText.isEmpty() ? tr("Library ready.") : recoveryText);
     refresh();
     startBatch();  // Files queued while opening.
+    startProcessing();
+}
+
+void LibraryController::startProcessing()
+{
+    if (!m_extractor || m_coordinator)
+        return;
+    m_coordinator = std::make_unique<processing::ProcessingCoordinator>(*m_library, m_extractor);
+    auto* coordinator = m_coordinator.get();
+    connect(coordinator, &processing::ProcessingCoordinator::jobChanged, this, [this](const domain::JobRecord& job) {
+        m_jobs.upsert(job);
+        m_books.updateJob(job);
+    });
+    connect(coordinator, &processing::ProcessingCoordinator::metadataPublished, this, [this] { refresh(); });
+    connect(coordinator, &processing::ProcessingCoordinator::enqueueFailed, this,
+            [this](const domain::BookId&, const QString& error) {
+                setStatus(tr("Metadata extraction could not be requested: %1").arg(error));
+            });
+    connect(coordinator, &processing::ProcessingCoordinator::busyChanged, this, [this, coordinator] {
+        setBusyFlags([this, coordinator] { m_processingBusy = coordinator->busy(); });
+    });
+
+    // Recovery runs before the worker starts (ProcessingCoordinator::recover).
+    setBusyFlags([this] { m_recoveringJobs = true; });
+    coordinator->recover().then(this, [this](const domain::Result<processing::Recovery>& recovery) {
+        if (!recovery) {
+            setStatus(tr("Interrupted metadata jobs could not be recovered: %1").arg(recovery.error().message));
+        } else if (recovery.value().jobs.requeued > 0) {
+            setStatus(trn("%n interrupted metadata extraction(s) queued again.", recovery.value().jobs.requeued));
+        }
+        m_jobsRecovered = true;
+        setBusyFlags([this] { m_recoveringJobs = false; });
+        refresh();
+        startJobs();
+    });
+}
+
+void LibraryController::startJobs()
+{
+    if (m_coordinator && m_jobsRecovered && !m_closing)
+        m_coordinator->start();
+}
+
+void LibraryController::cancelJob(const QString& jobId)
+{
+    if (m_coordinator)
+        m_coordinator->cancelJob(domain::JobId::fromString(jobId));
+}
+
+void LibraryController::retryJob(const QString& jobId)
+{
+    if (!m_coordinator || m_closing)
+        return;
+    const auto job = m_jobs.job(domain::JobId::fromString(jobId));
+    if (job && job->kind == domain::JobKind::Metadata)
+        m_coordinator->enqueueMetadata(job->book);
+}
+
+void LibraryController::cancelAllJobs()
+{
+    if (m_coordinator)
+        m_coordinator->cancelAll();
+}
+
+void LibraryController::prepareToClose()
+{
+    if (!m_closing) {
+        m_closing = true;
+        emit closingChanged();
+    }
+    cancelImports();
+    if (m_coordinator)
+        m_coordinator->stop();  // Not a cancel: queued jobs resume next time.
 }
 
 void LibraryController::refresh()
 {
     if (!m_library)
         return;
-    setBusyFlags([this] { ++m_refreshesPending; });
+    // Imports and publications each ask for a reload. Keep one in flight and
+    // at most one more pending, so the database thread (shared with the
+    // processing worker) and closing never wait behind a backlog of reloads.
+    if (m_refreshInFlight) {
+        m_refreshAgain = true;
+        return;
+    }
+    setBusyFlags([this] { m_refreshInFlight = true; });
+    runRefresh();
+}
+
+void LibraryController::runRefresh()
+{
+    struct Snapshot {
+        domain::Result<QList<domain::BookSummary>> books;
+        domain::Result<QList<domain::JobRecord>> latest;
+        domain::Result<QList<domain::JobRecord>> recent;
+        domain::Result<QList<domain::JobRecord>> open;
+    };
     m_library
-        ->run([](QSqlDatabase& db) { return catalog::listBooks(db, domain::Lifecycle::Active); })
-        .then(this, [this](const domain::Result<QList<domain::BookSummary>>& books) {
-            if (books)
-                m_books.setBooks(books.value());
-            else
-                setStatus(tr("The book list could not be loaded: %1").arg(books.error().message));
-            setBusyFlags([this] { --m_refreshesPending; });
+        ->run([](QSqlDatabase& db) {
+            // Recent jobs for the activity list, plus every open job however
+            // old, so waiting counts and per-job Cancel are complete.
+            return Snapshot{catalog::listBooks(db, domain::Lifecycle::Active), catalog::latestJobs(db),
+                            catalog::listJobs(db, false, 100), catalog::listJobs(db, true, -1)};
+        })
+        .then(this, [this](const Snapshot& snapshot) {
+            if (snapshot.books) {
+                m_books.setBooks(snapshot.books.value());
+                m_jobs.titlesChanged();
+            } else {
+                setStatus(tr("The book list could not be loaded: %1").arg(snapshot.books.error().message));
+            }
+            // jobChanged may already have delivered a newer state than this
+            // snapshot; both models merge and keep the newer one (updatedAt).
+            if (snapshot.latest)
+                m_books.setLatestJobs(snapshot.latest.value());
+            for (const auto* jobs : {&snapshot.recent, &snapshot.open}) {
+                if (*jobs) {
+                    for (const domain::JobRecord& job : jobs->value())
+                        m_jobs.upsert(job);
+                }
+            }
             emit booksRefreshed();
+            if (m_refreshAgain && m_library) {
+                m_refreshAgain = false;
+                runRefresh();  // Still in flight: busy stays set.
+                return;
+            }
+            setBusyFlags([this] { m_refreshInFlight = false; });
         });
 }
 
@@ -272,6 +397,7 @@ void LibraryController::onFileFinished(const FileResult& result)
     case Outcome::Imported:
         ++m_batch.imported;
         refresh();
+        startJobs();  // The import queued the book's metadata job.
         break;
     case Outcome::Duplicate:
         ++m_batch.duplicates;

@@ -4,8 +4,10 @@
 #pragma once
 
 #include "domain/book.h"
+#include "domain/jobs.h"
 
 #include <QAbstractListModel>
+#include <QHash>
 #include <QList>
 #include <QQmlEngine>
 
@@ -38,6 +40,13 @@ public:
     // dataChanged. Must be called on the model's thread.
     void setBooks(QList<domain::BookSummary> books);
 
+    // The latest metadata job of each book, shown in the processing state.
+    // Both merge: a job older than the one shown for its book is ignored, so
+    // a late snapshot cannot undo a newer state.
+    void setLatestJobs(const QList<domain::JobRecord>& jobs);
+    void updateJob(const domain::JobRecord& job);
+
+    QString titleOf(const domain::BookId& id) const;  // Empty when absent.
     Q_INVOKABLE int rowOfBook(const QString& bookId) const;  // -1 when absent.
     Q_INVOKABLE QString bookIdAt(int row) const;
 
@@ -45,7 +54,11 @@ signals:
     void countChanged();
 
 private:
+    bool acceptJob(const domain::JobRecord& job);  // True if it became the book's shown job.
+    void emitStateChanged(const domain::BookId& id);
+
     QList<domain::BookSummary> m_books;
+    QHash<domain::BookId, domain::JobRecord> m_metadataJobs;
 };
 
 } // namespace mbl::presentation

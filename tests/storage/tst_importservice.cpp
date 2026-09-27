@@ -2,6 +2,7 @@
 // source changes, cancellation, and crash recovery at every phase.
 #include "catalog/catalog.h"
 #include "catalog/imports.h"
+#include "catalog/jobs.h"
 #include "catalog/library.h"
 #include "storage/filecopy.h"
 #include "storage/importservice.h"
@@ -124,6 +125,7 @@ private slots:
     void checkDigestDistinguishesUnreadable();
     void recoveryDefersUnreadableCopy_data();
     void recoveryDefersUnreadableCopy();
+    void importQueuesOneMetadataJob();
 
 private:
     QString external(const QString& name, const QString& from = fixture("title-page.pdf"));
@@ -630,6 +632,30 @@ void TestImportService::recoveryDefersUnreadableCopy()
     QCOMPARE(shaOf(m_service->layout().absolute(details.value().asset.managedPath)), sha);
     QVERIFY(filesUnder(m_service->layout().absolute(QStringLiteral("staging"))).isEmpty());
 #endif
+}
+
+// The book's first metadata request is part of the import transaction, also
+// when recovery completes the import; a duplicate queues nothing.
+void TestImportService::importQueuesOneMetadataJob()
+{
+    const ImportResult first = m_service->importFile(fixture("title-page.pdf"));
+    QCOMPARE(first.outcome, Outcome::Imported);
+    m_service->setCrashHook([](ImportStage s) { return s == ImportStage::Installed; });
+    QCOMPARE(m_service->importFile(fixture("contents-book.pdf")).outcome, Outcome::Interrupted);
+    m_service->setCrashHook({});
+    QCOMPARE(m_service->recover().registered, 1);
+    QCOMPARE(m_service->importFile(fixture("title-page.pdf")).outcome, Outcome::Duplicate);
+
+    const auto jobs = db([](QSqlDatabase& d) { return catalog::listJobs(d, false); }).value();
+    QCOMPARE(jobs.size(), 2);
+    for (const JobRecord& job : jobs) {
+        QCOMPARE(job.kind, JobKind::Metadata);
+        QCOMPARE(job.state, JobState::Queued);
+        QCOMPARE(job.generation, 1);
+        const BookDetails details = db([book = job.book](QSqlDatabase& d) { return catalog::bookDetails(d, book); }).value();
+        QCOMPARE(job.sourceSha256, details.asset.sha256);
+        QCOMPARE(details.metadataGeneration, 1);
+    }
 }
 
 QTEST_GUILESS_MAIN(TestImportService)

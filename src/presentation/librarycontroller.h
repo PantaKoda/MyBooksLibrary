@@ -1,11 +1,13 @@
 // Presentation: the library session behind the main window. Opens the
-// library (lock, migrations, import recovery) and imports files on a worker
-// thread, and keeps the GUI-owned book list current. QML only calls its
+// library (lock, migrations, import and job recovery), imports files on a
+// worker thread, runs metadata jobs through the ProcessingCoordinator, and
+// keeps the GUI-owned book and job lists current. QML only calls its
 // commands and reads its properties; no SQL, file or SDK work happens in QML
 // or on the GUI thread.
 #pragma once
 
 #include "presentation/booklistmodel.h"
+#include "presentation/joblistmodel.h"
 
 #include <QMutex>
 #include <QQmlEngine>
@@ -22,6 +24,10 @@ class Library;
 }
 namespace mbl::storage {
 class ImportService;
+}
+namespace mbl::processing {
+class MetadataExtractor;
+class ProcessingCoordinator;
 }
 
 namespace mbl::presentation {
@@ -43,6 +49,10 @@ class LibraryController : public QObject {
     Q_PROPERTY(QString statusText READ statusText NOTIFY statusTextChanged)
     Q_PROPERTY(QStringList problems READ problems NOTIFY problemsChanged)
     Q_PROPERTY(mbl::presentation::BookListModel* books READ books CONSTANT)
+    Q_PROPERTY(mbl::presentation::JobListModel* jobs READ jobs CONSTANT)
+    Q_PROPERTY(bool processingAvailable READ processingAvailable CONSTANT)
+    Q_PROPERTY(bool ocrAvailable READ ocrAvailable CONSTANT)
+    Q_PROPERTY(bool closing READ closing NOTIFY closingChanged)
 
 public:
     enum class State { Closed, Opening, Ready, Failed };
@@ -60,8 +70,14 @@ public:
     // flow waits for !busy first, so this does not block in normal use.
     ~LibraryController() override;
 
+    // Composition root, before open(): the extractor for metadata jobs, and
+    // whether OCR models were found (shown as a capability note). Without an
+    // extractor, jobs are queued but not run.
+    void setMetadataExtractor(std::shared_ptr<processing::MetadataExtractor> extractor, bool ocrAvailable);
+
     // Opens (and creates if needed) the library at `rootDir` on the worker
-    // thread, then recovers interrupted imports and loads the book list.
+    // thread, then recovers interrupted imports and jobs, loads the book
+    // list and starts processing.
     Q_INVOKABLE void open(const QString& rootDir);
     // Queues files for import. Files queued while the library is opening are
     // imported once it is ready, or reported as not imported if opening fails.
@@ -70,13 +86,27 @@ public:
     void importFiles(const QStringList& localPaths);
     // Cancels the file being copied and drops queued files.
     Q_INVOKABLE void cancelImports();
+    // Reloads books and jobs. Coalesced: at most one reload runs, and calls
+    // made meanwhile schedule a single further one.
     Q_INVOKABLE void refresh();
+
+    // Metadata jobs, by job ID (from the jobs model).
+    Q_INVOKABLE void cancelJob(const QString& jobId);
+    Q_INVOKABLE void retryJob(const QString& jobId);
+    Q_INVOKABLE void cancelAllJobs();
+    // Closing the window: cancels imports and stops processing without
+    // cancelling queued jobs (they resume next time). The window then waits
+    // for !busy.
+    Q_INVOKABLE void prepareToClose();
 
     State state() const { return m_state; }
     bool opening() const { return m_state == State::Opening; }
     bool ready() const { return m_state == State::Ready; }
     bool failed() const { return m_state == State::Failed; }
-    bool busy() const { return opening() || importing() || m_refreshesPending > 0; }
+    bool busy() const
+    {
+        return opening() || importing() || m_refreshInFlight || m_recoveringJobs || m_processingBusy;
+    }
     bool importing() const { return m_importTotal > 0; }
     int importTotal() const { return m_importTotal; }
     int importDone() const { return m_importDone; }
@@ -86,6 +116,10 @@ public:
     QString statusText() const { return m_statusText; }
     QStringList problems() const { return m_problems; }
     BookListModel* books() { return &m_books; }
+    JobListModel* jobs() { return &m_jobs; }
+    bool processingAvailable() const { return m_extractor != nullptr; }
+    bool ocrAvailable() const { return m_ocrAvailable; }
+    bool closing() const { return m_closing; }
     BatchSummary lastBatch() const { return m_lastBatch; }
 
 signals:
@@ -96,6 +130,7 @@ signals:
     void problemsChanged();
     void importsFinished();  // A batch ended; lastBatch() holds its counts.
     void booksRefreshed();
+    void closingChanged();
 
 private:
     struct FileResult;
@@ -110,8 +145,19 @@ private:
     void setState(State state);
     void setStatus(const QString& text);
     void setBusyFlags(const std::function<void()>& change);
+    void startProcessing();  // Creates the coordinator, recovers jobs, then starts it.
+    void startJobs();        // Starts the worker once recovery has run.
+    void runRefresh();
 
     BookListModel m_books;
+    JobListModel m_jobs;
+    std::shared_ptr<processing::MetadataExtractor> m_extractor;
+    std::unique_ptr<processing::ProcessingCoordinator> m_coordinator;  // Destroyed before m_library.
+    bool m_ocrAvailable = false;
+    bool m_recoveringJobs = false;
+    bool m_jobsRecovered = false;
+    bool m_processingBusy = false;
+    bool m_closing = false;
     QThreadPool m_pool;  // One worker: opening, recovery and file imports.
     std::shared_ptr<catalog::Library> m_library;
     std::shared_ptr<storage::ImportService> m_importer;
@@ -129,7 +175,8 @@ private:
     int m_importDone = 0;
     QString m_currentFile;
     double m_fileProgress = 0;
-    int m_refreshesPending = 0;
+    bool m_refreshInFlight = false;
+    bool m_refreshAgain = false;
     BatchSummary m_batch;
     BatchSummary m_lastBatch;
 };

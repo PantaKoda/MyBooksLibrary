@@ -93,6 +93,8 @@ qt_add_library(mbl_presentation STATIC
     src/app/libraryroot.cpp
     src/presentation/booklistmodel.h
     src/presentation/booklistmodel.cpp
+    src/presentation/joblistmodel.h
+    src/presentation/joblistmodel.cpp
     src/presentation/librarycontroller.h
     src/presentation/librarycontroller.cpp
 )
