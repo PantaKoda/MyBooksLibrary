@@ -443,7 +443,7 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
 - **Assumptions:**
   - **Trash ends jobs in the catalog, not only at claim time.** Otherwise a job running at trash time stays `running` with a stale generation, and the one-open-job-per-kind rule would make a restore reuse it: its result is refused, and the book would be left without results or a job. Now it is `cancel_requested` and does not count as open.
   - **The trash reason survives the worker.** The worker ends such a job as a cancellation; `finishJob` keeps outcome `trashed`, so the activity list says why.
-  - **Restore requeues only what is missing:** components without a published result. Results published before the trash are kept and not redone.
+  - **Restore resumes exactly what the trash stopped** (review of PR #19): kinds with a job ended as `trashed` since the trash time. A rule of "no published result" would retry an extraction that had failed before the trash, which AGENTS.md §8 leaves failed until the user asks, and would drop a queued rerun of a book that already had results.
   - **Collection names are unique regardless of ASCII case** (SQLite `NOCASE`). Non-ASCII names differing only in case are allowed; this is documented, not hidden.
   - **Searching a collection filters after matching**, so the ranking tiers stay as SEARCH.md describes.
 - **Verified:** See IMPLEMENTATION_PROGRESS.md, M08 part 1.

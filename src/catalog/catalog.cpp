@@ -650,23 +650,38 @@ Status setLifecycle(QSqlDatabase& db, const BookId& id, Lifecycle lifecycle)
         if (auto s = endOpenJobs(db, id, stamp); !s)
             return s;
     } else {
+        // Any job still open predates the trash (its generation is stale):
+        // end it, as the trash would have, so it cannot stand in for the new
+        // request below and its kind is resumed.
+        if (auto s = endOpenJobs(db, id, stamp); !s)
+            return s;
+        // Exactly the work the trash stopped starts again: each kind with a
+        // job ended as "trashed" since the book was trashed (any such job
+        // for a book trashed before schema 7, which has no trash time). A
+        // job that had failed or finished before the trash stays as it was;
+        // a queued rerun the trash cancelled is resumed. Read before the
+        // trash time is cleared.
+        q.prepare(QStringLiteral(
+            "SELECT DISTINCT j.kind FROM jobs j JOIN books b ON b.id = j.book_id WHERE j.book_id = ? "
+            "AND j.outcome = 'trashed' AND (b.trashed_at IS NULL OR COALESCE(j.finished_at, j.updated_at) >= b.trashed_at)"));
+        q.addBindValue(id.toString());
+        if (!q.exec())
+            return sqlError(q);
+        QList<JobKind> resume;
+        while (q.next()) {
+            if (const auto kind = jobKindFromCode(q.value(0).toString()))
+                resume << *kind;
+        }
         q.prepare(QStringLiteral("UPDATE books SET lifecycle = 'active', trashed_at = NULL WHERE id = ?"));
         q.addBindValue(id.toString());
         if (!q.exec())
             return sqlError(q);
-        // Any job still open predates the trash (its generation is stale):
-        // end it, so it cannot stand in for the new request below.
-        if (auto s = endOpenJobs(db, id, stamp); !s)
-            return s;
-        // Work the trash stopped starts again: a component without published
-        // results gets a new request (a new generation). A job cancelled by
-        // the trash and still running cannot block it or publish.
-        if (!row.value().activeMetadataRun) {
-            if (auto queued = detail::queueJob(db, id, JobKind::Metadata); !queued)
-                return queued.error();
-        }
-        if (!row.value().activeTocRun) {
-            if (auto queued = detail::queueJob(db, id, JobKind::Toc); !queued)
+        // New requests (new generations): a job cancelled by the trash and
+        // still running can neither block them nor publish.
+        for (JobKind kind : {JobKind::Metadata, JobKind::Toc}) {
+            if (!resume.contains(kind))
+                continue;
+            if (auto queued = detail::queueJob(db, id, kind); !queued)
                 return queued.error();
         }
     }

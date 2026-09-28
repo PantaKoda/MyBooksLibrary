@@ -13,6 +13,8 @@
 #include <QTemporaryDir>
 #include <QTest>
 
+#include <algorithm>
+
 using namespace mbl::domain;
 using mbl::catalog::Library;
 namespace catalog = mbl::catalog;
@@ -32,6 +34,7 @@ private slots:
     void trashEndsJobsAndRestoreRequeuesMissingWork();
     void aStaleJobCannotBlockOrPublishAfterRestore();
     void restoreEndsJobsLeftOpenByAnOlderTrash();
+    void restoreResumesExactlyWhatTheTrashStopped();
 
 private:
     template <typename Task>
@@ -333,6 +336,64 @@ void TestOrganization::restoreEndsJobsLeftOpenByAnOlderTrash()
         }
     }
     QCOMPARE(current, 1);
+}
+
+// Restore resumes the jobs the trash ended, not "whatever has no result":
+// an extraction that failed before the trash is not retried on its own, a
+// queued rerun of a book with results is resumed, and a later trash and
+// restore with nothing running queues nothing.
+void TestOrganization::restoreResumesExactlyWhatTheTrashStopped()
+{
+    const auto queuedKinds = [this](const BookId& b) {
+        QList<JobKind> kinds;
+        for (const JobRecord& j : jobsOf(b)) {
+            if (j.state == JobState::Queued)
+                kinds << j.kind;
+        }
+        std::sort(kinds.begin(), kinds.end());
+        return kinds;
+    };
+
+    // (a) Metadata failed before the trash; contents were still queued.
+    const BookId failed = addBook(QStringLiteral("failed.pdf"));
+    QVERIFY(db([&](QSqlDatabase& d) { return catalog::enqueueJob(d, failed, JobKind::Metadata); }));
+    auto claimed = db([](QSqlDatabase& d) { return catalog::claimNextJob(d); });
+    QVERIFY(claimed && claimed.value());
+    QVERIFY(db([&](QSqlDatabase& d) {
+        return catalog::finishJob(d, claimed.value()->id, JobState::Failed, QStringLiteral("sdk_error"), QStringLiteral("Unreadable."));
+    }));
+    QVERIFY(db([&](QSqlDatabase& d) { return catalog::enqueueJob(d, failed, JobKind::Toc); }));
+    QVERIFY(db([&](QSqlDatabase& d) { return catalog::trashBook(d, failed); }));
+    QVERIFY(db([&](QSqlDatabase& d) { return catalog::restoreBook(d, failed); }));
+    QCOMPARE(queuedKinds(failed), QList<JobKind>{JobKind::Toc});
+    QCOMPARE(db([&](QSqlDatabase& d) { return catalog::job(d, claimed.value()->id); }).value().outcome,
+             QStringLiteral("sdk_error"));  // Still failed, until the user retries.
+
+    // (b) Metadata published; the user's rerun was queued when the book was trashed.
+    const BookId rerun = addBook(QStringLiteral("rerun.pdf"), QStringLiteral("Has a title"));
+    QVERIFY(db([&](QSqlDatabase& d) { return catalog::enqueueJob(d, rerun, JobKind::Metadata); }));
+    QVERIFY(db([&](QSqlDatabase& d) { return catalog::trashBook(d, rerun); }));
+    QVERIFY(db([&](QSqlDatabase& d) { return catalog::restoreBook(d, rerun); }));
+    QCOMPARE(queuedKinds(rerun), QList<JobKind>{JobKind::Metadata});
+
+    // A later cycle with nothing running: the jobs "trashed" in the first
+    // cycle are older than this trash and are not resumed again.
+    auto next = db([](QSqlDatabase& d) { return catalog::claimNextJob(d); });
+    QVERIFY(next && next.value());
+    QVERIFY(db([&](QSqlDatabase& d) {
+        return catalog::finishJob(d, next.value()->id, JobState::Failed, QStringLiteral("sdk_error"), QStringLiteral("x"));
+    }));
+    auto again = db([](QSqlDatabase& d) { return catalog::claimNextJob(d); });
+    while (again && again.value()) {  // Drain whatever else is queued, as failures.
+        QVERIFY(db([&](QSqlDatabase& d) {
+            return catalog::finishJob(d, again.value()->id, JobState::Failed, QStringLiteral("sdk_error"), QStringLiteral("x"));
+        }));
+        again = db([](QSqlDatabase& d) { return catalog::claimNextJob(d); });
+    }
+    QTest::qWait(5);  // A later trash time than the first cycle's jobs.
+    QVERIFY(db([&](QSqlDatabase& d) { return catalog::trashBook(d, rerun); }));
+    QVERIFY(db([&](QSqlDatabase& d) { return catalog::restoreBook(d, rerun); }));
+    QVERIFY(queuedKinds(rerun).isEmpty());
 }
 
 QTEST_GUILESS_MAIN(TestOrganization)

@@ -56,7 +56,10 @@ Migrations live in `catalog/migrations.cpp`. `PRAGMA user_version` records the a
 - Metadata and TOC generations are independent, so neither publication disturbs the other component or the user's overrides.
 - A TOC `known_parent` entry whose parent is missing, itself or part of a cycle is stored as `unknown`; no parent is invented. Parents may appear after their children.
 - **Trash** increments both generations, records the time, removes the search rows and ends the book's jobs, in one transaction: queued jobs become `cancelled` / `trashed`, and a running job becomes `cancel_requested` with outcome `trashed`. Its result is refused, and `finishJob` keeps the reason when the worker ends it. Late results are refused, even after a restore.
-- **Restore** makes the book active, re-projects it, ends any job still open (it predates the trash, so its generation is stale; a book trashed before schema 7 can have one), and queues a new job, with a new generation, for each component that has no published result. A job still running from before the trash can neither block the new request nor publish. Collection memberships are kept throughout. Trash and restore are idempotent.
+- **Restore** makes the book active and re-projects it. It ends any job still open: it predates the trash, so its generation is stale, and a book trashed before schema 7 can have one. Then it **resumes exactly the jobs the trash ended**: a new job, with a new generation, for each kind with a job ended as `trashed` since the trash time (any such job for a book trashed before schema 7).
+  - A job that failed or finished before the trash stays as it was, so a failed extraction is not retried on its own.
+  - A queued rerun of a book that already has results is resumed.
+  - A job still running from before the trash can neither block the new request nor publish. Collection memberships are kept throughout. Trash and restore are idempotent.
 - `rebuildSearchIndex` recreates all projections from catalog tables in one transaction, without SDK work.
 
 ## Edited contents

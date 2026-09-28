@@ -52,7 +52,18 @@ M08 is split in two:
 - One race test depended on the order of two jobs created in the same millisecond. It now selects the metadata job explicitly.
 - **CI found a second order dependence** (run 36460887004 on `5a20667`). `collectionsAreMembershipOnly` expected a collection's books in import order, but books imported in the same millisecond are ordered by their random ID. That passed locally and failed on the faster CI runner. The test now compares the titles as a set; it passed 50 times in a row (`--repeat until-fail:50`). The product ordering is unchanged: stable, and the same as the library list.
 
-**Not in this part:** the window (part 2), and permanent deletion of trashed books.
+**Review fix (PR #19 review of `f3f6a7c`):**
+- *Should settle:* restore queued work for every component **without a published result**, not for **what the trash stopped**. So (a) an extraction that had failed before the trash was retried on its own, and (b) a queued rerun, cancelled by the trash, was dropped when an older result existed.
+- Restore now resumes each kind with a job ended as `trashed` since the trash time, or any such job for books trashed before schema 7. The trash time is read before it is cleared.
+
+| Command | Result |
+| --- | --- |
+| `tst_organization::restoreResumesExactlyWhatTheTrashStopped` (new) | (a) The failed metadata job stays failed and only the queued contents job is resumed. (b) The queued rerun is resumed. A later trash and restore with nothing running queues nothing. With the old rule restored, the test fails at (a), as the review reproduced. |
+| `pwsh scripts/verify.ps1` (Release) and `-Configuration Debug` | VERIFY PASSED in both; 20/20 `ctest` suites; all smoke checks. `tst_organization` passed 50 times in a row (Debug) |
+
+**Not in this part:** the window (part 2), and permanent deletion of trashed books. For part 2, from the review:
+- after a restore, the window must wake the processing worker (`start()`); otherwise the resumed jobs wait for the next launch;
+- trash must raise the running job's cancel flag so its SDK call stops early.
 
 **Next action:** review of [PR #19](https://github.com/PantaKoda/MyBooksLibrary/pull/19). After it is merged: M08 part 2, the window.
 
