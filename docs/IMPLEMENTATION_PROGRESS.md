@@ -50,6 +50,7 @@ M08 is split in two:
 **Found while testing:**
 - A test helper iterated over `db(...).value()` of a temporary: a use-after-free (heap corruption) that showed up as a garbled outcome. Fixed in the test.
 - One race test depended on the order of two jobs created in the same millisecond. It now selects the metadata job explicitly.
+- **CI found a second order dependence** (run 36460887004 on `5a20667`). `collectionsAreMembershipOnly` expected a collection's books in import order, but books imported in the same millisecond are ordered by their random ID. That passed locally and failed on the faster CI runner. The test now compares the titles as a set; it passed 50 times in a row (`--repeat until-fail:50`). The product ordering is unchanged: stable, and the same as the library list.
 
 **Not in this part:** the window (part 2), and permanent deletion of trashed books.
 

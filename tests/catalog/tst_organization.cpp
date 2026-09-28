@@ -128,8 +128,13 @@ void TestOrganization::collectionsAreMembershipOnly()
     QCOMPARE(list.at(0).bookCount, 2);
     QCOMPARE(list.at(1).bookCount, 2);
     auto books = db([&](QSqlDatabase& d) { return catalog::listCollectionBooks(d, study.value()); }).value();
-    QCOMPARE(books.size(), 2);
-    QCOMPARE(books.at(0).displayTitle, QStringLiteral("Algorithms"));
+    // Library order is by import time, and books imported in the same
+    // millisecond are in no particular order: compare the titles as a set.
+    QStringList titles;
+    for (const BookSummary& book : books)
+        titles << book.displayTitle;
+    titles.sort();
+    QCOMPARE(titles, (QStringList{QStringLiteral("Algorithms"), QStringLiteral("Networks")}));
     auto ofB = db([&](QSqlDatabase& d) { return catalog::collectionsOf(d, b); }).value();
     QCOMPARE(ofB.size(), 2);
     // No file or book was copied.
