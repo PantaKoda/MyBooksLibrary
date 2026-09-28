@@ -160,6 +160,7 @@ struct BookRow {
     qint64 tocGeneration = 0;
     std::optional<RunId> activeMetadataRun;
     std::optional<RunId> activeTocRun;
+    std::optional<TocRevisionId> activeTocRevision;
     QString originalFileName;
     QString originalPath;
 };
@@ -170,7 +171,8 @@ Result<BookRow> loadBookRow(QSqlDatabase& db, const BookId& id)
     q.prepare(QStringLiteral(
         "SELECT b.lifecycle, b.revision, b.metadata_generation, b.toc_generation, b.active_metadata_run_id, "
         "b.active_toc_run_id, b.original_file_name, b.original_path, a.id, a.sha256, a.byte_size, "
-        "a.page_count, a.managed_path FROM books b JOIN assets a ON a.id = b.asset_id WHERE b.id = ?"));
+        "a.page_count, a.managed_path, b.active_toc_revision_id FROM books b JOIN assets a ON a.id = b.asset_id "
+        "WHERE b.id = ?"));
     q.addBindValue(id.toString());
     if (!q.exec())
         return sqlError(q);
@@ -193,6 +195,8 @@ Result<BookRow> loadBookRow(QSqlDatabase& db, const BookId& id)
     row.asset.byteSize = q.value(10).toLongLong();
     row.asset.pageCount = optInt(q.value(11));
     row.asset.managedPath = q.value(12).toString();
+    if (!q.value(13).isNull())
+        row.activeTocRevision = TocRevisionId::fromString(q.value(13).toString());
     return row;
 }
 
@@ -333,7 +337,9 @@ struct Computed {
     BookSummary summary;
     std::optional<ExtractedMetadata> extracted;
     MetadataOverrides overrides;
-    std::optional<StoredToc> toc;
+    std::optional<StoredToc> toc;                 // Effective contents (edited revision, else the run).
+    std::optional<TocRevisionInfo> tocRevision;
+    std::optional<TocAnalysis> analyzedToc;       // The run's own entries, when a revision is shown.
 };
 
 Result<Computed> compute(QSqlDatabase& db, const BookRow& row)
@@ -354,6 +360,16 @@ Result<Computed> compute(QSqlDatabase& db, const BookRow& row)
         if (!toc)
             return toc.error();
         c.toc = toc.value();
+        if (row.activeTocRevision) {
+            auto revision = detail::loadTocRevision(db, *row.activeTocRevision);
+            if (!revision)
+                return revision.error();
+            const detail::StoredTocRevision& r = revision.value();
+            c.analyzedToc = c.toc->analysis;
+            c.toc->analysis.entries = r.entries;
+            c.toc->keys = r.rowIds;
+            c.tocRevision = TocRevisionInfo{r.id, r.number, r.baseRun, r.baseRun != *row.activeTocRun};
+        }
     }
 
     BookSummary& s = c.summary;
@@ -368,7 +384,13 @@ Result<Computed> compute(QSqlDatabase& db, const BookRow& row)
     if (c.extracted)
         s.extractedTitleStatus = c.extracted->titleStatus;
     s.hasTocRun = row.activeTocRun.has_value();
-    s.tocEntryCount = c.toc ? int(c.toc->analysis.entries.size()) : 0;
+    s.tocEntryCount = 0;
+    if (c.toc) {
+        for (const TocEntry& e : c.toc->analysis.entries)
+            s.tocEntryCount += e.removed ? 0 : 1;
+    }
+    s.tocEdited = c.tocRevision.has_value();
+    s.tocNeedsReconciliation = c.tocRevision && c.tocRevision->needsReconciliation;
     return c;
 }
 
@@ -400,6 +422,8 @@ Status refreshProjection(QSqlDatabase& db, const BookId& id)
     if (c.toc) {
         for (qsizetype i = 0; i < c.toc->analysis.entries.size(); ++i) {
             const TocEntry& e = c.toc->analysis.entries.at(i);
+            if (e.removed)
+                continue;  // Removed by the user: kept in the revision, not searched.
             search::ChapterProjection chapter;
             chapter.entryKey = c.toc->keys.at(i);
             chapter.title = e.title;
@@ -604,6 +628,34 @@ Status setLifecycle(QSqlDatabase& db, const BookId& id, Lifecycle lifecycle)
 }
 
 } // namespace
+
+Status detail::touchBook(QSqlDatabase& db, const BookId& book)
+{
+    return mbl::catalog::touchBook(db, book);
+}
+
+Status detail::refreshBookProjection(QSqlDatabase& db, const BookId& book)
+{
+    return refreshProjection(db, book);
+}
+
+QString detail::tocEvidenceToJson(const TocEntryEvidence& evidence)
+{
+    return tocEvidenceJson(evidence);
+}
+
+TocEntryEvidence detail::tocEvidenceFromJson(const QString& json)
+{
+    return mbl::catalog::tocEvidenceFromJson(json);
+}
+
+Result<QList<TocEntry>> detail::loadRunTocEntries(QSqlDatabase& db, const RunId& run)
+{
+    auto toc = loadToc(db, run);
+    if (!toc)
+        return toc.error();
+    return toc.value().analysis.entries;
+}
 
 Result<BookId> detail::insertBook(QSqlDatabase& db, const NewBook& book)
 {
@@ -847,6 +899,9 @@ Result<RunId> detail::publishTocRun(QSqlDatabase& db, const RunId& id, const Pub
     q.addBindValue(ticket.book.toString());
     if (!q.exec())
         return sqlError(q);
+    // The user's edits stay; they move to this run only if its entries are the same.
+    if (auto s = detail::carryTocEdits(db, ticket.book, id); !s)
+        return s.error();
     if (auto s = touchBook(db, ticket.book); !s)
         return s.error();
     if (auto s = refreshProjection(db, ticket.book); !s)
@@ -968,6 +1023,8 @@ Result<BookDetails> bookDetails(QSqlDatabase& db, const BookId& book)
     d.overrides = computed.value().overrides;
     if (computed.value().toc)
         d.toc = computed.value().toc->analysis;
+    d.tocRevision = computed.value().tocRevision;
+    d.analyzedToc = computed.value().analyzedToc;
     d.metadataRun = row.value().activeMetadataRun;
     d.tocRun = row.value().activeTocRun;
     d.metadataGeneration = row.value().metadataGeneration;

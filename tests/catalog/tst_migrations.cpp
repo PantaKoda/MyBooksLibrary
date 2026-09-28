@@ -4,6 +4,7 @@
 #include "catalog/library.h"
 #include "catalog/reading.h"
 #include "catalog/migrations.h"
+#include "catalog/tocedits.h"
 
 #include <QSqlDatabase>
 #include <QFile>
@@ -51,6 +52,7 @@ private slots:
     void version2CatalogGainsJobs();
     void version3ContentsRunsLoadAfterUpgrade();
     void version4CatalogGainsReadingPositions();
+    void version5CatalogGainsEditedContents();
     void newerSchemaIsRefusedUnchanged();
     void failedMigrationRollsBack();
     void nonConsecutiveListIsRejected();
@@ -222,6 +224,50 @@ void TestMigrations::version4CatalogGainsReadingPositions()
         return readingPosition(db, id).value();
     }).result();
     QCOMPARE(position, std::optional<int>(7));
+}
+
+// A schema 5 catalog with published contents upgrades in place; its books
+// show their analyzed contents (no revision) and can then be edited.
+void TestMigrations::version5CatalogGainsEditedContents()
+{
+    const QString book = QStringLiteral("3a2b1c0d-4b3a-4918-8776-655443322110");
+    const QString run = QStringLiteral("4b3c2d1e-4b3a-4918-8776-655443322110");
+    QTemporaryDir dir;
+    const QString path = dir.filePath(QLatin1StringView(Library::kCatalogFileName));
+    withConnection(path, [&](QSqlDatabase& db) {
+        QVERIFY(migrate(db, catalogMigrations().mid(0, 5)));
+        QCOMPARE(schemaVersion(db), 5);
+        QVERIFY(!tableExists(db, QStringLiteral("toc_edit_revisions")));
+        QSqlQuery q(db);
+        QVERIFY(q.exec(QStringLiteral(
+            "INSERT INTO assets(id, sha256, byte_size, page_count, managed_path, created_at) VALUES "
+            "('a1', '0000000000000000000000000000000000000000000000000000000000000001', 10, 8, 'files/a1/source.pdf', 'x')")));
+        QVERIFY(q.exec(QStringLiteral("INSERT INTO books(id, asset_id, original_file_name, original_path, created_at, "
+                                      "updated_at, active_toc_run_id) VALUES ('%1', 'a1', 'old.pdf', 'C:/old.pdf', 'x', 'x', '%2')")
+                           .arg(book, run)));
+        QVERIFY(q.exec(QStringLiteral("INSERT INTO toc_runs(id, book_id, generation, source_sha256, sdk_version, "
+                                      "model_identity, options_json, outcome, created_at, plan_ready) VALUES ('%1', '%2', 1, "
+                                      "'0000000000000000000000000000000000000000000000000000000000000001', 't', '', '{}', "
+                                      "'plan_ready', 'x', 1)").arg(run, book)));
+        QVERIFY(q.exec(QStringLiteral("INSERT INTO toc_entries(run_id, sdk_entry_id, entry_order, title, hierarchy, "
+                                      "destination_state, destination_page, in_export_plan) VALUES ('%1', 'e1', 0, "
+                                      "'Old chapter', 'root', 'resolved', 3, 1)").arg(run)));
+    });
+    auto library = Library::open(dir.path());
+    QVERIFY2(library, library ? "" : qPrintable(library.error().message));
+    QVERIFY(latestSchemaVersion() >= 6);
+    const auto id = mbl::domain::BookId::fromString(book);
+    auto details = library.value()->run([id](QSqlDatabase& db) { return bookDetails(db, id); }).result();
+    QVERIFY(details);
+    QVERIFY(!details.value().tocRevision);
+    QCOMPARE(details.value().toc->entries.size(), 1);
+    const mbl::domain::TocEditBase base{details.value().tocRun, std::nullopt};
+    mbl::domain::TocEdit rename;
+    rename.entryKey = QStringLiteral("e1");
+    rename.title = QStringLiteral("Renamed chapter");
+    auto edited = library.value()->run([id, base, rename](QSqlDatabase& db) { return editToc(db, id, base, {rename}); }).result();
+    QVERIFY2(edited, edited ? "" : qPrintable(edited.error().message));
+    QCOMPARE(edited.value().number, 1);
 }
 
 void TestMigrations::newerSchemaIsRefusedUnchanged()

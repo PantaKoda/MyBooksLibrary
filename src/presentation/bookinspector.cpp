@@ -243,6 +243,7 @@ void BookInspector::select(const QString& bookId)
         return;
     m_book = id;
     m_shownTocRun.reset();
+    m_shownTocRevision.reset();
     m_contentsShown = false;
     setCorrectionError({});
     emit bookChanged();
@@ -343,11 +344,15 @@ void BookInspector::apply(const Loaded& result)
     m_contentsSummary = contentsSummaryOf(d.toc);
     m_contentsNotes = contentsNotesOf(d.toc);
 
-    // Rebuild the tree only when the contents run changed, so expanded
+    // Rebuild the tree only when the contents changed (a new run, or an
+    // edited revision saved, kept or discarded), so expanded
     // branches and the current entry survive other updates.
-    if (!m_contentsShown || m_shownTocRun != d.tocRun) {
+    const std::optional<TocRevisionId> revision =
+        d.tocRevision ? std::optional<TocRevisionId>(d.tocRevision->id) : std::nullopt;
+    if (!m_contentsShown || m_shownTocRun != d.tocRun || m_shownTocRevision != revision) {
         m_contents.setEntries(d.toc ? d.toc->entries : QList<TocEntry>{});
         m_shownTocRun = d.tocRun;
+        m_shownTocRevision = revision;
         m_contentsShown = true;
     }
     emit detailsChanged();
@@ -473,6 +478,7 @@ void BookInspector::clear()
     m_contentsNotes.clear();
     m_error.clear();
     m_shownTocRun.reset();
+    m_shownTocRevision.reset();
     m_contentsShown = false;
     m_contents.setEntries({});
     emit detailsChanged();

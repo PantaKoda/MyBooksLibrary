@@ -220,7 +220,51 @@ QList<Migration> buildMigrations()
             page_index INTEGER NOT NULL CHECK (page_index >= 0),
             updated_at TEXT NOT NULL))"),
     };
-    return {v1, v2, v3, v4, v5};
+    Migration v6;
+    v6.version = 6;
+    v6.name = QStringLiteral("edited contents");
+    v6.statements = {
+        // The user's contents edits: immutable numbered revisions, each a full
+        // entry list based on one TOC run. Runs are never changed by edits.
+        // Deleting a run that revisions are based on fails (NO ACTION, checked
+        // at the end of the statement), so edits are never lost silently;
+        // deleting the book removes both through book_id.
+        QStringLiteral(R"(CREATE TABLE toc_edit_revisions (
+            id TEXT PRIMARY KEY,
+            book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+            number INTEGER NOT NULL CHECK (number >= 1),
+            base_run_id TEXT NOT NULL REFERENCES toc_runs(id) ON DELETE NO ACTION,
+            previous_revision_id TEXT REFERENCES toc_edit_revisions(id) ON DELETE SET NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE (book_id, number)))"),
+        // entry_key is stable across a book's revisions (parents refer to it);
+        // base_sdk_entry_id is the base run's entry it corresponds to, if any.
+        QStringLiteral(R"(CREATE TABLE toc_edit_entries (
+            id INTEGER PRIMARY KEY,
+            revision_id TEXT NOT NULL REFERENCES toc_edit_revisions(id) ON DELETE CASCADE,
+            entry_key TEXT NOT NULL,
+            base_sdk_entry_id TEXT,
+            entry_order INTEGER NOT NULL,
+            title TEXT NOT NULL CHECK (length(trim(title)) > 0),
+            hierarchy TEXT NOT NULL CHECK (hierarchy IN ('root', 'known_parent', 'unknown')),
+            parent_entry_key TEXT,
+            printed_label TEXT,
+            destination_state TEXT NOT NULL CHECK (destination_state IN ('resolved', 'ambiguous', 'unresolved')),
+            destination_page INTEGER CHECK (destination_page IS NULL OR destination_page >= 0),
+            source_toc_page INTEGER CHECK (source_toc_page IS NULL OR source_toc_page >= 0),
+            in_export_plan INTEGER NOT NULL CHECK (in_export_plan IN (0, 1)),
+            evidence_json TEXT NOT NULL DEFAULT '{}',
+            edits_json TEXT NOT NULL DEFAULT '[]',
+            removed INTEGER NOT NULL DEFAULT 0 CHECK (removed IN (0, 1)),
+            UNIQUE (revision_id, entry_key),
+            CHECK ((destination_state = 'resolved') = (destination_page IS NOT NULL)),
+            CHECK (hierarchy = 'known_parent' OR parent_entry_key IS NULL)))"),
+        QStringLiteral("CREATE INDEX toc_edit_entries_revision ON toc_edit_entries(revision_id, entry_order)"),
+        // The revision the book's contents come from; NULL: the active run's entries.
+        QStringLiteral("ALTER TABLE books ADD COLUMN active_toc_revision_id TEXT "
+                       "REFERENCES toc_edit_revisions(id) ON DELETE SET NULL"),
+    };
+    return {v1, v2, v3, v4, v5, v6};
 }
 
 } // namespace

@@ -4,6 +4,7 @@
 #include "catalog/catalog.h"
 #include "catalog/jobs.h"
 #include "catalog/library.h"
+#include "catalog/tocedits.h"
 #include "presentation/bookinspector.h"
 #include "presentation/booklistmodel.h"
 #include "presentation/joblistmodel.h"
@@ -211,6 +212,7 @@ private slots:
     void searchUpdatesWhenContentsArePublished();
     void correctionsFromTheInspector();
     void correctionsSurviveARerun();
+    void inspectorFollowsEditedContents();
 
 private:
     void openAndWait(LibraryController& c, const QString& root)
@@ -1031,6 +1033,92 @@ void TestLibraryController::correctionsSurviveARerun()
     QTRY_VERIFY_WITH_TIMEOUT(!c.busy(), 10000);
     QCOMPARE(valueOf(inspector, QStringLiteral("edition")), QStringLiteral("—"));
     QCOMPARE(inspector->contents()->entryCount(), 2);
+}
+
+// The inspector's contents tree follows an edit, keeping the edits after a
+// changed rerun, and returning to the analysis, although the run is the same.
+void TestLibraryController::inspectorFollowsEditedContents()
+{
+    QTemporaryDir dir;
+    auto opened = mbl::catalog::Library::open(dir.path());
+    QVERIFY(opened);
+    std::shared_ptr<mbl::catalog::Library> library(std::move(opened.value()));
+    using namespace mbl::domain;
+    const auto registered = library
+                                ->run([](QSqlDatabase& db) {
+                                    NewBook b;
+                                    b.asset.id = AssetId::create();
+                                    b.asset.sha256 = QString(64, u'7');
+                                    b.asset.byteSize = 1;
+                                    b.asset.pageCount = 20;
+                                    b.asset.managedPath = QStringLiteral("files/x/source.pdf");
+                                    b.originalFileName = QStringLiteral("x.pdf");
+                                    b.originalPath = b.originalFileName;
+                                    return mbl::catalog::registerBook(db, b);
+                                })
+                                .result();
+    QVERIFY2(registered, registered ? "" : qPrintable(registered.error().message));
+    const BookId book = registered.value();
+    const auto publish = [&](const QString& title) {
+        return library
+            ->run([book, title](QSqlDatabase& db) -> Result<RunId> {
+                auto t = mbl::catalog::requestTocRun(db, book);
+                if (!t)
+                    return t.error();
+                TocEntry e;
+                e.sdkEntryId = QStringLiteral("e1");
+                e.title = title;
+                e.hierarchy = HierarchyState::Root;
+                TocAnalysis toc{QStringLiteral("plan_ready"), false, {e}};
+                const RunIdentity run{t.value().sourceSha256, QStringLiteral("t"), QString(), QStringLiteral("{}"),
+                                      toc.outcome, std::nullopt};
+                return mbl::catalog::publishToc(db, t.value(), run, toc);
+            })
+            .result();
+    };
+    const auto first = publish(QStringLiteral("Chapter one"));
+    QVERIFY2(first, first ? "" : qPrintable(first.error().message));
+    const RunId run = first.value();
+
+    BookInspector inspector;
+    inspector.setLibrary(library);
+    QSignalSpy loaded(&inspector, &BookInspector::loaded);
+    const auto shownTitle = [&inspector] {
+        return inspector.contents()->data(inspector.contents()->index(0, 0), Qt::DisplayRole).toString();
+    };
+    inspector.select(book.toString());
+    QTRY_COMPARE_WITH_TIMEOUT(loaded.size(), 1, 5000);
+    QCOMPARE(shownTitle(), QStringLiteral("Chapter one"));
+
+    const auto change = [&](auto task) {
+        const qsizetype before = loaded.size();
+        QVERIFY(library->run(task).result());
+        inspector.reload();  // As LibraryController::refresh does.
+        QTRY_COMPARE_WITH_TIMEOUT(loaded.size(), before + 1, 5000);
+    };
+    // An edit: same run, new revision.
+    change([book, run](QSqlDatabase& db) {
+        TocEdit rename;
+        rename.entryKey = QStringLiteral("e1");
+        rename.title = QStringLiteral("Chapter 1: Beginnings");
+        return mbl::catalog::editToc(db, book, TocEditBase{run, std::nullopt}, {rename}).ok();
+    });
+    QCOMPARE(shownTitle(), QStringLiteral("Chapter 1: Beginnings"));
+
+    // A changed rerun keeps showing the edits; returning to the analysis shows it.
+    const auto second = publish(QStringLiteral("Chapter One"));
+    QVERIFY2(second, second ? "" : qPrintable(second.error().message));
+    const RunId rerun = second.value();
+    inspector.reload();
+    QTRY_COMPARE_WITH_TIMEOUT(loaded.size(), 3, 5000);
+    QCOMPARE(shownTitle(), QStringLiteral("Chapter 1: Beginnings"));
+    change([book, rerun](QSqlDatabase& db) {
+        const auto details = mbl::catalog::bookDetails(db, book);
+        if (!details || !details.value().tocRevision)
+            return false;
+        return mbl::catalog::useAnalyzedToc(db, book, TocEditBase{rerun, details.value().tocRevision->id}).ok();
+    });
+    QCOMPARE(shownTitle(), QStringLiteral("Chapter One"));
 }
 
 QTEST_GUILESS_MAIN(TestLibraryController)
