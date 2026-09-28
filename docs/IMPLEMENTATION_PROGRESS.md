@@ -42,7 +42,22 @@ M07 is split in three:
 | `tst_migrations::version5CatalogGainsEditedContents` (new) | A schema 5 catalog with a published run upgrades; the book shows the analyzed contents and can be edited |
 | Mutations, each reverted | Carrying edits over to a changed rerun: `changedRerunWaitsForTheUser` fails. No stale-base check: `staleOrInvalidEditsChangeNothing` fails. |
 
-**Not in this part:** the inspector UI for editing and reconciling (part 2b), and export plans from edited contents (M09).
+**Review fixes (PR #17 review of `4b5263b`):**
+1. *Should fix:* an entry added after a removed entry copied its `removed` flag and was silently hidden. A new entry is now hidden only when its **parent** is removed.
+2. *Should fix:* `BookInspector` rebuilt its contents tree only when the run changed, so an edit, keep or discard (same run) left the old entries shown. It now rebuilds when the run **or the revision** changes.
+3. *Consider:* `toc_edit_revisions.base_run_id` was `ON DELETE CASCADE`, so deleting a run would have silently deleted the edits based on it. It is now `ON DELETE NO ACTION`, checked at the end of the statement: deleting such a run fails, and deleting the book still removes everything through `book_id`. (Migration 6 is not released yet, so it is changed in place.)
+
+| Command | Result |
+| --- | --- |
+| `tst_tocedits::addedEntriesAreHiddenOnlyUnderARemovedParent` (new) | Adding after a removed "Index" gives a visible, counted, searchable entry. Adding among the sub-entries of a removed parent hides the new entry with them, and restoring the parent brings it back. |
+| `tst_tocedits::editsOutliveAttemptsToDeleteTheirRun` (new) | Deleting a run that a revision is based on fails, and the revision stays. Deleting the book removes the revisions, entries and runs. |
+| `tst_librarycontroller::inspectorFollowsEditedContents` (new) | The inspector tree shows the renamed entry after an edit on the same run, keeps the edits after a changed rerun, and shows the analysis again after a discard. |
+| Controls | With all three fixes reverted, each of the three new tests fails, as the review reproduced. |
+| `pwsh scripts/verify.ps1` (Release) and `-Configuration Debug` | VERIFY PASSED in both; 19/19 `ctest` suites; all smoke checks |
+
+**Not in this part:** the inspector UI for editing and reconciling (part 2b), and export plans from edited contents (M09). Also for part 2b, from the review:
+- the tree, `contentsSummaryOf` and `contentsNotesOf` still show and count removed entries, flagged but not distinguished;
+- an entry the user gave a page keeps the analysis's "no page found" reasons in its evidence.
 
 **Next action:** review of [PR #17](https://github.com/PantaKoda/MyBooksLibrary/pull/17). After it is merged: M07 part 2b, the editing and reconciliation UI.
 

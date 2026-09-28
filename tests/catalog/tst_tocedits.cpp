@@ -94,6 +94,8 @@ private slots:
     void editsAreRevisionsFollowedBySearchAndKept();
     void staleOrInvalidEditsChangeNothing();
     void removeAndRestoreFollowTheHierarchy();
+    void addedEntriesAreHiddenOnlyUnderARemovedParent();
+    void editsOutliveAttemptsToDeleteTheirRun();
     void identicalRerunCarriesTheEdits();
     void changedRerunWaitsForTheUser();
     void editsDuringAnalysisSurviveAndStaleRunsCannotReplaceThem();
@@ -353,6 +355,68 @@ void TestTocEdits::removeAndRestoreFollowTheHierarchy()
     d = details(book);
     QCOMPARE(find(*d.toc, QStringLiteral("Child"))->parentSdkEntryId, std::optional<QString>(QStringLiteral("x")));
     QCOMPARE(find(*d.toc, QStringLiteral("Child"))->edits, QStringList{QStringLiteral("level")});
+}
+
+// A new entry's visibility follows its parent, not the entry it was added after.
+void TestTocEdits::addedEntriesAreHiddenOnlyUnderARemovedParent()
+{
+    const BookId book = addBook(QStringLiteral("add.pdf"));
+    publish(book, analyzed(QStringLiteral("a")));
+    TocEdit appendix;
+    appendix.kind = TocEdit::Kind::Add;
+    appendix.entryKey = QStringLiteral("a4");  // After "Index", removed in the same save.
+    appendix.title = QStringLiteral("Appendix");
+    appendix.page = 45;
+    QVERIFY(edit(book, {simple(TocEdit::Kind::Remove, QStringLiteral("a4")), appendix}));
+    BookDetails d = details(book);
+    QVERIFY(!find(*d.toc, QStringLiteral("Appendix"))->removed);
+    QVERIFY(find(*d.toc, QStringLiteral("Index"))->removed);
+    QCOMPARE(d.summary.tocEntryCount, 4);
+    QCOMPARE(chapterHits(QStringLiteral("appendix")), QStringList{QStringLiteral("Appendix")});
+
+    // Added among the sub-entries of a removed parent: hidden with them.
+    TocEdit note;
+    note.kind = TocEdit::Kind::Add;
+    note.entryKey = QStringLiteral("a2");  // Under "1 Introduction".
+    note.title = QStringLiteral("1.2 Note");
+    QVERIFY(edit(book, {simple(TocEdit::Kind::Remove, QStringLiteral("a1")), note}));
+    d = details(book);
+    QVERIFY(find(*d.toc, QStringLiteral("1.2 Note"))->removed);
+    QVERIFY(chapterHits(QStringLiteral("note")).isEmpty());
+    // Restoring the parent brings it back with the others.
+    QVERIFY(edit(book, {simple(TocEdit::Kind::Restore, QStringLiteral("a1"))}));
+    QCOMPARE(chapterHits(QStringLiteral("note")), QStringList{QStringLiteral("1.2 Note")});
+}
+
+// A run that edits are based on cannot be deleted by itself (the edits would
+// silently disappear); deleting the whole book still removes everything.
+void TestTocEdits::editsOutliveAttemptsToDeleteTheirRun()
+{
+    const BookId book = addBook(QStringLiteral("delete.pdf"));
+    const RunId run = publish(book, analyzed(QStringLiteral("a")));
+    QVERIFY(edit(book, {rename(QStringLiteral("a3"), QStringLiteral("2 Networking with TCP"))}));
+    // The book's own pointer is cleared first, so only the revision refers to the run.
+    const bool deleted = db([book, run](QSqlDatabase& d) {
+        QSqlQuery q(d);
+        q.exec(QStringLiteral("UPDATE books SET active_toc_run_id = NULL WHERE id = '%1'").arg(book.toString()));
+        return q.exec(QStringLiteral("DELETE FROM toc_runs WHERE id = '%1'").arg(run.toString()));
+    });
+    QVERIFY(!deleted);
+    auto revisions = db([book](QSqlDatabase& s) { return catalog::tocRevisions(s, book); });
+    QCOMPARE(revisions.value().size(), 1);
+
+    const bool bookDeleted = db([book](QSqlDatabase& d) {
+        QSqlQuery q(d);
+        return q.exec(QStringLiteral("DELETE FROM books WHERE id = '%1'").arg(book.toString()));
+    });
+    QVERIFY(bookDeleted);
+    const int left = db([](QSqlDatabase& d) {
+        QSqlQuery q(d);
+        q.exec(QStringLiteral("SELECT (SELECT COUNT(*) FROM toc_edit_revisions) + (SELECT COUNT(*) FROM toc_edit_entries) "
+                              "+ (SELECT COUNT(*) FROM toc_runs)"));
+        return q.next() ? q.value(0).toInt() : -1;
+    });
+    QCOMPARE(left, 0);
 }
 
 void TestTocEdits::identicalRerunCarriesTheEdits()

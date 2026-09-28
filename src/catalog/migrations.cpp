@@ -226,11 +226,14 @@ QList<Migration> buildMigrations()
     v6.statements = {
         // The user's contents edits: immutable numbered revisions, each a full
         // entry list based on one TOC run. Runs are never changed by edits.
+        // Deleting a run that revisions are based on fails (NO ACTION, checked
+        // at the end of the statement), so edits are never lost silently;
+        // deleting the book removes both through book_id.
         QStringLiteral(R"(CREATE TABLE toc_edit_revisions (
             id TEXT PRIMARY KEY,
             book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
             number INTEGER NOT NULL CHECK (number >= 1),
-            base_run_id TEXT NOT NULL REFERENCES toc_runs(id) ON DELETE CASCADE,
+            base_run_id TEXT NOT NULL REFERENCES toc_runs(id) ON DELETE NO ACTION,
             previous_revision_id TEXT REFERENCES toc_edit_revisions(id) ON DELETE SET NULL,
             created_at TEXT NOT NULL,
             UNIQUE (book_id, number)))"),

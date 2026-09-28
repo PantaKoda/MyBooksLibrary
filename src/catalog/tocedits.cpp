@@ -270,7 +270,10 @@ Status apply(QList<Working>& list, const TocEdit& edit, const std::optional<int>
             const TocEntry& anchor = list.at(at).entry;
             e.hierarchy = anchor.hierarchy;
             e.parentSdkEntryId = anchor.parentSdkEntryId;
-            e.removed = anchor.removed;
+            // Visible unless its parent is removed; a removed neighbour does not hide it.
+            const auto parent = parentOf(anchor);
+            const qsizetype p = parent ? indexOf(list, *parent) : -1;
+            e.removed = p >= 0 && list.at(p).entry.removed;
             insertAt = at + 1;
             for (qsizetype d : descendantsOf(list, edit.entryKey))
                 insertAt = qMax(insertAt, d + 1);

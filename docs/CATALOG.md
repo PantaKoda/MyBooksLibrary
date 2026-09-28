@@ -72,6 +72,8 @@ Migrations live in `catalog/migrations.cpp`. `PRAGMA user_version` records the a
   - `keepTocEdits` saves the edited entries as a new revision on the newer run, no longer tied to its entries.
   - `useAnalyzedToc` shows the run's entries again, and also serves as "discard my edits".
   - Both check `base` like `editToc`. The revisions stay in the catalog (`tocRevisions`).
+- **Deleting a run** that a revision is based on fails (`ON DELETE NO ACTION`), so edits are never lost silently. Deleting the book removes its runs and revisions together.
+- **An added entry** is hidden only when its parent is removed, never because the entry it was added after is removed.
 
 ## Effective metadata
 

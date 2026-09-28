@@ -111,7 +111,8 @@ private:
     std::optional<domain::BookId> m_book;
     quint64 m_generation = 0;  // Tags loads; only the newest is applied.
     bool m_loading = false;
-    std::optional<domain::RunId> m_shownTocRun;
+    std::optional<domain::RunId> m_shownTocRun;            // The contents shown: run and edited revision.
+    std::optional<domain::TocRevisionId> m_shownTocRevision;
     bool m_contentsShown = false;
 
     QString m_title;
