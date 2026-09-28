@@ -10,6 +10,7 @@
 #include "presentation/joblistmodel.h"
 #include "presentation/librarycontroller.h"
 #include "presentation/searchcontroller.h"
+#include "presentation/toctreemodel.h"
 #include "processing/contentsanalyzer.h"
 #include "processing/metadataextractor.h"
 #include "storage/filecopy.h"
@@ -213,6 +214,7 @@ private slots:
     void correctionsFromTheInspector();
     void correctionsSurviveARerun();
     void inspectorFollowsEditedContents();
+    void contentsEditsFromTheInspector();
 
 private:
     void openAndWait(LibraryController& c, const QString& root)
@@ -1119,6 +1121,177 @@ void TestLibraryController::inspectorFollowsEditedContents()
         return mbl::catalog::useAnalyzedToc(db, book, TocEditBase{rerun, details.value().tocRevision->id}).ok();
     });
     QCOMPARE(shownTitle(), QStringLiteral("Chapter One"));
+}
+
+// Contents edits through the inspector: each command, what the tree then
+// says, refusals before saving, a stale view, and reconciliation.
+void TestLibraryController::contentsEditsFromTheInspector()
+{
+    using namespace mbl::domain;
+    using mbl::presentation::TocTreeModel;
+    QTemporaryDir dir;
+    auto opened = mbl::catalog::Library::open(dir.path());
+    QVERIFY(opened);
+    std::shared_ptr<mbl::catalog::Library> library(std::move(opened.value()));
+    const auto registered = library
+                                ->run([](QSqlDatabase& db) {
+                                    NewBook b;
+                                    b.asset.id = AssetId::create();
+                                    b.asset.sha256 = QString(64, u'8');
+                                    b.asset.byteSize = 1;
+                                    b.asset.pageCount = 20;
+                                    b.asset.managedPath = QStringLiteral("files/y/source.pdf");
+                                    b.originalFileName = QStringLiteral("y.pdf");
+                                    b.originalPath = b.originalFileName;
+                                    return mbl::catalog::registerBook(db, b);
+                                })
+                                .result();
+    QVERIFY(registered);
+    const BookId book = registered.value();
+    const auto publish = [&](const QList<TocEntry>& entries) {
+        return library
+            ->run([book, entries](QSqlDatabase& db) -> Result<RunId> {
+                auto t = mbl::catalog::requestTocRun(db, book);
+                if (!t)
+                    return t.error();
+                TocAnalysis toc{QStringLiteral("plan_ready"), false, entries};
+                const RunIdentity run{t.value().sourceSha256, QStringLiteral("t"), QString(), QStringLiteral("{}"),
+                                      toc.outcome, std::nullopt};
+                return mbl::catalog::publishToc(db, t.value(), run, toc);
+            })
+            .result();
+    };
+    const auto entry = [](const QString& id, int order, const QString& title, std::optional<int> page) {
+        TocEntry e;
+        e.sdkEntryId = id;
+        e.order = order;
+        e.title = title;
+        e.hierarchy = HierarchyState::Root;
+        if (page) {
+            e.destinationState = DestinationState::Resolved;
+            e.destinationPage = page;
+        } else {
+            e.evidence.destinationReasons << QStringLiteral("No printed page number matched.");
+        }
+        return e;
+    };
+    QVERIFY(publish({entry(QStringLiteral("e1"), 0, QStringLiteral("Intro"), 0),
+                     entry(QStringLiteral("e2"), 1, QStringLiteral("Netwrking"), std::nullopt),
+                     entry(QStringLiteral("e3"), 2, QStringLiteral("Index"), 10)}));
+
+    BookInspector inspector;
+    inspector.setLibrary(library);
+    QSignalSpy loaded(&inspector, &BookInspector::loaded);
+    QSignalSpy corrected(&inspector, &BookInspector::corrected);
+    TocTreeModel* tree = inspector.contents();
+    const auto role = [tree](const QString& key, int r) { return tree->data(tree->indexOfEntry(key), r); };
+    inspector.select(book.toString());
+    QTRY_COMPARE_WITH_TIMEOUT(loaded.size(), 1, 5000);
+    QVERIFY(!inspector.contentsEdited());
+    QCOMPARE(inspector.contentsEditText(), QString());
+    const auto waitSaved = [&](qsizetype count) {
+        QTRY_COMPARE_WITH_TIMEOUT(corrected.size(), count, 5000);
+        QTRY_VERIFY_WITH_TIMEOUT(!inspector.saving() && !inspector.loading(), 5000);
+    };
+
+    // Rename and set a page: the analysis's reasons for "no page" are no longer shown.
+    const QString id = book.toString();
+    inspector.renameEntry(id, QStringLiteral("e2"), QStringLiteral("  Networking "));
+    waitSaved(1);
+    QCOMPARE(role(QStringLiteral("e2"), TocTreeModel::TitleRole).toString(), QStringLiteral("Networking"));
+    QCOMPARE(role(QStringLiteral("e2"), TocTreeModel::EditedTextRole).toString(), QStringLiteral("Changed by you: title"));
+    QVERIFY(inspector.contentsEdited());
+    QCOMPARE(inspector.contentsEditText(), QStringLiteral("You edited these contents (version 1). Search uses your version."));
+    QVERIFY(role(QStringLiteral("e2"), TocTreeModel::DetailRole).toString().contains(QStringLiteral("No printed page number matched.")));
+    inspector.setEntryPage(id, QStringLiteral("e2"), QStringLiteral("5"));
+    waitSaved(2);
+    QCOMPARE(role(QStringLiteral("e2"), TocTreeModel::PageRole).toInt(), 5);
+    QVERIFY(role(QStringLiteral("e2"), TocTreeModel::StateTextRole).toString().startsWith(QStringLiteral("page set by you")));
+    const QString detail = role(QStringLiteral("e2"), TocTreeModel::DetailRole).toString();
+    QVERIFY2(detail.contains(QStringLiteral("You set its page to 5.")), qPrintable(detail));
+    QVERIFY2(!detail.contains(QStringLiteral("No printed page number matched.")), qPrintable(detail));
+    QVERIFY(!role(QStringLiteral("e2"), TocTreeModel::UncertainRole).toBool());
+
+    // Refused before saving.
+    for (const char* page : {"0", "21", "x", ""}) {
+        inspector.setEntryPage(id, QStringLiteral("e2"), QLatin1String(page));
+        QVERIFY2(!inspector.contentsError().isEmpty(), page);
+        QVERIFY(!inspector.saving());
+    }
+    QCOMPARE(inspector.contentsError(), QStringLiteral("Enter a page number from 1 to 20."));
+    inspector.renameEntry(id, QStringLiteral("e2"), QStringLiteral("  "));
+    QVERIFY(!inspector.contentsError().isEmpty());
+    inspector.renameEntry(BookId::create().toString(), QStringLiteral("e2"), QStringLiteral("X"));
+    QCOMPARE(inspector.contentsError(), QStringLiteral("Select the book again to change its contents."));
+    QTest::qWait(100);
+    QCOMPARE(corrected.size(), 2);
+
+    // Levels: under the entry above it, and back.
+    QVERIFY(!inspector.canIndent(QStringLiteral("e1")));  // Nothing above it.
+    QVERIFY(inspector.canIndent(QStringLiteral("e2")));
+    QVERIFY(!inspector.canOutdent(QStringLiteral("e2")));
+    inspector.indentEntry(id, QStringLiteral("e2"));
+    waitSaved(3);
+    QCOMPARE(tree->parent(tree->indexOfEntry(QStringLiteral("e2"))), tree->indexOfEntry(QStringLiteral("e1")));
+    QVERIFY(inspector.canOutdent(QStringLiteral("e2")));
+    QVERIFY(!inspector.canIndent(QStringLiteral("e2")));  // First under "Intro".
+    inspector.outdentEntry(id, QStringLiteral("e2"));
+    waitSaved(4);
+    QVERIFY(!tree->parent(tree->indexOfEntry(QStringLiteral("e2"))).isValid());
+    QCOMPARE(role(QStringLiteral("e2"), TocTreeModel::EditedTextRole).toString(),
+             QStringLiteral("Changed by you: title, page, level"));
+
+    // Add, remove and restore.
+    inspector.addEntryAfter(id, QStringLiteral("e3"), QStringLiteral("Glossary"), QString());
+    waitSaved(5);
+    QCOMPARE(tree->entryCount(), 4);
+    QCOMPARE(inspector.contentsSummary(), QStringLiteral("4 contents entries, 3 with a confirmed page."));
+    inspector.removeEntry(id, QStringLiteral("e3"));
+    waitSaved(6);
+    QVERIFY(role(QStringLiteral("e3"), TocTreeModel::RemovedRole).toBool());
+    QCOMPARE(role(QStringLiteral("e3"), TocTreeModel::StateTextRole).toString(), QStringLiteral("removed by you · not searched"));
+    QCOMPARE(inspector.contentsSummary(), QStringLiteral("3 contents entries, 2 with a confirmed page."));
+    QVERIFY(inspector.contentsNotes().contains(QStringLiteral("Removed by you: 1 (kept, not searched).")));
+    inspector.restoreEntry(id, QStringLiteral("e3"));
+    waitSaved(7);
+    QVERIFY(!role(QStringLiteral("e3"), TocTreeModel::RemovedRole).toBool());
+
+    // A change made elsewhere first: nothing saved, a message, and the new contents shown.
+    QVERIFY(library
+                ->run([book](QSqlDatabase& db) {
+                    const auto d = mbl::catalog::bookDetails(db, book).value();
+                    TocEdit rename;
+                    rename.entryKey = QStringLiteral("e1");
+                    rename.title = QStringLiteral("Introduction");
+                    return mbl::catalog::editToc(db, book, TocEditBase{d.tocRun, d.tocRevision->id}, {rename}).ok();
+                })
+                .result());
+    const qsizetype before = loaded.size();
+    inspector.renameEntry(id, QStringLiteral("e3"), QStringLiteral("Index of terms"));
+    QTRY_VERIFY_WITH_TIMEOUT(inspector.contentsError().startsWith(QStringLiteral("The contents changed while you were editing")), 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(loaded.size() > before && !inspector.loading(), 5000);
+    QCOMPARE(role(QStringLiteral("e1"), TocTreeModel::TitleRole).toString(), QStringLiteral("Introduction"));
+    QCOMPARE(role(QStringLiteral("e3"), TocTreeModel::TitleRole).toString(), QStringLiteral("Index"));
+    QCOMPARE(corrected.size(), 7);
+
+    // A newer, different analysis: the edits stay until the user chooses.
+    QVERIFY(publish({entry(QStringLiteral("f1"), 0, QStringLiteral("Intro"), 0),
+                     entry(QStringLiteral("f2"), 1, QStringLiteral("Networking basics"), 4)}));
+    inspector.reload();
+    QTRY_VERIFY_WITH_TIMEOUT(inspector.contentsNeedReconciliation(), 5000);
+    QCOMPARE(inspector.contentsEditText(),
+             QStringLiteral("A newer analysis found different contents (2 entries). Your edited contents are still shown "
+                            "and searched until you choose."));
+    QCOMPARE(role(QStringLiteral("e1"), TocTreeModel::TitleRole).toString(), QStringLiteral("Introduction"));
+    inspector.keepContentsEdits(id);
+    waitSaved(8);
+    QVERIFY(!inspector.contentsNeedReconciliation());
+    QVERIFY(inspector.contentsEdited());
+    inspector.useAnalyzedContents(id);
+    waitSaved(9);
+    QVERIFY(!inspector.contentsEdited());
+    QCOMPARE(tree->entryCount(), 2);
+    QCOMPARE(role(QStringLiteral("f2"), TocTreeModel::TitleRole).toString(), QStringLiteral("Networking basics"));
 }
 
 QTEST_GUILESS_MAIN(TestLibraryController)

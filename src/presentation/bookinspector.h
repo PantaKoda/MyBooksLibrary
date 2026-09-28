@@ -8,17 +8,26 @@
 // value, deliberately cleared, or returned to the document's value (Auto).
 // They are written on the database thread with the search index in the same
 // transaction (catalog::setOverride) and never touch the PDF.
+//
+// Contents edits: entries of the shown book's contents can be renamed, given
+// or cleared a page, moved a level, added, removed and restored; each save is
+// a catalog revision (catalog/tocedits.h), checked against the contents on
+// screen. After a newer analysis changed the entries, the user keeps the
+// edits or uses the analysis.
 #pragma once
 
 #include "domain/book.h"
 #include "domain/metadata.h"
+#include "domain/result.h"
 #include "presentation/toctreemodel.h"
 
 #include <QObject>
 #include <QQmlEngine>
+#include <QSqlDatabase>
 #include <QStringList>
 #include <QVariantList>
 
+#include <functional>
 #include <memory>
 #include <optional>
 
@@ -51,6 +60,11 @@ class BookInspector : public QObject {
     Q_PROPERTY(QStringList contentsNotes READ contentsNotes NOTIFY detailsChanged)
     Q_PROPERTY(mbl::presentation::TocTreeModel* contents READ contents CONSTANT)
     Q_PROPERTY(QString error READ error NOTIFY detailsChanged)
+    Q_PROPERTY(bool contentsEdited READ contentsEdited NOTIFY detailsChanged)
+    Q_PROPERTY(bool contentsNeedReconciliation READ contentsNeedReconciliation NOTIFY detailsChanged)
+    // Plain-language state of edited contents; empty when not edited.
+    Q_PROPERTY(QString contentsEditText READ contentsEditText NOTIFY detailsChanged)
+    Q_PROPERTY(QString contentsError READ contentsError NOTIFY contentsErrorChanged)
 
 public:
     explicit BookInspector(QObject* parent = nullptr);
@@ -74,6 +88,28 @@ public:
     Q_INVOKABLE void useDocumentValue(const QString& bookId, const QString& field);  // Remove the correction.
     Q_INVOKABLE void dismissCorrectionError() { setCorrectionError({}); }
 
+    // Contents edits of the shown book, by entry key (TocTreeModel's
+    // entryId). Page numbers are as shown (1 = first page). If the contents
+    // changed since they were shown, nothing is saved, contentsError says so
+    // and the contents are reloaded.
+    Q_INVOKABLE void renameEntry(const QString& bookId, const QString& key, const QString& title);
+    Q_INVOKABLE void setEntryPage(const QString& bookId, const QString& key, const QString& pageNumber);
+    Q_INVOKABLE void clearEntryPage(const QString& bookId, const QString& key);
+    Q_INVOKABLE void indentEntry(const QString& bookId, const QString& key);   // Under the entry above it at its level.
+    Q_INVOKABLE void outdentEntry(const QString& bookId, const QString& key);  // Up one level.
+    Q_INVOKABLE void removeEntry(const QString& bookId, const QString& key);   // With its sub-entries.
+    Q_INVOKABLE void restoreEntry(const QString& bookId, const QString& key);
+    // A sibling after the entry and its sub-entries; an empty page number means no page.
+    Q_INVOKABLE void addEntryAfter(const QString& bookId, const QString& key, const QString& title,
+                                   const QString& pageNumber);
+    // After a newer analysis changed the entries: keep the edited contents,
+    // or show the analysis (also "discard my edits").
+    Q_INVOKABLE void keepContentsEdits(const QString& bookId);
+    Q_INVOKABLE void useAnalyzedContents(const QString& bookId);
+    Q_INVOKABLE bool canIndent(const QString& key) const;
+    Q_INVOKABLE bool canOutdent(const QString& key) const;
+    Q_INVOKABLE void dismissContentsError() { setContentsError({}); }
+
     QString bookId() const;
     bool hasBook() const { return m_book.has_value(); }
     bool loading() const { return m_loading; }
@@ -87,6 +123,10 @@ public:
     QVariantList contributorRoles() const;
     bool saving() const { return m_saving > 0; }
     QString correctionError() const { return m_correctionError; }
+    bool contentsEdited() const { return m_contentsEdited; }
+    bool contentsNeedReconciliation() const { return m_contentsNeedReconciliation; }
+    QString contentsEditText() const { return m_contentsEditText; }
+    QString contentsError() const { return m_contentsError; }
 
 signals:
     void bookChanged();
@@ -95,6 +135,7 @@ signals:
     void loaded();  // A load for the current selection was applied.
     void savingChanged();
     void correctionErrorChanged();
+    void contentsErrorChanged();
     // A correction of `bookId` was saved (its list row and search results change).
     void corrected(const QString& bookId);
 
@@ -106,6 +147,14 @@ private:
     void setLoading(bool loading);
     void save(const QString& bookId, const QString& field, const domain::MetadataOverride& value);
     void setCorrectionError(const QString& error);
+    void setContentsError(const QString& error);
+    // Saves a contents change of the shown book against the contents on screen.
+    using ContentsChange = std::function<domain::Status(QSqlDatabase&, const domain::BookId&, const domain::TocEditBase&)>;
+    void changeContents(const QString& bookId, const ContentsChange& change);
+    void editContents(const QString& bookId, const QList<domain::TocEdit>& edits);
+    std::optional<int> pageIndexOf(const QString& pageNumber);  // Sets contentsError when invalid.
+    const domain::TocEntry* shownEntry(const QString& key) const;
+    std::optional<QString> previousSiblingOf(const domain::TocEntry& entry) const;
 
     std::shared_ptr<catalog::Library> m_library;
     std::optional<domain::BookId> m_book;
@@ -113,6 +162,8 @@ private:
     bool m_loading = false;
     std::optional<domain::RunId> m_shownTocRun;            // The contents shown: run and edited revision.
     std::optional<domain::TocRevisionId> m_shownTocRevision;
+    QList<domain::TocEntry> m_shownEntries;  // The contents the tree shows.
+    std::optional<int> m_pageCount;
     bool m_contentsShown = false;
 
     QString m_title;
@@ -121,8 +172,12 @@ private:
     QString m_contentsSummary;
     QStringList m_contentsNotes;
     QString m_error;
-    int m_saving = 0;  // Corrections in flight.
+    int m_saving = 0;  // Corrections and contents edits in flight.
     QString m_correctionError;
+    bool m_contentsEdited = false;
+    bool m_contentsNeedReconciliation = false;
+    QString m_contentsEditText;
+    QString m_contentsError;
     TocTreeModel m_contents;
 };
 

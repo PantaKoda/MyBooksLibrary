@@ -13,7 +13,7 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | SDK 0.3.0 update | Merged | `chore/sdk-0.3.0` / [PR #11](https://github.com/PantaKoda/MyBooksLibrary/pull/11), merge `a4b7d59` | See "SDK 0.3.0 update" |
 | M05 Contents | Merged: part 1 [PR #12](https://github.com/PantaKoda/MyBooksLibrary/pull/12) (merge `9feb9b3`); part 2 [PR #13](https://github.com/PantaKoda/MyBooksLibrary/pull/13) (merge `8ba9f49`) | `feat/m05-a4-contents-analysis`; `feat/m05-presentation-contents-inspector` | See "M05" |
 | M06 Search/read | Merged: part 1 [PR #14](https://github.com/PantaKoda/MyBooksLibrary/pull/14) (merge `c8dc23e`); part 2 [PR #15](https://github.com/PantaKoda/MyBooksLibrary/pull/15) (merge `e964184`) | `feat/m06-presentation-search`; `feat/m06-reader-chapter-navigation` | See "M06" |
-| M07 Corrections/reruns | Part 1 Merged ([PR #16](https://github.com/PantaKoda/MyBooksLibrary/pull/16), merge `152eb8c`); part 2a AwaitingReview ([PR #17](https://github.com/PantaKoda/MyBooksLibrary/pull/17), contents edits in catalog and search); part 2b (editing UI) NotStarted | `feat/m07-presentation-metadata-corrections`; `feat/m07-a2-toc-edits` | See "M07" |
+| M07 Corrections/reruns | Merged: part 1 [PR #16](https://github.com/PantaKoda/MyBooksLibrary/pull/16) (merge `152eb8c`); part 2a [PR #17](https://github.com/PantaKoda/MyBooksLibrary/pull/17) (merge `c215319`). Part 2b (editing UI) InProgress | `feat/m07-presentation-metadata-corrections`; `feat/m07-a2-toc-edits`; `feat/m07-presentation-toc-editing` | See "M07" |
 | M08–M11 | NotStarted | | |
 
 ## M07 — Corrections and reruns
@@ -22,6 +22,38 @@ M07 is split in three:
 - **Part 1** (merged): metadata corrections in the inspector, and reruns started by the user.
 - **Part 2a** (A2 + A3): contents edits in the catalog and search.
 - **Part 2b** (presentation): editing the contents and reconciling in the inspector.
+
+### Part 2b: editing contents and reconciling in the inspector (presentation)
+
+**Scope:**
+- **`BookInspector`:**
+  - contents commands `renameEntry`, `setEntryPage`, `clearEntryPage`, `indentEntry`, `outdentEntry`, `removeEntry`, `restoreEntry` and `addEntryAfter`, plus `keepContentsEdits` and `useAnalyzedContents`;
+  - `canIndent` and `canOutdent`;
+  - the properties `contentsEdited`, `contentsNeedReconciliation`, `contentsEditText` and `contentsError`.
+  - Each change carries the run and revision on screen. A stale one is refused with a message, and the contents reload.
+- **Summary and notes** leave out removed entries and count edits.
+- **`TocTreeModel`:** roles `removed` and `editedText`; state and details say what the user changed, and a page or level the user set replaces the analysis's reasons (review note of PR #17); `indexOfEntry(key)`.
+- **`BookListModel`:** "(edited)" and "(edited; a new analysis to review)".
+- **`BookInspectorPane.qml`:**
+  - the edit bar on the selected entry, with an entry dialog for rename, page and add;
+  - the banner, with Keep my edits / Use the new analysis, or Discard my edits… after a confirmation;
+  - removed entries struck through;
+  - the edited entry made current again after the tree is rebuilt.
+
+**Touched paths:** `src/presentation/`, `qml/inspector/BookInspectorPane.qml`, `tests/presentation/`, `docs/`.
+
+| Command | Result |
+| --- | --- |
+| `pwsh scripts/verify.ps1` (Release) and `-Configuration Debug` | VERIFY PASSED in both; 19/19 `ctest` suites; all smoke checks |
+| `tst_librarycontroller::contentsEditsFromTheInspector` (new) | **Page reasons:** after "Set page", the analysis's "No printed page number matched." is gone, and "You set its page to 5." and "page set by you" are shown.<br>**Refused before saving:** pages 0, 21, `x` and empty in a 20-page book ("Enter a page number from 1 to 20."), a blank title, and another book.<br>**Levels:** Indent goes under the entry above; Outdent returns; `canIndent` and `canOutdent` are right.<br>**Add, remove, restore:** the summary counts without removed entries, and the notes list removed entries.<br>**Stale view:** a change made elsewhere first gives "The contents changed while you were editing…", nothing is saved, and the new contents show.<br>**Newer analysis:** a different analysis shows the reconciliation text; Keep and then Use the new analysis both work. |
+| `tst_inspectorpane::contentsEditingInThePane` (new, real QML) | Renaming the **second** entry through the dialog keeps it current after the rebuild. A page outside the book keeps the dialog open with the reason. The banner appears; Discard, after confirming, shows the analysis again. |
+| Mutations, each reverted | Showing the analysis's page reasons for a page the user set: `contentsEditsFromTheInspector` fails. Not reselecting the edited entry: `contentsEditingInThePane` fails. The first version of the pane test used a one-entry book and did not catch this; it now edits the second entry. |
+| `all_qmllint`; QML warnings in the pane tests | None. A binding loop in the new discard dialog, seen in the test output, was fixed. |
+| `appMyBooksLibrary --library C:\MBL-demo-Contents --import contents-book.pdf --inspect-first --screenshot docs/images/m07-contents-editing.png` (Release, real SDK) | Exit 0. The edit bar is shown under the entry's reasons; Indent and Outdent are unavailable for the first top-level entry. |
+
+**Not verified by hand:** clicking through the edit bar and dialogs with the mouse and keyboard, and screen readers.
+
+**Next action:** hand over the PR for review. After it is merged, M07 is complete; next is M08, organization (collections and Trash).
 
 ### Part 2a: contents edits in the catalog and search (A2 + A3)
 
@@ -59,7 +91,7 @@ M07 is split in three:
 - the tree, `contentsSummaryOf` and `contentsNotesOf` still show and count removed entries, flagged but not distinguished;
 - an entry the user gave a page keeps the analysis's "no page found" reasons in its evidence.
 
-**Next action:** review of [PR #17](https://github.com/PantaKoda/MyBooksLibrary/pull/17). After it is merged: M07 part 2b, the editing and reconciliation UI.
+**Next action:** merged. Then M07 part 2b.
 
 ### Part 1: metadata corrections and reruns (presentation + A2)
 

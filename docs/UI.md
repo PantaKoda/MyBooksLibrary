@@ -9,9 +9,9 @@
 | `LibraryController` and processing | same | Once the library is open, it creates the `ProcessingCoordinator` (docs/PROCESSING.md), runs job recovery, and then starts it. Coordinator signals update the models on the GUI thread: `jobChanged` updates one row, and `metadataPublished` reloads the book list. `refresh()` loads the books, each book's latest job (`catalog::latestJobs`, one window-function pass), the 100 most recent jobs and **every open job** in one database task. Refreshes are coalesced: one runs at a time, and calls made meanwhile schedule a single further one. |
 | `BookListModel` | `src/presentation/booklistmodel.*` | GUI-owned list of copied `BookSummary` values. Roles: `bookId`, `title`, `titleFromFileName`, `contributors`, `processingState`. The processing state combines what the catalog holds with the book's latest metadata job. |
 | `JobListModel` | `src/presentation/joblistmodel.*` | GUI-owned activity list, newest first, capped at 200 finished rows. Roles: `jobId`, `bookId`, `bookTitle`, `kindText`, `state`, `stateText`, `detail`, `running`, `canCancel`, `canRetry`. Properties: `pendingCount` and a one-line `summary`. Updates older than the row shown (by `updatedAt`) are ignored, so a late snapshot cannot undo a newer state. |
-| `BookInspector` | `src/presentation/bookinspector.*` | The selected book, loaded on the database thread: effective metadata with where each value came from, the evidence and candidates behind it (at most five candidates, then a count), and the contents summary and notes. Loads are tagged, so only the newest selection or reload is applied. It reloads after each book-list refresh, and rebuilds the tree only when the active contents run changed, so expanded branches and the current entry survive other updates. |
-| `TocTreeModel` | `src/presentation/toctreemodel.*` | The **catalog's** contents as a tree (never the PDF's own bookmarks). It is built in two passes, so a parent may be listed after its child. A missing parent, a self-reference or a cycle keeps the entry at the top level with the note "parent not found"; an entry below a cycle member stays attached; Unknown hierarchy stays at the top level. Roles: title, page text, physical page (index + 1), source page, printed label, state text, uncertain, in plan, plain-language details and technical details. |
-| `BookInspectorPane.qml` | `qml/inspector/` | The inspector: title and file, then two tabs. **Title and authors** shows each field's value and source, with "Why?" revealing its evidence and candidates. **Contents** shows the summary, the notes, the tree, and the selected entry's reasons. Display only. |
+| `BookInspector` | `src/presentation/bookinspector.*` | The selected book, loaded on the database thread: effective metadata with where each value came from, the evidence and candidates behind it (at most five candidates, then a count), and the contents summary and notes. Loads are tagged, so only the newest selection or reload is applied. It reloads after each book-list refresh, and rebuilds the tree only when the contents changed (a new run, or an edited revision saved, kept or discarded), so expanded branches and the current entry survive other updates. It carries the metadata corrections (M07 part 1) and the contents edits (part 2b), each checked before saving; a contents edit also carries the run and revision on screen, so a stale one is refused and the contents are reloaded. |
+| `TocTreeModel` | `src/presentation/toctreemodel.*` | The **catalog's** contents as a tree (never the PDF's own bookmarks). It is built in two passes, so a parent may be listed after its child. A missing parent, a self-reference or a cycle keeps the entry at the top level with the note "parent not found"; an entry below a cycle member stays attached; Unknown hierarchy stays at the top level. Roles: title, page text, physical page (index + 1), source page, printed label, state text, uncertain, in plan, plain-language details, technical details, removed, and what the user changed. A page or level the user set replaces the analysis's reasons for it. `indexOfEntry(key)` finds an entry again after a rebuild. |
+| `BookInspectorPane.qml` | `qml/inspector/` | The inspector: title and file, then two tabs. **Title and authors** shows each field's value and source, with "Why?" revealing its evidence and candidates. **Contents** shows the summary, the notes, a banner for edited contents, the tree, and the selected entry's reasons and edit actions. Corrections and edits open dialogs; all changes go through `BookInspector`. |
 | `SearchController`, `SearchResultsModel` | `src/presentation/search*` | The search field: debounced, newest request wins, paginated, re-run after catalog changes. See SEARCH.md, "In the application". |
 | `SearchResultsView.qml` | `qml/search/` | Results: book, how it matched, its processing state, and chapter hits with the physical page, or "Page not found" and where it is listed. Choosing a result shows the book in the inspector. |
 | `ReaderController` | `src/reader/readercontroller.*` | The reading session: the open book, the document, the requested and shown pages (physical indices), and the saved reading position. It owns document lifetime; see READER.md, "The embedded reader". |
@@ -52,6 +52,17 @@
   - Tree rows show the physical page ("Page 4", although it is printed "1"), "Page 5 or 10?" for ambiguous entries, or "Page not found". Nothing is guessed.
   - The selected entry's reasons are in plain language ("Listed on page 3 of the PDF", "Left out of the bookmarks: …"), with technical details on request.
   - The selected entry offers **Open chapter** (its physical page) and **Show contents page *n*** (the page where the contents list it). They are two different actions; an unresolved entry offers only the second.
+  - **Correcting metadata (M07):** each field has **Correct**. The dialog offers Save, **Leave empty** (stays empty even if the document has a value) and **Use the document's value**. A corrected field shows "The document says: …". The **More** menu reads the title and authors or the contents again; corrections stay.
+  - **Editing contents (M07):** the selected entry offers:
+    - **Rename…** and **Set page…** or **Change page…** (the page as shown in the reader);
+    - **No page**;
+    - **Indent** (under the entry above it at its level) and **Outdent**;
+    - **Add after…**;
+    - **Remove**, which removes the entry and its sub-entries (kept, struck through, not searched), and **Restore**.
+
+    Each save is a new version of the contents, and the edited entry stays selected. The entry says what you changed ("Changed by you: title, page"), and a page you set replaces the analysis's reasons.
+  - **Edited contents** show a banner: "You edited these contents (version *n*). Search uses your version." with **Discard my edits…** (after confirming, the analysis is shown again).
+  - **When a newer analysis finds different contents,** the edits stay shown and searched, and the banner offers **Keep my edits** or **Use the new analysis**. Nothing is reconciled automatically. The book list says "(edited; a new analysis to review)".
 - **Reading:** the reader replaces the library view while a book is open, and "Library" returns.
   - A book opens where it was last read: double-click it in the list, or use **Read** in the inspector.
   - A chapter opens at its physical page ("Open chapter" in the inspector; "Open" on a search hit).
@@ -61,7 +72,7 @@
 
 ## Not yet
 
-Editing metadata and contents (M07), restoring a duplicate from Trash (M08), and keyboard shortcuts beyond list navigation.
+Comparing a newer analysis with the edited contents entry by entry, browsing earlier versions of the contents, restoring a duplicate from Trash (M08), and keyboard shortcuts beyond list navigation.
 
 ## Screenshots (Release build, `--screenshot`, library at `C:\MBL-demo\Library`)
 
@@ -84,6 +95,10 @@ After M05 part 1, with the same three test PDFs: each book shows its metadata st
 The inspector's Contents tab after importing `contents-book.pdf` (Release, real SDK, `--inspect-first`):
 
 ![Inspector contents](images/m05-inspector-contents.png)
+
+The Contents tab with an entry selected: its reasons, Open chapter and Show contents page, and the edit actions. Indent and Outdent are unavailable for the first top-level entry (Release, real SDK, `--inspect-first`, library at `C:\MBL-demo-Contents`):
+
+![Contents editing](images/m07-contents-editing.png)
 
 Searching "tcp/ip" after importing the three test PDFs: a contents-only match, with its physical page (Release, real SDK, `--search tcp/ip --inspect-first`):
 

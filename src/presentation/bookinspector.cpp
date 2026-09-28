@@ -3,6 +3,7 @@
 #include "catalog/catalog.h"
 #include "catalog/jobs.h"
 #include "catalog/library.h"
+#include "catalog/tocedits.h"
 
 #include <QCoreApplication>
 #include <QFuture>
@@ -171,14 +172,20 @@ QString contentsSummaryOf(const std::optional<TocAnalysis>& toc)
     }
     if (toc->outcome == QLatin1String("search_incomplete"))
         return tr("No printed contents found, but some pages could not be read.");
-    if (n == 0)
-        return tr("No contents entries.");
     int resolved = 0;
-    for (const TocEntry& e : toc->entries)
+    int shown = 0;
+    for (const TocEntry& e : toc->entries) {
+        if (e.removed)
+            continue;
+        ++shown;
         resolved += e.destinationState == DestinationState::Resolved ? 1 : 0;
-    if (resolved == n)
-        return trn("%n contents entries, every page confirmed.", n);
-    return trn("%n contents entries", n) + QStringLiteral(", ")
+    }
+    if (shown == 0)
+        return n == 0 ? tr("No contents entries.") : tr("Every contents entry was removed.");
+    const int m = shown;
+    if (resolved == m)
+        return trn("%n contents entries, every page confirmed.", m);
+    return trn("%n contents entries", m) + QStringLiteral(", ")
            + tr("%1 with a confirmed page.").arg(resolved);
 }
 
@@ -190,12 +197,24 @@ QStringList contentsNotesOf(const std::optional<TocAnalysis>& toc)
     int ambiguous = 0;
     int unresolved = 0;
     int unknownLevel = 0;
+    int removed = 0;
+    int edited = 0;
     for (const TocEntry& e : toc->entries) {
+        if (e.removed) {
+            ++removed;
+            continue;
+        }
+        edited += e.edits.isEmpty() ? 0 : 1;
         ambiguous += e.destinationState == DestinationState::Ambiguous ? 1 : 0;
         unresolved += e.destinationState == DestinationState::Unresolved ? 1 : 0;
         unknownLevel += e.hierarchy == HierarchyState::Unknown ? 1 : 0;
     }
-    const QString of = QStringLiteral(" %1 of %2.").arg(QStringLiteral("%1"), QString::number(toc->entries.size()));
+    const qsizetype shown = toc->entries.size() - removed;
+    const QString of = QStringLiteral(" %1 of %2.").arg(QStringLiteral("%1"), QString::number(shown));
+    if (edited)
+        notes << trn("Changed or added by you: %n.", edited);
+    if (removed)
+        notes << trn("Removed by you: %n (kept, not searched).", removed);
     if (ambiguous)
         notes << tr("More than one possible page:") + of.arg(ambiguous);
     if (unresolved)
@@ -246,6 +265,7 @@ void BookInspector::select(const QString& bookId)
     m_shownTocRevision.reset();
     m_contentsShown = false;
     setCorrectionError({});
+    setContentsError({});
     emit bookChanged();
     load();
 }
@@ -353,10 +373,268 @@ void BookInspector::apply(const Loaded& result)
         m_contents.setEntries(d.toc ? d.toc->entries : QList<TocEntry>{});
         m_shownTocRun = d.tocRun;
         m_shownTocRevision = revision;
+        m_shownEntries = d.toc ? d.toc->entries : QList<TocEntry>{};
         m_contentsShown = true;
+    }
+    m_pageCount = d.asset.pageCount;
+    m_contentsEdited = d.tocRevision.has_value();
+    m_contentsNeedReconciliation = d.tocRevision && d.tocRevision->needsReconciliation;
+    if (m_contentsNeedReconciliation) {
+        int analyzed = 0;
+        if (d.analyzedToc)
+            analyzed = int(d.analyzedToc->entries.size());
+        m_contentsEditText = trn("A newer analysis found different contents (%n entries). Your edited contents are "
+                                 "still shown and searched until you choose.",
+                                 analyzed);
+    } else if (m_contentsEdited) {
+        m_contentsEditText = tr("You edited these contents (version %1). Search uses your version.")
+                                 .arg(d.tocRevision->number);
+    } else {
+        m_contentsEditText.clear();
     }
     emit detailsChanged();
     emit loaded();
+}
+
+void BookInspector::setContentsError(const QString& error)
+{
+    if (m_contentsError == error)
+        return;
+    m_contentsError = error;
+    emit contentsErrorChanged();
+}
+
+void BookInspector::changeContents(const QString& bookId, const ContentsChange& change)
+{
+    const BookId book = BookId::fromString(bookId);
+    if (!m_library || book.isNull() || m_book != book || !m_contentsShown) {
+        setContentsError(tr("Select the book again to change its contents."));
+        return;
+    }
+    setContentsError({});
+    // What the tree shows: the catalog refuses the change if that is no longer current.
+    const TocEditBase base{m_shownTocRun, m_shownTocRevision};
+    if (m_saving++ == 0)
+        emit savingChanged();
+    m_library->run([book, base, change](QSqlDatabase& db) { return change(db, book, base); })
+        .then(this, [this, book](const Status& saved) {
+            if (--m_saving == 0)
+                emit savingChanged();
+            if (!saved) {
+                if (m_book != book)
+                    return;
+                switch (saved.error().code) {
+                case ErrorCode::StaleGeneration:
+                    setContentsError(tr("The contents changed while you were editing (a new analysis or another "
+                                        "change). They were reloaded; please try again."));
+                    load();
+                    break;
+                case ErrorCode::Trashed:
+                    setContentsError(tr("This book is in Trash."));
+                    break;
+                case ErrorCode::NotFound:
+                    setContentsError(tr("This book is no longer in the library."));
+                    break;
+                default:
+                    setContentsError(tr("The change was not saved: %1").arg(saved.error().message));
+                    break;
+                }
+                return;
+            }
+            if (m_book == book)
+                load();
+            emit corrected(book.toString());
+        });
+}
+
+void BookInspector::editContents(const QString& bookId, const QList<TocEdit>& edits)
+{
+    changeContents(bookId, [edits](QSqlDatabase& db, const BookId& book, const TocEditBase& base) -> Status {
+        auto saved = catalog::editToc(db, book, base, edits);
+        if (!saved)
+            return saved.error();
+        return Done{};
+    });
+}
+
+std::optional<int> BookInspector::pageIndexOf(const QString& pageNumber)
+{
+    bool ok = false;
+    const int page = pageNumber.trimmed().toInt(&ok);
+    if (!ok || page < 1 || (m_pageCount && page > *m_pageCount)) {
+        setContentsError(m_pageCount ? tr("Enter a page number from 1 to %1.").arg(*m_pageCount)
+                                     : tr("Enter a page number, such as 12."));
+        return std::nullopt;
+    }
+    return page - 1;
+}
+
+const TocEntry* BookInspector::shownEntry(const QString& key) const
+{
+    for (const TocEntry& e : m_shownEntries) {
+        if (e.sdkEntryId == key)
+            return &e;
+    }
+    return nullptr;
+}
+
+namespace {
+
+// The entry's parent key, as the tree shows it (Unknown and Root: none).
+std::optional<QString> shownParentOf(const TocEntry& e)
+{
+    return e.hierarchy == HierarchyState::KnownParent ? e.parentSdkEntryId : std::nullopt;
+}
+
+} // namespace
+
+// The nearest entry above it with the same parent, not removed.
+std::optional<QString> BookInspector::previousSiblingOf(const TocEntry& entry) const
+{
+    std::optional<QString> found;
+    int foundOrder = -1;
+    for (const TocEntry& e : m_shownEntries) {
+        if (e.removed || e.sdkEntryId == entry.sdkEntryId || e.order >= entry.order || e.order <= foundOrder)
+            continue;
+        if (shownParentOf(e) == shownParentOf(entry)) {
+            found = e.sdkEntryId;
+            foundOrder = e.order;
+        }
+    }
+    return found;
+}
+
+bool BookInspector::canIndent(const QString& key) const
+{
+    const TocEntry* e = shownEntry(key);
+    return e && !e->removed && previousSiblingOf(*e).has_value();
+}
+
+bool BookInspector::canOutdent(const QString& key) const
+{
+    const TocEntry* e = shownEntry(key);
+    return e && !e->removed && shownParentOf(*e).has_value();
+}
+
+void BookInspector::renameEntry(const QString& bookId, const QString& key, const QString& title)
+{
+    if (title.trimmed().isEmpty()) {
+        setContentsError(tr("Enter a title for the entry."));
+        return;
+    }
+    TocEdit edit;
+    edit.kind = TocEdit::Kind::Rename;
+    edit.entryKey = key;
+    edit.title = title.trimmed();
+    editContents(bookId, {edit});
+}
+
+void BookInspector::setEntryPage(const QString& bookId, const QString& key, const QString& pageNumber)
+{
+    const auto page = pageIndexOf(pageNumber);
+    if (!page)
+        return;
+    TocEdit edit;
+    edit.kind = TocEdit::Kind::SetPage;
+    edit.entryKey = key;
+    edit.page = page;
+    editContents(bookId, {edit});
+}
+
+void BookInspector::clearEntryPage(const QString& bookId, const QString& key)
+{
+    TocEdit edit;
+    edit.kind = TocEdit::Kind::ClearPage;
+    edit.entryKey = key;
+    editContents(bookId, {edit});
+}
+
+void BookInspector::indentEntry(const QString& bookId, const QString& key)
+{
+    const TocEntry* e = shownEntry(key);
+    const auto parent = e ? previousSiblingOf(*e) : std::nullopt;
+    if (!parent) {
+        setContentsError(tr("There is no entry above it at the same level to place it under."));
+        return;
+    }
+    TocEdit edit;
+    edit.kind = TocEdit::Kind::SetParent;
+    edit.entryKey = key;
+    edit.parentKey = *parent;
+    editContents(bookId, {edit});
+}
+
+void BookInspector::outdentEntry(const QString& bookId, const QString& key)
+{
+    const TocEntry* e = shownEntry(key);
+    const auto parentKey = e ? shownParentOf(*e) : std::nullopt;
+    if (!parentKey) {
+        setContentsError(tr("It is already at the top level."));
+        return;
+    }
+    const TocEntry* parent = shownEntry(*parentKey);
+    const auto grandparent = parent ? shownParentOf(*parent) : std::nullopt;
+    TocEdit edit;
+    edit.entryKey = key;
+    if (grandparent) {
+        edit.kind = TocEdit::Kind::SetParent;
+        edit.parentKey = *grandparent;
+    } else {
+        edit.kind = TocEdit::Kind::MakeRoot;
+    }
+    editContents(bookId, {edit});
+}
+
+void BookInspector::removeEntry(const QString& bookId, const QString& key)
+{
+    TocEdit edit;
+    edit.kind = TocEdit::Kind::Remove;
+    edit.entryKey = key;
+    editContents(bookId, {edit});
+}
+
+void BookInspector::restoreEntry(const QString& bookId, const QString& key)
+{
+    TocEdit edit;
+    edit.kind = TocEdit::Kind::Restore;
+    edit.entryKey = key;
+    editContents(bookId, {edit});
+}
+
+void BookInspector::addEntryAfter(const QString& bookId, const QString& key, const QString& title,
+                                  const QString& pageNumber)
+{
+    if (title.trimmed().isEmpty()) {
+        setContentsError(tr("Enter a title for the entry."));
+        return;
+    }
+    TocEdit edit;
+    edit.kind = TocEdit::Kind::Add;
+    edit.entryKey = key;
+    edit.title = title.trimmed();
+    if (!pageNumber.trimmed().isEmpty()) {
+        edit.page = pageIndexOf(pageNumber);
+        if (!edit.page)
+            return;
+    }
+    editContents(bookId, {edit});
+}
+
+void BookInspector::keepContentsEdits(const QString& bookId)
+{
+    changeContents(bookId, [](QSqlDatabase& db, const BookId& book, const TocEditBase& base) -> Status {
+        auto kept = catalog::keepTocEdits(db, book, base);
+        if (!kept)
+            return kept.error();
+        return Done{};
+    });
+}
+
+void BookInspector::useAnalyzedContents(const QString& bookId)
+{
+    changeContents(bookId, [](QSqlDatabase& db, const BookId& book, const TocEditBase& base) {
+        return catalog::useAnalyzedToc(db, book, base);
+    });
 }
 
 QVariantList BookInspector::contributorRoles() const
@@ -479,6 +757,11 @@ void BookInspector::clear()
     m_error.clear();
     m_shownTocRun.reset();
     m_shownTocRevision.reset();
+    m_shownEntries.clear();
+    m_pageCount.reset();
+    m_contentsEdited = false;
+    m_contentsNeedReconciliation = false;
+    m_contentsEditText.clear();
     m_contentsShown = false;
     m_contents.setEntries({});
     emit detailsChanged();
