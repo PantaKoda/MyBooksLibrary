@@ -27,19 +27,29 @@ ApplicationWindow {
 
     // Closing while work runs: cancel imports and stop processing (queued
     // metadata jobs resume next time), stay responsive, close when idle.
+    // An open book is closed through the reader first (its view is destroyed,
+    // then its document closed), never by the engine's teardown, which would
+    // destroy the document before the view (docs/READER.md, "Teardown").
     onClosing: (close) => {
-        if (window.library.busy) {
+        if (window.library.busy || window.library.reader.open) {
             close.accepted = false
             window.closeRequested = true
-            window.library.prepareToClose()
+            window.library.prepareToClose()  // Also saves the reading position.
+            window.library.reader.close()
         }
     }
+    function closeWhenIdle() {
+        if (window.closeRequested && !window.library.busy && !window.library.reader.open)
+            window.close()
+    }
+    // Deferred: never close again from inside the closing handler.
     Connections {
         target: window.library
-        function onBusyChanged() {
-            if (window.closeRequested && !window.library.busy)
-                window.close()
-        }
+        function onBusyChanged() { Qt.callLater(window.closeWhenIdle) }
+    }
+    Connections {
+        target: window.library.reader
+        function onOpenChanged() { Qt.callLater(window.closeWhenIdle) }
     }
 
     Shortcut {

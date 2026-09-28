@@ -375,3 +375,14 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - The position is a physical page index, saved one second after paging stops and at once on switch, close or quit.
   - For an unresolved entry, the source contents page is the evidence offered. Exact text highlighting is not possible, because the SDK gives no complete geometry (AGENTS.md section 4).
 - **Verified:** See IMPLEMENTATION_PROGRESS.md, M06 part 2.
+
+## 2026-09-28 — M06 part 2 review fixes (PR #15): quit through the reader, release on real destruction
+
+- **Change:**
+  - `Main.qml`'s `onClosing` defers while a book is open, closes it through `ReaderController::close()`, and closes the window once the reader is closed and nothing is busy.
+  - `ReaderController::attachView(QObject*)` replaces `viewReleased()`: the controller counts registered views and continues (queued) only after each has emitted `QObject::destroyed`.
+  - Development options: `--close`, and `--read-page` without `--screenshot`.
+- **Why:** The review measured that quitting with a book open destroyed the `PdfDocument` before its `PdfMultiPageView`, the teardown order READER.md associates with the M01 crash. The `Loader` only schedules the old view for deletion, so reporting the release when the `Loader` drops its item relied on event ordering.
+- **Assumptions:** A view that is detached but not yet destroyed may still use its document, so it must be waited for. The window stays open until the view is destroyed, which normally takes one event-loop turn.
+- **Removed:** `ReaderController::viewReleased()` and the pane's `onItemChanged` / `onViewActiveChanged` release reporting.
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, M06 part 2, "Review fixes".

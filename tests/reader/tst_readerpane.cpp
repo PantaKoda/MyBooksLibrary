@@ -43,6 +43,7 @@ private slots:
     void opensThePhysicalPage();
     void opensThePageWhenLaidOutLate();
     void survivesRepeatedOpeningAndClosing();
+    void viewIsDestroyedBeforeTheDocumentChanges();
 
 private:
     QQuickItem* viewItem() const
@@ -184,6 +185,30 @@ void TestReaderPane::survivesRepeatedOpeningAndClosing()
     m_reader->openBook(m_contents.toString());
     QTRY_VERIFY_WITH_TIMEOUT(viewItem() != nullptr, 10000);
     QTRY_COMPARE_WITH_TIMEOUT(shownPage(), 24, 10000);
+}
+
+// The Loader only schedules the old view for deletion; the document must
+// change (switch) or clear (close) only after that view is really destroyed,
+// whatever the order in which the event loop runs the deferred delete.
+void TestReaderPane::viewIsDestroyedBeforeTheDocumentChanges()
+{
+    for (const bool closing : {false, true}) {
+        openAndWait(m_contents, 15);
+        QStringList order;
+        QObject scope;  // Ends both connections before `order` goes.
+        QObject* view = viewItem();
+        QVERIFY(view);
+        connect(view, &QObject::destroyed, &scope, [&order] { order << QStringLiteral("view"); });
+        connect(m_reader.get(), &ReaderController::documentChanged, &scope,
+                [&order] { order << QStringLiteral("document"); });
+        if (closing) {
+            m_reader->close();
+            QTRY_VERIFY_WITH_TIMEOUT(!m_reader->isOpen(), 10000);
+        } else {
+            openAndWait(m_title, 2);
+        }
+        QCOMPARE(order, (QStringList{QStringLiteral("view"), QStringLiteral("document")}));
+    }
 }
 
 int main(int argc, char* argv[])

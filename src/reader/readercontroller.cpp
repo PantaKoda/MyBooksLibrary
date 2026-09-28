@@ -90,7 +90,7 @@ void ReaderController::close()
     m_pending.reset();
     m_closing = true;
     setViewActive(false);
-    if (!m_viewExists)
+    if (m_liveViews == 0)
         proceed();
 }
 
@@ -104,22 +104,29 @@ void ReaderController::request(const Request& request)
     setError({});
     // The document must not change under a live view: release it first.
     setViewActive(false);
-    if (!m_viewExists)
-        proceed();
+    if (m_liveViews == 0)
+        proceed();  // No view was created (none yet, or the document failed).
 }
 
-void ReaderController::viewReleased()
+void ReaderController::attachView(QObject* view)
 {
-    if (!m_viewExists)
+    if (!view)
         return;
-    m_viewExists = false;
-    // Continue outside the view's own teardown.
+    ++m_liveViews;
+    connect(view, &QObject::destroyed, this, &ReaderController::viewDestroyed);
+}
+
+void ReaderController::viewDestroyed()
+{
+    if (--m_liveViews > 0)
+        return;
+    // Continue after the view's destruction has finished, not inside it.
     QMetaObject::invokeMethod(this, &ReaderController::proceed, Qt::QueuedConnection);
 }
 
 void ReaderController::proceed()
 {
-    if (m_viewExists || m_viewActive)
+    if (m_liveViews > 0 || m_viewActive)
         return;  // A view still exists, or one was requested meanwhile.
     if (m_pending) {
         load(*m_pending);
@@ -232,8 +239,6 @@ void ReaderController::setViewActive(bool active)
     if (m_viewActive == active)
         return;
     m_viewActive = active;
-    if (active)
-        m_viewExists = true;  // Until the view confirms its release.
     emit viewActiveChanged();
 }
 

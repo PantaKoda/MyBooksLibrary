@@ -1,10 +1,11 @@
 // Reader: the embedded reading session behind ReaderPane.qml (Qt PDF).
 //
 // Document lifetime is owned here, explicitly: the view (PdfMultiPageView)
-// may exist only while `viewActive` is true, and the document source is
-// changed or cleared only after the view has confirmed its destruction with
-// viewReleased(). So the document never changes, reloads or closes under a
-// live view (docs/READER.md, "Teardown").
+// may exist only while `viewActive` is true. The pane registers each view it
+// creates (attachView), and the document source is changed or cleared only
+// after every registered view has actually been destroyed (QObject::destroyed,
+// not merely detached or scheduled for deletion). So the document never
+// changes, reloads or closes under a live view (docs/READER.md, "Teardown").
 //
 // Pages here are zero-based physical page indices; the "number" methods take
 // and give the page as shown to the user (index + 1). The reading position is
@@ -58,10 +59,10 @@ public:
     Q_INVOKABLE void goToPageNumber(int pageNumber);
     Q_INVOKABLE void close();
 
-    // From the view: the page it shows (index), and that it was destroyed
-    // after viewActive became false.
+    // From the pane: a view it created for the document (tracked until it is
+    // destroyed), and the page that view shows (index).
+    Q_INVOKABLE void attachView(QObject* view);
     Q_INVOKABLE void setCurrentPage(int pageIndex);
-    Q_INVOKABLE void viewReleased();
 
     bool isOpen() const { return m_book.has_value() || m_pending.has_value(); }
     QString bookId() const { return m_book ? m_book->toString() : QString(); }
@@ -93,6 +94,7 @@ private:
     struct Loaded;
     void request(const Request& request);
     void proceed();  // Once no view exists: load the pending book, or finish closing.
+    void viewDestroyed();
     void load(const Request& request);
     void apply(const Loaded& loaded);
     void setViewActive(bool active);
@@ -103,7 +105,7 @@ private:
     std::optional<Request> m_pending;
     bool m_closing = false;
     bool m_viewActive = false;
-    bool m_viewExists = false;  // Between viewActive=true and viewReleased().
+    int m_liveViews = 0;  // Attached views not yet destroyed.
     quint64 m_generation = 0;
     QString m_title;
     QUrl m_documentUrl;

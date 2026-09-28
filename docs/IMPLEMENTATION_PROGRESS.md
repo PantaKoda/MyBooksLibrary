@@ -30,12 +30,28 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | Command | Result |
 | --- | --- |
 | `pwsh scripts/verify.ps1 -Clean` (Release) and `-Configuration Debug` | VERIFY PASSED in both; 18/18 `ctest` suites |
-| `tst_readercontroller` (new, 5 cases) | Covers:<br>- opens where last read (first page if never read); paging is saved after one second;<br>- switching books saves at once; the same book with another page just moves;<br>- **the document never changes before `viewReleased()`**, and close waits for the view, then clears the document; reopening resumes;<br>- a newer open or a close drops a load in flight;<br>- pages are clamped, and an unknown book gives a message. |
+| `tst_readercontroller` (new, 5 cases) | Covers:<br>- opens where last read (first page if never read); paging is saved after one second;<br>- switching books saves at once; the same book with another page just moves;<br>- **the document never changes while the view exists** (originally confirmed with `viewReleased()`; since the review fixes, by the view's destruction), and close waits for the view, then clears the document; reopening resumes;<br>- a newer open or a close drops a load in flight;<br>- pages are clamped, and an unknown book gives a message. |
 | `tst_readerpane` (new, real Qt PDF, offscreen) | `contents-book.pdf` opens at physical page 15, "3 Networking with TCP/IP" (printed 12), **checked by the real scroll position**; moving to pages 4 and 1 (index 0) works. Opening while the pane has no size, then laying it out, still reaches page 15. 25 rounds of switching books, with close and reopen every fifth, end with each book's position saved and resumed. It passed **20 times** in Debug and **20** in Release (`--repeat until-fail:20`), and **10 times in a visible window** (`QT_QPA_PLATFORM=windows`) |
 | `tst_catalog::readingPositionsPersistAndAreChecked`, `tst_migrations::version4CatalogGainsReadingPositions` | Page index 0 is valid, the last page replaces, past-the-end and negative pages are refused, an unknown page count is accepted, an unknown book gives NotFound; the position survives a restart; a schema 4 catalog upgrades |
 | Mutations, each reverted | No view-release handshake, position not saved on a switch, view ignoring the requested page, and no pending page before layout: each makes its test fail |
 | `qmllint` on the module's QML | No warnings |
 | `appMyBooksLibrary --import contents-book.pdf --read-page 15 --screenshot …` (Debug and Release, real SDK) | Exit 0, no QML warnings. The reader shows physical page 15, "3 Networking with TCP/IP"; the catalog records reading position 14. Five further Release runs show the same page, compared pixel by pixel over the page area |
+
+**Review fixes (PR #15 review of `ddeef8e`):**
+1. *Should fix:* quitting with a book open left the document to the QML engine's teardown, which destroyed the `PdfDocument` before its view. `Main.qml`'s `onClosing` now also defers while `reader.open`: it saves the position, closes the book through `ReaderController::close()`, and closes the window once the reader is closed and nothing is busy (deferred with `Qt.callLater`, never from inside the closing handler).
+2. *Consider:* the release was reported when the `Loader` dropped its item, while the view was only scheduled for deletion. The pane now registers each view (`attachView()`), and the controller continues only after the view's `QObject::destroyed`, from a queued call. `viewReleased()` and the pane's release reporting are removed.
+
+| Command | Result |
+| --- | --- |
+| `pwsh scripts/verify.ps1` (Release) and `-Configuration Debug` | VERIFY PASSED in both; 18/18 `ctest` suites; new smoke "close while reading" passes (see below) |
+| `tst_readercontroller` (6 cases, now with a fake pane that attaches real `QObject` views) | New `waitsForEveryViewToBeDestroyed`: a view detached with `deleteLater()` still holds the document; so does a second attached view; the document is cleared only after the last one is destroyed, and not inside its destruction |
+| `tst_readerpane::viewIsDestroyedBeforeTheDocumentChanges` (new, real Qt PDF) | For a switch and for a close, the old view's `destroyed` comes before the controller's `documentChanged`. **Against the unfixed controller and pane it fails** (the document changed while the old view still existed) |
+| `appMyBooksLibrary --library <new> --import contents-book.pdf --read-page 15 --close` (new in `verify.ps1`, offscreen, Release and Debug) | Exit 0, `close: reader.open=0`, `reading_positions` holds 14. **With the old `Main.qml` it prints `reader.open=1` and exits 1** |
+| Real `WM_CLOSE` (`Process.CloseMainWindow()`), visible window, Release, book open at page 15, 5 runs | Each run: exit 0, reading position 14 stored |
+| `ctest -R tst_reader --repeat until-fail:20` (Release, offscreen); `tst_readerpane` `--repeat until-fail:10` with `QT_QPA_PLATFORM=windows` | All passed |
+| `all_qmllint` | No warnings |
+
+`--read-page` now also works on its own (the book stays open), and `--close` closes the window when idle as the close button does; both are development options.
 
 **Found and fixed while testing:** the first Release screenshot showed page 1 while the page box said 15. `goToPage()` on a view without a size changes `currentPage` but does not scroll, and the reader is laid out only as the book opens. The requested page now stays pending until the view has a size. `tst_readerpane` reproduced it once it checked the real scroll position; it had checked only `currentPage` before.
 

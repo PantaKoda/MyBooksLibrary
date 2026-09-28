@@ -1,11 +1,13 @@
-// Reader: the reading session without a view. The test plays the view's
-// part: it confirms the view's release with viewReleased(), and checks that
-// the document never changes before that.
+// Reader: the reading session without a real view. FakePane plays the pane:
+// it attaches a plain QObject as the view whenever the controller allows one,
+// and the test destroys it, checking that the document never changes while
+// an attached view still exists.
 #include "catalog/catalog.h"
 #include "catalog/library.h"
 #include "catalog/reading.h"
 #include "reader/readercontroller.h"
 
+#include <QPointer>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
@@ -29,6 +31,26 @@ BookId addBook(QSqlDatabase& db, int n, int pages)
     return mbl::catalog::registerBook(db, book).value();
 }
 
+// Creates a view whenever the controller allows one, like ReaderPane.qml.
+class FakePane : public QObject {
+public:
+    explicit FakePane(ReaderController& reader) : m_reader(reader)
+    {
+        connect(&reader, &ReaderController::viewActiveChanged, this, [this] {
+            if (m_reader.viewActive() && !view) {
+                view = new QObject(this);
+                m_reader.attachView(view);
+            }
+        });
+    }
+    void destroyView() { delete view; }
+
+    QPointer<QObject> view;
+
+private:
+    ReaderController& m_reader;
+};
+
 } // namespace
 
 class TestReaderController : public QObject {
@@ -43,6 +65,7 @@ private slots:
     void closeWaitsForTheViewThenClosesTheDocument();
     void newestOpenWins();
     void pagesAreClampedAndUnknownBooksReported();
+    void waitsForEveryViewToBeDestroyed();
 
 private:
     template <typename Task>
@@ -79,6 +102,7 @@ void TestReaderController::opensWhereLastReadAndSavesPosition()
 {
     ReaderController r;
     r.setLibrary(m_library);
+    FakePane pane(r);
     QSignalSpy loaded(&r, &ReaderController::bookLoaded);
     r.openBook(m_a.toString());
     QVERIFY(r.isOpen());
@@ -96,14 +120,14 @@ void TestReaderController::opensWhereLastReadAndSavesPosition()
     // Another book: the view goes first, then the new book resumes at its own page.
     r.openPageNumber(m_b.toString(), 3);
     QVERIFY(!r.viewActive());
-    r.viewReleased();
+    pane.destroyView();
     waitLoaded(loaded, 2);
     QCOMPARE(r.requestedPage(), 2);  // Page number 3 = index 2.
     r.setCurrentPage(1);
     // Back to A: B's position is saved at once, A resumes at 4.
     r.openBook(m_a.toString());
     QCOMPARE(positionOf(m_b), std::optional<int>(1));
-    r.viewReleased();
+    pane.destroyView();
     waitLoaded(loaded, 3);
     QCOMPARE(r.requestedPage(), 4);
 
@@ -120,6 +144,7 @@ void TestReaderController::documentNeverChangesUnderALiveView()
 {
     ReaderController r;
     r.setLibrary(m_library);
+    FakePane pane(r);
     QSignalSpy loaded(&r, &ReaderController::bookLoaded);
     r.openBook(m_a.toString());
     waitLoaded(loaded, 1);
@@ -128,12 +153,12 @@ void TestReaderController::documentNeverChangesUnderALiveView()
 
     r.openBook(m_b.toString());
     QVERIFY(!r.viewActive());
-    QTest::qWait(300);  // The view has not confirmed its release yet.
+    QTest::qWait(300);  // The view still exists.
     QCOMPARE(r.documentUrl(), a);
     QCOMPARE(documents.size(), 0);
     QCOMPARE(loaded.size(), 1);
 
-    r.viewReleased();
+    pane.destroyView();
     waitLoaded(loaded, 2);
     QVERIFY(r.documentUrl() != a);
     QCOMPARE(documents.size(), 1);
@@ -144,6 +169,7 @@ void TestReaderController::closeWaitsForTheViewThenClosesTheDocument()
 {
     ReaderController r;
     r.setLibrary(m_library);
+    FakePane pane(r);
     QSignalSpy loaded(&r, &ReaderController::bookLoaded);
     r.openBook(m_a.toString());
     waitLoaded(loaded, 1);
@@ -152,8 +178,8 @@ void TestReaderController::closeWaitsForTheViewThenClosesTheDocument()
     QCOMPARE(positionOf(m_a), std::optional<int>(6));  // Saved at once.
     QVERIFY(!r.viewActive());
     QTest::qWait(100);
-    QVERIFY(!r.documentUrl().isEmpty());  // Still open: the view is being destroyed.
-    r.viewReleased();
+    QVERIFY(!r.documentUrl().isEmpty());  // Still open: the view still exists.
+    pane.destroyView();
     QTRY_VERIFY_WITH_TIMEOUT(r.documentUrl().isEmpty(), 5000);
     QVERIFY(!r.isOpen());
     QCOMPARE(r.bookId(), QString());
@@ -168,6 +194,7 @@ void TestReaderController::newestOpenWins()
 {
     ReaderController r;
     r.setLibrary(m_library);
+    FakePane pane(r);
     QSignalSpy loaded(&r, &ReaderController::bookLoaded);
     r.openBook(m_a.toString());
     r.openBook(m_b.toString());  // Before A's load arrives.
@@ -176,8 +203,10 @@ void TestReaderController::newestOpenWins()
     QCOMPARE(loaded.size(), 1);
     QCOMPARE(r.bookId(), m_b.toString());
 
-    // A close while a book loads drops the load.
-    r.viewReleased();
+    // A close while a book loads drops the load. The view goes first, while
+    // still allowed (as when its document fails), so A's load starts at once.
+    pane.destroyView();
+    QTest::qWait(50);
     r.openBook(m_a.toString());
     r.close();
     QTest::qWait(300);
@@ -189,6 +218,7 @@ void TestReaderController::pagesAreClampedAndUnknownBooksReported()
 {
     ReaderController r;
     r.setLibrary(m_library);
+    FakePane pane(r);
     QSignalSpy loaded(&r, &ReaderController::bookLoaded);
     r.openPageNumber(m_b.toString(), 99);  // B has 5 pages.
     waitLoaded(loaded, 1);
@@ -200,11 +230,40 @@ void TestReaderController::pagesAreClampedAndUnknownBooksReported()
 
     QSignalSpy errors(&r, &ReaderController::errorChanged);
     r.openBook(BookId::create().toString());
-    r.viewReleased();
+    pane.destroyView();
     QTRY_VERIFY_WITH_TIMEOUT(!errors.isEmpty(), 5000);
     QCOMPARE(r.error(), QStringLiteral("This book is no longer in the library."));
     QVERIFY(!r.isOpen());
     QVERIFY(!r.viewActive());
+}
+
+// A view that is detached or scheduled for deletion still holds the
+// document; so does any other view still registered.
+void TestReaderController::waitsForEveryViewToBeDestroyed()
+{
+    ReaderController r;
+    r.setLibrary(m_library);
+    FakePane pane(r);
+    QSignalSpy loaded(&r, &ReaderController::bookLoaded);
+    r.openBook(m_a.toString());
+    waitLoaded(loaded, 1);
+    auto* second = new QObject;
+    r.attachView(second);
+    QSignalSpy documents(&r, &ReaderController::documentChanged);
+
+    r.close();
+    pane.view->deleteLater();  // As the Loader does: not destroyed yet.
+    QCOMPARE(documents.size(), 0);
+    QTest::qWait(100);  // Runs the deferred delete.
+    QVERIFY(!pane.view);
+    QCOMPARE(documents.size(), 0);  // The second view still exists.
+    QVERIFY(r.isOpen());
+
+    delete second;
+    QCOMPARE(documents.size(), 0);  // Continues after the destruction, not inside it.
+    QTRY_VERIFY_WITH_TIMEOUT(!r.isOpen(), 5000);
+    QCOMPARE(documents.size(), 1);
+    QVERIFY(r.documentUrl().isEmpty());
 }
 
 QTEST_GUILESS_MAIN(TestReaderController)

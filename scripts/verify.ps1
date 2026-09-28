@@ -215,6 +215,24 @@ try {
                 Write-Host $output
                 if ($code -ne 0) { throw "$($check.Key) failed with exit code $code" }
             }
+
+            # Closing the window with a book open: the reader closes the book first
+            # (view, then document) and the reading position is stored.
+            $library = Join-Path ([IO.Path]::GetTempPath()) "mbl-verify-close-$([guid]::NewGuid().ToString('N'))"
+            try {
+                $output = & $app @('--library', $library, '--import', (Join-Path $fixtures 'contents-book.pdf'),
+                    '--read-page', '15', '--close') 2>&1 | Out-String
+                $code = $LASTEXITCODE
+                Write-Host "---- close while reading (exit $code)"
+                Write-Host $output
+                if ($code -ne 0) { throw "close while reading failed with exit code $code" }
+                $query = 'import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute("SELECT group_concat(page_index) FROM reading_positions").fetchone()[0])'
+                $position = (& (Get-PythonCommand) -c $query (Join-Path $library 'library.sqlite') | Out-String).Trim()
+                Write-Host "reading position stored: $position"
+                if ($position -ne '14') { throw "close while reading stored reading position '$position', expected 14 (page 15)" }
+            } finally {
+                Remove-Item -LiteralPath $library -Recurse -Force -ErrorAction SilentlyContinue
+            }
         } finally {
             $env:QT_QPA_PLATFORM = $previousPlatform
         }

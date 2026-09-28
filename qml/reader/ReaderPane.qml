@@ -2,9 +2,10 @@ pragma ComponentBehavior: Bound
 
 // The embedded reader. One PdfDocument lives as long as the pane; the view
 // exists only while the ReaderController allows it (viewActive) and the
-// document is ready, and the pane reports when the view is gone
-// (viewReleased), so the controller never changes or closes the document
-// under a live view (docs/READER.md, "Teardown"). Display only.
+// document is ready. Each view is registered with the controller
+// (attachView), which waits for its actual destruction before it changes or
+// closes the document, so no document changes under a live view
+// (docs/READER.md, "Teardown"). Display only.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -107,11 +108,10 @@ Pane {
                     objectName: "readerView"
                     document: document
                     onCurrentPageChanged: pane.reader.setCurrentPage(currentPage)
-                    Component.onCompleted: Qt.callLater(() => view.show(pane.reader.requestedPage))
-                }
-                onItemChanged: {
-                    if (!item && !pane.reader.viewActive)
-                        pane.reader.viewReleased()
+                    Component.onCompleted: {
+                        pane.reader.attachView(view)
+                        Qt.callLater(() => view.show(pane.reader.requestedPage))
+                    }
                 }
             }
 
@@ -134,11 +134,6 @@ Pane {
         function onRequestedPageChanged() {
             if (viewLoader.item)
                 (viewLoader.item as ReaderView).show(pane.reader.requestedPage)
-        }
-        function onViewActiveChanged() {
-            // No view to wait for (not created, or the document failed).
-            if (!pane.reader.viewActive && !viewLoader.item)
-                pane.reader.viewReleased()
         }
     }
 }
