@@ -13,7 +13,7 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | SDK 0.3.0 update | Merged | `chore/sdk-0.3.0` / [PR #11](https://github.com/PantaKoda/MyBooksLibrary/pull/11), merge `a4b7d59` | See "SDK 0.3.0 update" |
 | M05 Contents | Merged: part 1 [PR #12](https://github.com/PantaKoda/MyBooksLibrary/pull/12) (merge `9feb9b3`); part 2 [PR #13](https://github.com/PantaKoda/MyBooksLibrary/pull/13) (merge `8ba9f49`) | `feat/m05-a4-contents-analysis`; `feat/m05-presentation-contents-inspector` | See "M05" |
 | M06 Search/read | Merged: part 1 [PR #14](https://github.com/PantaKoda/MyBooksLibrary/pull/14) (merge `c8dc23e`); part 2 [PR #15](https://github.com/PantaKoda/MyBooksLibrary/pull/15) (merge `e964184`) | `feat/m06-presentation-search`; `feat/m06-reader-chapter-navigation` | See "M06" |
-| M07 Corrections/reruns | InProgress: part 1, metadata corrections and reruns in the inspector | `feat/m07-presentation-metadata-corrections` | See "M07" |
+| M07 Corrections/reruns | Part 1 AwaitingReview ([PR #16](https://github.com/PantaKoda/MyBooksLibrary/pull/16), metadata corrections and reruns); part 2 (TOC edits) NotStarted | `feat/m07-presentation-metadata-corrections` | See "M07" |
 | M08–M11 | NotStarted | | |
 
 ## M07 — Corrections and reruns
@@ -60,7 +60,7 @@ M07 is split in two:
 
 **Not verified by hand:** keyboard-only use of the dialog, screen readers, and very long contributor lists.
 
-**Next action:** hand over PR for review. Then M07 part 2, TOC edits.
+**Next action:** review of [PR #16](https://github.com/PantaKoda/MyBooksLibrary/pull/16). After it is merged: M07 part 2, TOC edits.
 
 ## M06 — Search and reading
 
