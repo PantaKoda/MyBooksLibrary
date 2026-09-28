@@ -56,6 +56,8 @@ qt_add_library(mbl_core STATIC
     src/catalog/imports.cpp
     src/catalog/jobs.h
     src/catalog/jobs.cpp
+    src/catalog/reading.h
+    src/catalog/reading.cpp
     src/catalog/library.h
     src/catalog/library.cpp
     src/catalog/migrations.h
@@ -106,6 +108,8 @@ qt_add_library(mbl_presentation STATIC
     src/presentation/searchcontroller.cpp
     src/presentation/searchresultsmodel.h
     src/presentation/searchresultsmodel.cpp
+    src/reader/readercontroller.h
+    src/reader/readercontroller.cpp
 )
 qt_add_qml_module(mbl_presentation
     URI MyBooksLibrary.Presentation
@@ -148,6 +152,7 @@ qt_add_qml_module(appMyBooksLibrary
         qml/reader/ReaderCheckView.qml
         qml/inspector/BookInspectorPane.qml
         qml/search/SearchResultsView.qml
+        qml/reader/ReaderPane.qml
 )
 
 set_target_properties(appMyBooksLibrary PROPERTIES

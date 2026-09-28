@@ -27,19 +27,29 @@ ApplicationWindow {
 
     // Closing while work runs: cancel imports and stop processing (queued
     // metadata jobs resume next time), stay responsive, close when idle.
+    // An open book is closed through the reader first (its view is destroyed,
+    // then its document closed), never by the engine's teardown, which would
+    // destroy the document before the view (docs/READER.md, "Teardown").
     onClosing: (close) => {
-        if (window.library.busy) {
+        if (window.library.busy || window.library.reader.open) {
             close.accepted = false
             window.closeRequested = true
-            window.library.prepareToClose()
+            window.library.prepareToClose()  // Also saves the reading position.
+            window.library.reader.close()
         }
     }
+    function closeWhenIdle() {
+        if (window.closeRequested && !window.library.busy && !window.library.reader.open)
+            window.close()
+    }
+    // Deferred: never close again from inside the closing handler.
     Connections {
         target: window.library
-        function onBusyChanged() {
-            if (window.closeRequested && !window.library.busy)
-                window.close()
-        }
+        function onBusyChanged() { Qt.callLater(window.closeWhenIdle) }
+    }
+    Connections {
+        target: window.library.reader
+        function onOpenChanged() { Qt.callLater(window.closeWhenIdle) }
     }
 
     Shortcut {
@@ -111,252 +121,265 @@ ApplicationWindow {
         }
     }
 
-    ColumnLayout {
+    // The library, or the open book in the reader.
+    StackLayout {
         anchors.fill: parent
-        spacing: 0
+        currentIndex: window.library.reader.open ? 1 : 0
 
-        DropArea {
-            id: dropArea
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            enabled: window.library.ready && !window.closeRequested
-            onDropped: (drop) => {
-                if (drop.hasUrls) {
-                    window.library.importUrls(drop.urls)
-                    drop.acceptProposedAction()
+        ColumnLayout {
+            spacing: 0
+
+            DropArea {
+                id: dropArea
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                enabled: window.library.ready && !window.closeRequested
+                onDropped: (drop) => {
+                    if (drop.hasUrls) {
+                        window.library.importUrls(drop.urls)
+                        drop.acceptProposedAction()
+                    }
                 }
-            }
 
-            // Book list, and the selected book's inspector beside it.
-            SplitView {
-                anchors.fill: parent
-                orientation: Qt.Horizontal
-
-            Item {
-                SplitView.fillWidth: true
-                SplitView.minimumWidth: 240
-
-                ListView {
-                    id: bookList
+                // Book list, and the selected book's inspector beside it.
+                SplitView {
                     anchors.fill: parent
-                    leftMargin: 8
-                    topMargin: 8
-                    visible: !window.library.search.active
-                    clip: true
-                    focus: true
-                    spacing: 2
-                    model: window.library.books
-                    keyNavigationEnabled: true
-                    currentIndex: -1
-                    ScrollBar.vertical: ScrollBar {}
+                    orientation: Qt.Horizontal
 
-                    delegate: ItemDelegate {
-                        id: row
-                        required property int index
-                        required property string bookId
-                        required property string title
-                        required property bool titleFromFileName
-                        required property string contributors
-                        required property string processingState
+                Item {
+                    SplitView.fillWidth: true
+                    SplitView.minimumWidth: 240
 
-                        width: ListView.view.width
-                        highlighted: ListView.isCurrentItem
-                        onClicked: bookList.currentIndex = index
+                    ListView {
+                        id: bookList
+                        anchors.fill: parent
+                        leftMargin: 8
+                        topMargin: 8
+                        visible: !window.library.search.active
+                        clip: true
+                        focus: true
+                        spacing: 2
+                        model: window.library.books
+                        keyNavigationEnabled: true
+                        currentIndex: -1
+                        ScrollBar.vertical: ScrollBar {}
 
-                        contentItem: ColumnLayout {
-                            spacing: 2
-                            Label {
-                                Layout.fillWidth: true
-                                text: row.title
-                                textFormat: Text.PlainText   // Extracted text is never markup.
-                                color: row.highlighted ? row.palette.highlightedText : row.palette.windowText
-                                font.bold: true
-                                elide: Text.ElideRight
+                        delegate: ItemDelegate {
+                            id: row
+                            required property int index
+                            required property string bookId
+                            required property string title
+                            required property bool titleFromFileName
+                            required property string contributors
+                            required property string processingState
+
+                            width: ListView.view.width
+                            highlighted: ListView.isCurrentItem
+                            onClicked: bookList.currentIndex = index
+                            onDoubleClicked: window.library.reader.openBook(row.bookId)
+
+                            contentItem: ColumnLayout {
+                                spacing: 2
+                                Label {
+                                    Layout.fillWidth: true
+                                    text: row.title
+                                    textFormat: Text.PlainText   // Extracted text is never markup.
+                                    color: row.highlighted ? row.palette.highlightedText : row.palette.windowText
+                                    font.bold: true
+                                    elide: Text.ElideRight
+                                }
+                                Label {
+                                    Layout.fillWidth: true
+                                    textFormat: Text.PlainText
+                                    text: row.titleFromFileName
+                                          ? qsTr("From the file name · %1").arg(row.processingState)
+                                          : (row.contributors.length > 0 ? row.contributors + " · " + row.processingState
+                                                                         : row.processingState)
+                                    color: row.highlighted ? row.palette.highlightedText : row.palette.windowText
+                                    opacity: row.highlighted ? 0.9 : 0.7
+                                    elide: Text.ElideRight
+                                }
                             }
-                            Label {
-                                Layout.fillWidth: true
-                                textFormat: Text.PlainText
-                                text: row.titleFromFileName
-                                      ? qsTr("From the file name · %1").arg(row.processingState)
-                                      : (row.contributors.length > 0 ? row.contributors + " · " + row.processingState
-                                                                     : row.processingState)
-                                color: row.highlighted ? row.palette.highlightedText : row.palette.windowText
-                                opacity: row.highlighted ? 0.9 : 0.7
-                                elide: Text.ElideRight
+                        }
+
+                        // Keep the selection on the same book when the list refreshes;
+                        // the inspector shows the selected book.
+                        property string selectedBookId: ""
+                        onCurrentIndexChanged: {
+                            selectedBookId = model ? model.bookIdAt(currentIndex) : ""
+                            window.library.inspector.select(selectedBookId)
+                        }
+                        onCountChanged: {
+                            if (window.inspectFirst && count > 0 && currentIndex < 0)
+                                currentIndex = 0
+                        }
+                        Connections {
+                            target: window.library.books
+                            function onModelReset() {
+                                bookList.currentIndex = window.library.books.rowOfBook(bookList.selectedBookId)
                             }
+                        }
+
+                        Label {
+                            anchors.centerIn: parent
+                            width: parent.width * 0.7
+                            horizontalAlignment: Text.AlignHCenter
+                            wrapMode: Text.WordWrap
+                            visible: bookList.count === 0
+                            opacity: 0.7
+                            text: window.library.opening ? qsTr("Opening the library…")
+                                  : window.library.failed ? qsTr("The library could not be opened.")
+                                  : qsTr("No books yet. Choose “Import PDFs…” or drop PDF files here.")
                         }
                     }
 
-                    // Keep the selection on the same book when the list refreshes;
-                    // the inspector shows the selected book.
-                    property string selectedBookId: ""
-                    onCurrentIndexChanged: {
-                        selectedBookId = model ? model.bookIdAt(currentIndex) : ""
-                        window.library.inspector.select(selectedBookId)
+                    SearchResultsView {
+                        id: searchResults
+                        anchors.fill: parent
+                        anchors.margins: 8
+                        visible: window.library.search.active
+                        search: window.library.search
+                        selectFirst: window.inspectFirst
+                        onBookChosen: (bookId) => window.library.inspector.select(bookId)
+                        onOpenPageRequested: (bookId, pageNumber) => window.library.reader.openPageNumber(bookId, pageNumber)
                     }
-                    onCountChanged: {
-                        if (window.inspectFirst && count > 0 && currentIndex < 0)
-                            currentIndex = 0
-                    }
-                    Connections {
-                        target: window.library.books
-                        function onModelReset() {
-                            bookList.currentIndex = window.library.books.rowOfBook(bookList.selectedBookId)
+                }
+
+                BookInspectorPane {
+                    inspector: window.library.inspector
+                    onReadRequested: window.library.reader.openBook(window.library.inspector.bookId)
+                    onOpenPageRequested: (pageNumber) => window.library.reader.openPageNumber(window.library.inspector.bookId, pageNumber)
+                    selectFirstEntry: window.inspectFirst
+                    visible: window.library.inspector.hasBook
+                    SplitView.preferredWidth: Math.max(320, window.width * 0.55)
+                    SplitView.minimumWidth: 280
+                }
+                }
+
+                Rectangle {
+                    anchors.fill: parent
+                    visible: dropArea.containsDrag
+                    color: window.palette.highlight
+                    opacity: 0.15
+                }
+            }
+
+            // Processing activity: metadata and contents jobs with Cancel and Retry.
+            Pane {
+                id: activityPane
+                Layout.fillWidth: true
+                Layout.preferredHeight: 220
+                visible: window.showActivity
+                padding: 8
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    spacing: 4
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Label {
+                            text: qsTr("Activity")
+                            font.bold: true
+                        }
+                        Label {
+                            Layout.fillWidth: true
+                            text: window.library.processingAvailable && !window.library.ocrAvailable
+                                  ? qsTr("OCR models were not found: title pages that are scanned images cannot be read.")
+                                  : ""
+                            wrapMode: Text.WordWrap
+                            opacity: 0.7
+                        }
+                        Button {
+                            text: qsTr("Cancel all")
+                            visible: window.library.jobs.pendingCount > 0
+                            enabled: !window.closeRequested
+                            onClicked: window.library.cancelAllJobs()
+                            Accessible.description: qsTr("Cancel every waiting and running job")
                         }
                     }
 
-                    Label {
-                        anchors.centerIn: parent
-                        width: parent.width * 0.7
-                        horizontalAlignment: Text.AlignHCenter
-                        wrapMode: Text.WordWrap
-                        visible: bookList.count === 0
-                        opacity: 0.7
-                        text: window.library.opening ? qsTr("Opening the library…")
-                              : window.library.failed ? qsTr("The library could not be opened.")
-                              : qsTr("No books yet. Choose “Import PDFs…” or drop PDF files here.")
+                    ListView {
+                        id: jobList
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        clip: true
+                        spacing: 2
+                        model: window.library.jobs
+                        keyNavigationEnabled: true
+                        ScrollBar.vertical: ScrollBar {}
+
+                        delegate: ItemDelegate {
+                            id: jobRow
+                            required property int index
+                            required property string jobId
+                            required property string bookTitle
+                            required property string kindText
+                            required property string stateText
+                            required property string detail
+                            required property bool running
+                            required property bool canCancel
+                            required property bool canRetry
+
+                            width: ListView.view.width
+                            highlighted: ListView.isCurrentItem
+                            onClicked: jobList.currentIndex = index
+
+                            contentItem: RowLayout {
+                                spacing: 8
+                                BusyIndicator {
+                                    running: jobRow.running
+                                    visible: jobRow.running
+                                    implicitWidth: 20
+                                    implicitHeight: 20
+                                }
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 0
+                                    Label {
+                                        Layout.fillWidth: true
+                                        text: jobRow.bookTitle
+                                        textFormat: Text.PlainText
+                                        elide: Text.ElideRight
+                                    }
+                                    Label {
+                                        Layout.fillWidth: true
+                                        text: jobRow.detail.length > 0
+                                              ? qsTr("%1 · %2: %3").arg(jobRow.kindText).arg(jobRow.stateText).arg(jobRow.detail)
+                                              : qsTr("%1 · %2").arg(jobRow.kindText).arg(jobRow.stateText)
+                                        textFormat: Text.PlainText
+                                        elide: Text.ElideRight
+                                        opacity: 0.7
+                                    }
+                                }
+                                Button {
+                                    visible: jobRow.canCancel
+                                    enabled: !window.closeRequested
+                                    text: qsTr("Cancel")
+                                    onClicked: window.library.cancelJob(jobRow.jobId)
+                                }
+                                Button {
+                                    visible: jobRow.canRetry
+                                    enabled: !window.closeRequested
+                                    text: qsTr("Retry")
+                                    onClicked: window.library.retryJob(jobRow.jobId)
+                                }
+                            }
+                        }
+
+                        Label {
+                            anchors.centerIn: parent
+                            visible: jobList.count === 0
+                            opacity: 0.7
+                            text: qsTr("No processing yet.")
+                        }
                     }
                 }
-
-                SearchResultsView {
-                    id: searchResults
-                    anchors.fill: parent
-                    anchors.margins: 8
-                    visible: window.library.search.active
-                    search: window.library.search
-                    selectFirst: window.inspectFirst
-                    onBookChosen: (bookId) => window.library.inspector.select(bookId)
-                }
-            }
-
-            BookInspectorPane {
-                inspector: window.library.inspector
-                selectFirstEntry: window.inspectFirst
-                visible: window.library.inspector.hasBook
-                SplitView.preferredWidth: Math.max(320, window.width * 0.55)
-                SplitView.minimumWidth: 280
-            }
-            }
-
-            Rectangle {
-                anchors.fill: parent
-                visible: dropArea.containsDrag
-                color: window.palette.highlight
-                opacity: 0.15
             }
         }
 
-        // Processing activity: metadata and contents jobs with Cancel and Retry.
-        Pane {
-            id: activityPane
-            Layout.fillWidth: true
-            Layout.preferredHeight: 220
-            visible: window.showActivity
-            padding: 8
-
-            ColumnLayout {
-                anchors.fill: parent
-                spacing: 4
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    Label {
-                        text: qsTr("Activity")
-                        font.bold: true
-                    }
-                    Label {
-                        Layout.fillWidth: true
-                        text: window.library.processingAvailable && !window.library.ocrAvailable
-                              ? qsTr("OCR models were not found: title pages that are scanned images cannot be read.")
-                              : ""
-                        wrapMode: Text.WordWrap
-                        opacity: 0.7
-                    }
-                    Button {
-                        text: qsTr("Cancel all")
-                        visible: window.library.jobs.pendingCount > 0
-                        enabled: !window.closeRequested
-                        onClicked: window.library.cancelAllJobs()
-                        Accessible.description: qsTr("Cancel every waiting and running job")
-                    }
-                }
-
-                ListView {
-                    id: jobList
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    clip: true
-                    spacing: 2
-                    model: window.library.jobs
-                    keyNavigationEnabled: true
-                    ScrollBar.vertical: ScrollBar {}
-
-                    delegate: ItemDelegate {
-                        id: jobRow
-                        required property int index
-                        required property string jobId
-                        required property string bookTitle
-                        required property string kindText
-                        required property string stateText
-                        required property string detail
-                        required property bool running
-                        required property bool canCancel
-                        required property bool canRetry
-
-                        width: ListView.view.width
-                        highlighted: ListView.isCurrentItem
-                        onClicked: jobList.currentIndex = index
-
-                        contentItem: RowLayout {
-                            spacing: 8
-                            BusyIndicator {
-                                running: jobRow.running
-                                visible: jobRow.running
-                                implicitWidth: 20
-                                implicitHeight: 20
-                            }
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                spacing: 0
-                                Label {
-                                    Layout.fillWidth: true
-                                    text: jobRow.bookTitle
-                                    textFormat: Text.PlainText
-                                    elide: Text.ElideRight
-                                }
-                                Label {
-                                    Layout.fillWidth: true
-                                    text: jobRow.detail.length > 0
-                                          ? qsTr("%1 · %2: %3").arg(jobRow.kindText).arg(jobRow.stateText).arg(jobRow.detail)
-                                          : qsTr("%1 · %2").arg(jobRow.kindText).arg(jobRow.stateText)
-                                    textFormat: Text.PlainText
-                                    elide: Text.ElideRight
-                                    opacity: 0.7
-                                }
-                            }
-                            Button {
-                                visible: jobRow.canCancel
-                                enabled: !window.closeRequested
-                                text: qsTr("Cancel")
-                                onClicked: window.library.cancelJob(jobRow.jobId)
-                            }
-                            Button {
-                                visible: jobRow.canRetry
-                                enabled: !window.closeRequested
-                                text: qsTr("Retry")
-                                onClicked: window.library.retryJob(jobRow.jobId)
-                            }
-                        }
-                    }
-
-                    Label {
-                        anchors.centerIn: parent
-                        visible: jobList.count === 0
-                        opacity: 0.7
-                        text: qsTr("No processing yet.")
-                    }
-                }
-            }
+        ReaderPane {
+            reader: window.library.reader
         }
     }
 

@@ -158,6 +158,7 @@ void LibraryController::onOpened(std::shared_ptr<catalog::Library> library,
     m_importer = std::move(importer);
     m_inspector.setLibrary(m_library);
     m_search.setLibrary(m_library);
+    m_reader.setLibrary(m_library);
     setState(State::Ready);
     setStatus(recoveryText.isEmpty() ? tr("Library ready.") : recoveryText);
     refresh();
@@ -240,6 +241,7 @@ void LibraryController::prepareToClose()
         m_closing = true;
         emit closingChanged();
     }
+    m_reader.flushPosition();  // Where the open book was being read.
     cancelImports();
     if (m_coordinator)
         m_coordinator->stop();  // Not a cancel: queued jobs resume next time.

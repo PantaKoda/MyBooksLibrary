@@ -14,7 +14,7 @@
 
 `infrastructure::DatabaseExecutor` owns one `QThread` and the only QSQLITE connection to the catalog. Work is posted as `task(QSqlDatabase&)` and runs in submission order. Callers receive a `QFuture` of a **copied value**. `QSqlQuery` objects and the connection never leave that thread. GUI code must continue from the future (for example with `QFuture::then(context, …)`) rather than calling `result()`. Tests and the windowless modes may block on `result()`.
 
-## Schema (version 4)
+## Schema (version 5)
 
 | Table | Holds |
 | --- | --- |
@@ -26,6 +26,7 @@
 | `search_books`, `search_toc` | A3's FTS5 projections (derived; see SEARCH.md). |
 | `jobs` (schema 3) | Durable processing jobs: book, kind (`metadata`/`toc`), state (`queued`, `running`, `cancel_requested`, `succeeded`, `failed`, `cancelled`, `interrupted`), the request generation and source SHA-256 captured at enqueue, attempt, outcome, error, the published run and timestamps. At most one pending (`queued` or `running`) job per book and kind (partial unique index); a `cancel_requested` job does not block a new request. A succeeded job names its run. See PROCESSING.md. |
 | `toc_entries.evidence_json`, `toc_runs.parse_complete`, `search_covered_document`, `plan_blockers_json`, `stop_reasons_json`, `plan_json` (schema 4) | Per contents entry: source pages, hierarchy and destination reasons, uncertain printed label, resolution method, alternative pages, omission reason (a JSON object; `{}` for entries of earlier runs). Per contents run: parse completeness and search coverage (NULL when unknown), plan blockers and stop reasons (JSON arrays), and the SDK plan JSON. |
+| `reading_positions` (schema 5) | Per book: the zero-based physical page where it was last read, and when. Removed with the book. `catalog::setReadingPosition` checks the page against the page count when it is known. |
 | `metadata_field_details` (schema 3) | Per metadata run and field: evidence, alternative candidates and reasons as JSON, normalized from the SDK report so the UI can explain a value or an ambiguity without the raw report. |
 | `import_operations` (schema 2) | One row per import attempt: source path, name, size and modification time; phase (`copying`, `verified`, `registered`, `duplicate`, `failed`, `cancelled`, `abandoned`); SHA-256, size and reserved asset ID once verified; the registered or existing book; the error. Open rows (`copying`, `verified`) are recovered at startup (STORAGE.md). |
 
@@ -33,7 +34,7 @@ Constraints enforce the invariants: one book per asset, one asset per SHA-256, a
 
 ## Migrations
 
-Schema versions: **1** is the catalog, metadata, contents and search projections (M02). **2** adds `import_operations` (M03). **3** adds `jobs` and `metadata_field_details` (M04). **4** adds the contents evidence and plan columns (M05), with `ALTER TABLE … ADD COLUMN` only. Earlier catalogs upgrade in place (`tst_migrations::version1CatalogUpgradesWithDataIntact`, `version2CatalogGainsJobs`, `version3ContentsRunsLoadAfterUpgrade`).
+Schema versions: **1** is the catalog, metadata, contents and search projections (M02). **2** adds `import_operations` (M03). **3** adds `jobs` and `metadata_field_details` (M04). **4** adds the contents evidence and plan columns (M05), with `ALTER TABLE … ADD COLUMN` only. **5** adds `reading_positions` (M06). Earlier catalogs upgrade in place (`tst_migrations::version1CatalogUpgradesWithDataIntact`, `version2CatalogGainsJobs`, `version3ContentsRunsLoadAfterUpgrade`, `version4CatalogGainsReadingPositions`).
 
 Migrations live in `catalog/migrations.cpp`. `PRAGMA user_version` records the applied version. Each migration runs in its own transaction together with its `user_version` update:
 

@@ -62,3 +62,13 @@ target_link_libraries(tst_searchcontroller PRIVATE mbl_presentation)
 mbl_add_test(tst_searchresultsview presentation/tst_searchresultsview.cpp)
 target_link_libraries(tst_searchresultsview PRIVATE mbl_presentation mbl_presentationplugin Qt6::Quick)
 target_compile_definitions(tst_searchresultsview PRIVATE MBL_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+
+mbl_add_test(tst_readercontroller reader/tst_readercontroller.cpp)
+target_link_libraries(tst_readercontroller PRIVATE mbl_presentation)
+
+# The real reader QML with Qt PDF, offscreen, on imported fixtures: pages and
+# repeated open/switch/close (docs/READER.md, "Teardown").
+mbl_add_test(tst_readerpane reader/tst_readerpane.cpp)
+target_link_libraries(tst_readerpane PRIVATE mbl_presentation mbl_presentationplugin Qt6::Quick)
+target_compile_definitions(tst_readerpane PRIVATE MBL_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
+                           MBL_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")

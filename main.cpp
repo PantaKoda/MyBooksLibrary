@@ -8,6 +8,11 @@
 //                     [--activity]           development: open with the activity panel shown
 //                     [--inspect-first]      development: select the first book (inspector shown)
 //                     [--search <text>]      development: search once the library is ready
+//                     [--read-page <n>]      development: open the first book at page n when idle (before
+//                                            --screenshot or --close, if given)
+//                     [--close]              development: instead of --screenshot, close the window
+//                                            when idle (as its close button does) and quit; exit 1
+//                                            if the reader was still open when the window closed
 //   appMyBooksLibrary --sdk-check [<pdf>]    no window: print the pdfbookmark SDK identity and,
 //                                            with a PDF, its identity and extracted title.
 //                                            Exit 0 on success, 1 on an SDK error.
@@ -189,6 +194,7 @@ int main(int argc, char *argv[])
     // --activity shows the activity panel.
     QStringList imports;
     QString screenshot;
+    const bool closeWhenIdle = args.contains(QLatin1String("--close"));
     if (args.contains(QLatin1String("--activity")))
         engine.rootObjects().constFirst()->setProperty("showActivity", true);
     if (args.contains(QLatin1String("--inspect-first")))
@@ -212,15 +218,34 @@ int main(int argc, char *argv[])
             }
         });
     }
-    if (!screenshot.isEmpty()) {
-        auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().constFirst());
+    auto* window = qobject_cast<QQuickWindow*>(engine.rootObjects().constFirst());
+    // Development: --read-page <n> opens the first book at page n (1 = first)
+    // once processing is idle, before the screenshot or close.
+    const qsizetype readAt = args.indexOf(QLatin1String("--read-page"));
+    const int readPage = readAt >= 0 && readAt + 1 < args.size() ? args.at(readAt + 1).toInt() : 0;
+    if (!screenshot.isEmpty() || closeWhenIdle || readPage > 0) {
+        auto readRequested = std::make_shared<bool>(false);
         auto trySave = std::make_shared<std::function<void()>>();
-        *trySave = [&library, window, screenshot, trySave] {
+        *trySave = [&library, window, screenshot, closeWhenIdle, trySave, readPage, readRequested] {
             if (library.busy() || library.opening() || library.search()->searching()) {
                 QTimer::singleShot(200, *trySave);
                 return;
             }
-            QTimer::singleShot(500, [window, screenshot] {  // Let the view settle.
+            if (readPage > 0 && !*readRequested && library.books()->rowCount() > 0) {
+                *readRequested = true;
+                library.reader()->openPageNumber(library.books()->bookIdAt(0), readPage);
+            }
+            if (readPage > 0 && (!*readRequested || !library.reader()->viewActive())) {
+                QTimer::singleShot(200, *trySave);
+                return;
+            }
+            if (screenshot.isEmpty() && !closeWhenIdle)
+                return;  // --read-page alone: stay open on the book.
+            QTimer::singleShot(readPage > 0 ? 1500 : 500, [window, screenshot, closeWhenIdle] {  // Let the view settle and render.
+                if (closeWhenIdle) {
+                    window->close();  // Main.qml's onClosing, as for the close button.
+                    return;
+                }
                 const bool saved = window && window->grabWindow().save(screenshot);
                 QTextStream(stdout) << "screenshot=" << (saved ? screenshot : QStringLiteral("FAILED")) << Qt::endl;
                 QCoreApplication::exit(saved ? 0 : 1);
@@ -229,5 +254,14 @@ int main(int argc, char *argv[])
         QTimer::singleShot(300, *trySave);
     }
 
-    return QGuiApplication::exec();
+    const int code = QGuiApplication::exec();
+    if (closeWhenIdle) {
+        // The window must close an open book (view, then document) before it
+        // closes itself, never leave it to the engine's teardown.
+        const bool readerOpen = library.reader()->isOpen() || !library.reader()->documentUrl().isEmpty();
+        QTextStream(stdout) << "close: reader.open=" << (readerOpen ? 1 : 0) << Qt::endl;
+        if (readerOpen)
+            return 1;
+    }
+    return code;
 }

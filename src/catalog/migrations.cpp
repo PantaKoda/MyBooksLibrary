@@ -209,7 +209,18 @@ QList<Migration> buildMigrations()
         QStringLiteral("ALTER TABLE toc_runs ADD COLUMN stop_reasons_json TEXT NOT NULL DEFAULT '[]'"),
         QStringLiteral("ALTER TABLE toc_runs ADD COLUMN plan_json TEXT"),
     };
-    return {v1, v2, v3, v4};
+
+    Migration v5;
+    v5.version = 5;
+    v5.name = QStringLiteral("reading positions");
+    v5.statements = {
+        // Where each book was last read: a zero-based physical page index.
+        QStringLiteral(R"(CREATE TABLE reading_positions (
+            book_id TEXT PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE,
+            page_index INTEGER NOT NULL CHECK (page_index >= 0),
+            updated_at TEXT NOT NULL))"),
+    };
+    return {v1, v2, v3, v4, v5};
 }
 
 } // namespace

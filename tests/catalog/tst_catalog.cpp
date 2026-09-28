@@ -3,6 +3,7 @@
 #include "catalog/catalog.h"
 #include "catalog/jobs.h"
 #include "catalog/library.h"
+#include "catalog/reading.h"
 #include "search/searchindex.h"
 
 #include <QCryptographicHash>
@@ -100,6 +101,7 @@ private slots:
     void tocOutcomeRoundTripsAndMismatchIsRejected();
     void manyContentsOnlyMatchesUseOneTitleRead();
     void latestJobsPicksTheNewestPerBookAndKind();
+    void readingPositionsPersistAndAreChecked();
 
 private:
     template <typename Task>
@@ -768,6 +770,31 @@ void TestCatalog::latestJobsPicksTheNewestPerBookAndKind()
     const auto open = db([](QSqlDatabase& d) { return catalog::listJobs(d, true, -1); });
     QVERIFY(open);
     QCOMPARE(open.value().size(), kBooks);
+}
+
+// Where a book was last read: a physical page index, checked against the
+// page count, kept across a restart.
+void TestCatalog::readingPositionsPersistAndAreChecked()
+{
+    const BookId book = addBook(QStringLiteral("read.pdf"), 10);
+    const BookId unknownPages = addBook(QStringLiteral("unknown.pdf"), std::nullopt);
+    QCOMPARE(db([book](QSqlDatabase& d) { return catalog::readingPosition(d, book); }).value(), std::optional<int>());
+    QVERIFY(db([book](QSqlDatabase& d) { return catalog::setReadingPosition(d, book, 0); }));  // Page index 0 is valid.
+    QCOMPARE(db([book](QSqlDatabase& d) { return catalog::readingPosition(d, book); }).value(), std::optional<int>(0));
+    QVERIFY(db([book](QSqlDatabase& d) { return catalog::setReadingPosition(d, book, 9); }));  // Last page; replaces.
+    const auto past = db([book](QSqlDatabase& d) { return catalog::setReadingPosition(d, book, 10); });
+    QVERIFY(!past);
+    QCOMPARE(past.error().code, ErrorCode::InvalidArgument);
+    QVERIFY(!db([book](QSqlDatabase& d) { return catalog::setReadingPosition(d, book, -1); }));
+    QVERIFY(db([unknownPages](QSqlDatabase& d) { return catalog::setReadingPosition(d, unknownPages, 500); }));
+    const auto missing = db([](QSqlDatabase& d) { return catalog::setReadingPosition(d, BookId::create(), 1); });
+    QCOMPARE(missing.error().code, ErrorCode::NotFound);
+
+    m_library.reset();  // Restart.
+    auto reopened = Library::open(m_dir->path());
+    QVERIFY(reopened);
+    m_library = std::move(reopened.value());
+    QCOMPARE(db([book](QSqlDatabase& d) { return catalog::readingPosition(d, book); }).value(), std::optional<int>(9));
 }
 
 QTEST_GUILESS_MAIN(TestCatalog)
