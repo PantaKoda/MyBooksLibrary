@@ -12,8 +12,63 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | M04 Metadata jobs | Merged: part 1 [PR #9](https://github.com/PantaKoda/MyBooksLibrary/pull/9) (merge `6b5d740`); part 2 [PR #10](https://github.com/PantaKoda/MyBooksLibrary/pull/10) (merge `578e951`) | `feat/m04-a4-metadata-jobs`; `feat/m04-presentation-metadata-jobs` | See "M04" |
 | SDK 0.3.0 update | Merged | `chore/sdk-0.3.0` / [PR #11](https://github.com/PantaKoda/MyBooksLibrary/pull/11), merge `a4b7d59` | See "SDK 0.3.0 update" |
 | M05 Contents | Merged: part 1 [PR #12](https://github.com/PantaKoda/MyBooksLibrary/pull/12) (merge `9feb9b3`); part 2 [PR #13](https://github.com/PantaKoda/MyBooksLibrary/pull/13) (merge `8ba9f49`) | `feat/m05-a4-contents-analysis`; `feat/m05-presentation-contents-inspector` | See "M05" |
-| M06 Search/read | Part 1 Merged ([PR #14](https://github.com/PantaKoda/MyBooksLibrary/pull/14), merge `c8dc23e`); part 2 AwaitingReview ([PR #15](https://github.com/PantaKoda/MyBooksLibrary/pull/15), reader, chapter navigation, reading position) | `feat/m06-presentation-search`; `feat/m06-reader-chapter-navigation` | See "M06" |
-| M07–M11 | NotStarted | | |
+| M06 Search/read | Merged: part 1 [PR #14](https://github.com/PantaKoda/MyBooksLibrary/pull/14) (merge `c8dc23e`); part 2 [PR #15](https://github.com/PantaKoda/MyBooksLibrary/pull/15) (merge `e964184`) | `feat/m06-presentation-search`; `feat/m06-reader-chapter-navigation` | See "M06" |
+| M07 Corrections/reruns | Part 1 AwaitingReview ([PR #16](https://github.com/PantaKoda/MyBooksLibrary/pull/16), metadata corrections and reruns); part 2 (TOC edits) NotStarted | `feat/m07-presentation-metadata-corrections` | See "M07" |
+| M08–M11 | NotStarted | | |
+
+## M07 — Corrections and reruns
+
+M07 is split in two:
+- **Part 1** (this branch): metadata corrections in the inspector, and reruns started by the user.
+- **Part 2**: TOC edits. These need a new schema (edits tied to an asset, run and entry revision), and explicit reconciliation when a rerun changes entries.
+
+### Part 1: metadata corrections and reruns (presentation + A2)
+
+**Already in place from M02–M05, not changed here:**
+- `catalog::setOverride`: Auto, Value or Cleared per field, with the search projection updated in the same transaction.
+- Effective values computed from the active run and the current override.
+- Publication guarded by generation tickets.
+- Coordinator tests: `correctionsMadeWhileRunningSurvive` and `supersededResultIsNotPublished`.
+- Catalog test: `clearedDoesNotFallBackAfterRerun`.
+
+**Scope:**
+- **`BookInspector`:**
+  - `setText`, `setYear`, `setContributors`, `clearField` and `useDocumentValue`. Each names its book explicitly and is checked before saving; a refused value sets `correctionError`.
+  - `saving`, and `corrected(bookId)`, which the `LibraryController` turns into a refresh of the book list, inspector and search.
+  - Title and subtitle are now separate fields.
+  - Each field map carries `field`, `kind`, `mode`, `documentValue`, `editText` and `editContributors`.
+- **`LibraryController`:** `rerunMetadata(bookId)` and `rerunContents(bookId)`, which enqueue with a new generation.
+- **`MetadataFieldEditor.qml`** (new), in a dialog in `BookInspectorPane.qml`:
+  - text or year, or ordered contributors with a role, add, move and remove;
+  - Save, Cancel, Leave empty, and Use the document's value.
+  - The pane shows "The document says: …" beside a correction, and a "More" menu with "Read title and authors again" and "Analyze contents again".
+- **Catalog:** override years must be between 1 and 9999.
+- **Development option:** `--correct <field>`.
+
+**Touched paths:** `src/presentation/bookinspector.*`, `src/presentation/librarycontroller.*`, `src/catalog/catalog.cpp`, `qml/inspector/`, `Main.qml`, `main.cpp`, `CMakeLists.txt`, `tests/presentation/`, `tests/catalog/tst_catalog.cpp`, `docs/`.
+
+| Command | Result |
+| --- | --- |
+| `pwsh scripts/verify.ps1` (Release) and `-Configuration Debug` | VERIFY PASSED in both; 18/18 `ctest` suites; all smoke checks, including "close while reading" |
+| `tst_librarycontroller::correctionsFromTheInspector` (new) | **Value:** a title is trimmed and shown as "Your correction", with the document's value beside it; the book list and a Titles search follow it, and the old title no longer matches.<br>**Leave empty:** the edition shows "—" and "Cleared by you", with no fallback.<br>**Contributors:** kept in order with their roles; an empty row is ignored.<br>**Refused before saving:** `abc`, `0`, `10000` and an empty year; a blank subtitle; text for a year field; no names; an unknown role.<br>**Back to Auto:** the subtitle returns to the document's value.<br>**Restart:** everything is kept. |
+| `tst_librarycontroller::correctionsSurviveARerun` (new) | While "Read title and authors again" runs, the earlier results stay shown and a title correction is saved. After it publishes:<br>- the correction and the earlier Cleared edition stay;<br>- the document's new title and edition are shown beside them;<br>- Auto then shows the new reading.<br>"Analyze contents again" leaves the metadata corrections alone. |
+| `tst_inspectorpane::correctionDialogSavesAndSurvivesRefreshes` (new, real QML) | Text typed in the dialog survives an inspector refresh (same editor object). Save stores the value for the book the dialog was opened for, even after another book was selected. Contributor names survive Add and Move up, including a name typed after the last reorder. A refused year keeps the dialog open with the reason. Leave empty works from the dialog, and reopening starts without the old error. |
+| `tst_catalog::metadataPublicationAndOverrides` | Years 0, -5 and 10000 are refused (InvalidArgument) |
+| Mutations, each reverted | No refresh after a correction: `correctionsFromTheInspector` fails (the book list keeps the old title). Saving contributors from the rows as last restructured, not as typed: `correctionDialogSavesAndSurvivesRefreshes` fails. |
+| `all_qmllint` | No warnings |
+| `appMyBooksLibrary --import title-page.pdf --inspect-first --correct contributors --screenshot docs/images/m07-correct-contributors.png` (Release, real SDK) | Exit 0, no QML warnings. The contributors editor opens over the inspector with one empty row, a role, Add a person, Save, Cancel and Leave empty |
+
+**Review fixes (PR #16 review of `a58d0b8`):**
+1. *Minor:* with about 18 or more contributors, the dialog grew past the window and Save, Cancel and Leave empty went off-screen. The rows are now in a `ScrollView` capped at the window height minus about 260 px. They stay a `Repeater` so every typed name can be read back. Adding a person scrolls to the new row and focuses it.
+2. *Nit:* the rerun comment in `librarycontroller.h` now says that a rerun returns a job already waiting or running instead of starting a new generation.
+
+| Command | Result |
+| --- | --- |
+| `tst_inspectorpane::correctionDialogSavesAndSurvivesRefreshes`, extended | 25 people added in a 640 px window: once the rows are laid out, Save and Add a person are inside the window, and the newest row is scrolled into view with focus. A name typed in it is saved, and empty rows are ignored. **Against the unfixed editor it fails:** Save at y 824. The first version of this check passed on the unfixed editor because it measured before layout; it now waits for the rows to be laid out. |
+
+**Not verified by hand:** keyboard-only use of the dialog and screen readers.
+
+**Next action:** review of [PR #16](https://github.com/PantaKoda/MyBooksLibrary/pull/16). After it is merged: M07 part 2, TOC edits.
 
 ## M06 — Search and reading
 

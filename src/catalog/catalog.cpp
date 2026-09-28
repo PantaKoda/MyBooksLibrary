@@ -557,6 +557,8 @@ Status validateOverride(MetadataField field, const MetadataOverride& o)
     case MetadataField::CopyrightYear:
         if (!o.year)
             return makeError(ErrorCode::InvalidArgument, QStringLiteral("A year is required."));
+        if (*o.year < 1 || *o.year > 9999)
+            return makeError(ErrorCode::InvalidArgument, QStringLiteral("A year must be between 1 and 9999."));
         return Done{};
     case MetadataField::Contributors:
         if (o.contributors.isEmpty())

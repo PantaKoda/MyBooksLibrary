@@ -2,8 +2,9 @@ pragma ComponentBehavior: Bound
 
 // The selected book: metadata with where each value came from and why, and
 // the application's table of contents (never the PDF's own bookmarks).
-// Display only: all data comes from BookInspector (C++); extracted text is
-// always plain text.
+// Metadata fields can be corrected (MetadataFieldEditor, in a dialog so a
+// refresh while typing does not disturb it). All data and commands go through
+// BookInspector (C++); extracted text is always plain text.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -16,6 +17,10 @@ Pane {
     // Reading: the book where it was last read, or a page as shown (1 = first).
     signal readRequested()
     signal openPageRequested(int pageNumber)
+    // Run the extraction or the contents analysis again for this book.
+    signal rerunMetadataRequested()
+    signal rerunContentsRequested()
+    property bool rerunEnabled: true
     // Development (--inspect-first): make the first entry current when shown.
     property bool selectFirstEntry: false
     padding: 12
@@ -40,6 +45,27 @@ Pane {
                 onClicked: pane.readRequested()
                 Accessible.description: qsTr("Open the book where you last stopped reading")
             }
+            Button {
+                id: moreButton
+                text: qsTr("More")
+                visible: pane.inspector.hasBook && pane.inspector.error.length === 0
+                onClicked: moreMenu.open()
+                Accessible.description: qsTr("Read this book's title, authors or contents again")
+                Menu {
+                    id: moreMenu
+                    y: moreButton.height
+                    MenuItem {
+                        text: qsTr("Read title and authors again")
+                        enabled: pane.rerunEnabled
+                        onTriggered: pane.rerunMetadataRequested()
+                    }
+                    MenuItem {
+                        text: qsTr("Analyze contents again")
+                        enabled: pane.rerunEnabled
+                        onTriggered: pane.rerunContentsRequested()
+                    }
+                }
+            }
         }
         Label {
             Layout.fillWidth: true
@@ -47,6 +73,16 @@ Pane {
             textFormat: Text.PlainText
             opacity: 0.7
             elide: Text.ElideMiddle
+        }
+
+        // A correction that failed after its editor closed.
+        Label {
+            Layout.fillWidth: true
+            visible: pane.inspector.correctionError.length > 0 && !correctionDialog.visible
+            text: pane.inspector.correctionError
+            textFormat: Text.PlainText
+            wrapMode: Text.Wrap
+            color: "firebrick"
         }
 
         TabBar {
@@ -118,6 +154,24 @@ Pane {
                                     onClicked: fieldRow.showWhy = !fieldRow.showWhy
                                     Accessible.description: qsTr("Show the evidence and candidates for this field")
                                 }
+                                Button {
+                                    objectName: "correct_" + fieldRow.modelData.field
+                                    flat: true
+                                    padding: 2
+                                    text: qsTr("Correct")
+                                    onClicked: pane.correct(fieldRow.modelData)
+                                    Accessible.description: qsTr("Correct %1").arg(fieldRow.modelData.label)
+                                }
+                            }
+                            Label {
+                                Layout.leftMargin: 156
+                                Layout.fillWidth: true
+                                visible: fieldRow.modelData.documentValue.length > 0
+                                text: qsTr("The document says: %1").arg(fieldRow.modelData.documentValue)
+                                textFormat: Text.PlainText
+                                wrapMode: Text.Wrap
+                                opacity: 0.6
+                                font.pixelSize: 11
                             }
                             Label {
                                 Layout.leftMargin: 156
@@ -329,6 +383,39 @@ Pane {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    // Opens the editor for one field of the shown book, on a copy of its data.
+    function correct(fieldData) {
+        pane.inspector.dismissCorrectionError()
+        correctionDialog.bookId = pane.inspector.bookId
+        correctionDialog.fieldData = Object.assign({}, fieldData)
+        correctionDialog.open()
+    }
+
+    Dialog {
+        id: correctionDialog
+        objectName: "correctionDialog"
+        property string bookId
+        property var fieldData: ({})
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(520, (parent ? parent.width : 520) - 32)
+        modal: true
+        title: qsTr("Correct: %1").arg(fieldData.label ?? "")
+        // A new editor for every opening, from the data copied at that time.
+        contentItem: Loader {
+            active: correctionDialog.visible
+            sourceComponent: MetadataFieldEditor {
+                inspector: pane.inspector
+                bookId: correctionDialog.bookId
+                fieldData: correctionDialog.fieldData
+                // Room left in the window for the rows after the dialog's
+                // title, other fields and buttons (about 260 px).
+                maximumRowsHeight: Math.max(120, (correctionDialog.parent ? correctionDialog.parent.height : 640) - 260)
+                onDone: correctionDialog.close()
             }
         }
     }

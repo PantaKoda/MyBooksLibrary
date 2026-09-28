@@ -24,6 +24,20 @@ ApplicationWindow {
     property bool showActivity: false
     // Development (--inspect-first): select the first book once the list has one.
     property bool inspectFirst: false
+    // Development (--correct <field>): open that field's correction editor
+    // once the inspector shows a book.
+    property string correctFirst: ""
+    Connections {
+        target: window.library.inspector
+        enabled: window.correctFirst.length > 0
+        function onLoaded() {
+            const field = window.library.inspector.metadataFields.find(f => f.field === window.correctFirst)
+            if (field) {
+                inspectorPane.correct(field)
+                window.correctFirst = ""
+            }
+        }
+    }
 
     // Closing while work runs: cancel imports and stop processing (queued
     // metadata jobs resume next time), stay responsive, close when idle.
@@ -246,9 +260,13 @@ ApplicationWindow {
                 }
 
                 BookInspectorPane {
+                    id: inspectorPane
                     inspector: window.library.inspector
                     onReadRequested: window.library.reader.openBook(window.library.inspector.bookId)
                     onOpenPageRequested: (pageNumber) => window.library.reader.openPageNumber(window.library.inspector.bookId, pageNumber)
+                    onRerunMetadataRequested: window.library.rerunMetadata(window.library.inspector.bookId)
+                    onRerunContentsRequested: window.library.rerunContents(window.library.inspector.bookId)
+                    rerunEnabled: window.library.processingAvailable && !window.closeRequested
                     selectFirstEntry: window.inspectFirst
                     visible: window.library.inspector.hasBook
                     SplitView.preferredWidth: Math.max(320, window.width * 0.55)

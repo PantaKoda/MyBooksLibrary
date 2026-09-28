@@ -278,6 +278,13 @@ void TestCatalog::metadataPublicationAndOverrides()
     });
     QVERIFY(!empty);
     QCOMPARE(empty.error().code, ErrorCode::InvalidArgument);
+    for (const int year : {0, -5, 10000}) {
+        auto outOfRange = db([id, year](QSqlDatabase& d) {
+            return catalog::setOverride(d, id, MetadataField::PublicationYear, MetadataOverride::withYear(year));
+        });
+        QVERIFY(!outOfRange);
+        QCOMPARE(outOfRange.error().code, ErrorCode::InvalidArgument);
+    }
 }
 
 void TestCatalog::clearedDoesNotFallBackAfterRerun()

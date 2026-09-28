@@ -56,6 +56,7 @@ public:
     std::atomic_int calls{0};
     std::atomic_bool started{false};
     QString title = QStringLiteral("Extracted Title");
+    std::optional<QString> edition;  // Reported as resolved when set.
     int alternatives = 0;  // Competing title candidates to report.
 
     MetadataExtraction extract(const QString& path, const std::atomic_bool& cancel) override
@@ -74,6 +75,10 @@ public:
         r.pageCount = 3;
         r.metadata.titleStatus = mbl::domain::FieldStatus::Resolved;
         r.metadata.title = title;
+        if (edition) {
+            r.metadata.editionStatus = mbl::domain::FieldStatus::Resolved;
+            r.metadata.editionStatement = edition;
+        }
         mbl::domain::MetadataFieldDetail detail;
         detail.field = mbl::domain::MetadataField::Title;
         detail.evidence << mbl::domain::MetadataEvidence{0, title, QStringLiteral("largest text")};
@@ -161,6 +166,21 @@ QVariant jobData(JobListModel* model, int row, int role)
     return model->data(model->index(row), role);
 }
 
+// One field of the inspector, by its code ("title", "contributors", ...).
+QVariantMap fieldOf(BookInspector* inspector, const QString& code)
+{
+    for (const QVariant& f : inspector->metadataFields()) {
+        if (f.toMap().value(QStringLiteral("field")).toString() == code)
+            return f.toMap();
+    }
+    return {};
+}
+
+QString valueOf(BookInspector* inspector, const QString& code)
+{
+    return fieldOf(inspector, code).value(QStringLiteral("value")).toString();
+}
+
 } // namespace
 
 class TestLibraryController : public QObject {
@@ -189,6 +209,8 @@ private slots:
     void inspectorShowsWhatWasPublished();
     void inspectorFollowsProcessingAndSelection();
     void searchUpdatesWhenContentsArePublished();
+    void correctionsFromTheInspector();
+    void correctionsSurviveARerun();
 
 private:
     void openAndWait(LibraryController& c, const QString& root)
@@ -738,7 +760,7 @@ void TestLibraryController::inspectorShowsWhatWasPublished()
     const QStringList alternatives = title.value(QStringLiteral("alternatives")).toStringList();
     QCOMPARE(alternatives.size(), 6);  // The best five, then a count.
     QCOMPARE(alternatives.last(), QStringLiteral("and 2 more"));
-    const QVariantMap authors = inspector->metadataFields().at(1).toMap();
+    const QVariantMap authors = fieldOf(inspector, QStringLiteral("contributors"));
     QCOMPARE(authors.value(QStringLiteral("value")).toString(), QStringLiteral("\u2014"));
     QCOMPARE(authors.value(QStringLiteral("sourceText")).toString(), QStringLiteral("Not found in the pages searched"));
 
@@ -835,6 +857,180 @@ void TestLibraryController::searchUpdatesWhenContentsArePublished()
                                   .toString(),
                               QStringLiteral("Metadata ready · 2 contents entries"), 10000);
     QTRY_VERIFY_WITH_TIMEOUT(!c.busy(), 10000);
+}
+
+// Value, Leave empty (Cleared) and the document's value (Auto) from the
+// inspector: saved with the search index, shown with their source, refused
+// when invalid, and kept after a restart.
+void TestLibraryController::correctionsFromTheInspector()
+{
+    QTemporaryDir dir;
+    auto fake = std::make_shared<FakeExtractor>();
+    fake->edition = QStringLiteral("2nd edition");
+    QString book;
+    {
+        LibraryController c;
+        c.setProcessors(fake, std::make_shared<FakeAnalyzer>(fake), true);
+        openAndWait(c, dir.path());
+        c.importFiles({fixture("title-page.pdf")});
+        QTRY_COMPARE_WITH_TIMEOUT(titles(c.books()), QStringList{QStringLiteral("Extracted Title")}, 20000);
+        QTRY_VERIFY_WITH_TIMEOUT(!c.busy(), 10000);
+        book = c.books()->bookIdAt(0);
+        BookInspector* inspector = c.inspector();
+        QSignalSpy corrected(inspector, &BookInspector::corrected);
+        inspector->select(book);
+        QTRY_COMPARE_WITH_TIMEOUT(valueOf(inspector, QStringLiteral("edition")), QStringLiteral("2nd edition"), 5000);
+        QCOMPARE(fieldOf(inspector, QStringLiteral("title")).value(QStringLiteral("mode")).toString(), QStringLiteral("auto"));
+        QCOMPARE(fieldOf(inspector, QStringLiteral("title")).value(QStringLiteral("documentValue")).toString(), QString());
+
+        // A value: shown as the user's, with the document's value beside it;
+        // the book list and search follow.
+        inspector->setText(book, QStringLiteral("title"), QStringLiteral("  Cooking Basics "));
+        QVERIFY(inspector->saving());
+        QTRY_COMPARE_WITH_TIMEOUT(corrected.size(), 1, 5000);
+        QTRY_COMPARE_WITH_TIMEOUT(valueOf(inspector, QStringLiteral("title")), QStringLiteral("Cooking Basics"), 5000);
+        QVERIFY(!inspector->saving());
+        QVariantMap title = fieldOf(inspector, QStringLiteral("title"));
+        QCOMPARE(title.value(QStringLiteral("sourceText")).toString(), QStringLiteral("Your correction"));
+        QCOMPARE(title.value(QStringLiteral("mode")).toString(), QStringLiteral("value"));
+        QCOMPARE(title.value(QStringLiteral("documentValue")).toString(), QStringLiteral("Extracted Title"));
+        QCOMPARE(title.value(QStringLiteral("editText")).toString(), QStringLiteral("Cooking Basics"));
+        QTRY_COMPARE_WITH_TIMEOUT(titles(c.books()), QStringList{QStringLiteral("Cooking Basics")}, 5000);
+        SearchController* search = c.search();
+        search->setScope(int(mbl::domain::SearchScope::Titles));
+        search->setText(QStringLiteral("cooking"));
+        search->refresh();
+        QTRY_COMPARE_WITH_TIMEOUT(search->results()->rowCount(), 1, 5000);
+        search->setText(QStringLiteral("extracted"));
+        search->refresh();
+        QTRY_COMPARE_WITH_TIMEOUT(search->results()->rowCount(), 0, 5000);  // Was 1: the new query applied.
+        search->clear();
+
+        // Leave empty: no fallback to the document's edition.
+        inspector->clearField(book, QStringLiteral("edition"));
+        QTRY_COMPARE_WITH_TIMEOUT(corrected.size(), 2, 5000);
+        QTRY_COMPARE_WITH_TIMEOUT(valueOf(inspector, QStringLiteral("edition")), QStringLiteral("—"), 5000);
+        QCOMPARE(fieldOf(inspector, QStringLiteral("edition")).value(QStringLiteral("sourceText")).toString(),
+                 QStringLiteral("Cleared by you"));
+        QCOMPARE(fieldOf(inspector, QStringLiteral("edition")).value(QStringLiteral("documentValue")).toString(),
+                 QStringLiteral("2nd edition"));
+
+        // Ordered people; a row left empty is ignored.
+        inspector->setContributors(book, QVariantList{
+            QVariantMap{{QStringLiteral("name"), QStringLiteral("Ada Lovelace")}, {QStringLiteral("role"), QStringLiteral("author")}},
+            QVariantMap{{QStringLiteral("name"), QStringLiteral("  ")}, {QStringLiteral("role"), QStringLiteral("author")}},
+            QVariantMap{{QStringLiteral("name"), QStringLiteral("Charles Babbage")}, {QStringLiteral("role"), QStringLiteral("editor")}},
+        });
+        QTRY_COMPARE_WITH_TIMEOUT(corrected.size(), 3, 5000);
+        QTRY_COMPARE_WITH_TIMEOUT(valueOf(inspector, QStringLiteral("contributors")),
+                                  QStringLiteral("Ada Lovelace (author); Charles Babbage (editor)"), 5000);
+        const QVariantList people = fieldOf(inspector, QStringLiteral("contributors")).value(QStringLiteral("editContributors")).toList();
+        QCOMPARE(people.size(), 2);
+        QCOMPARE(people.at(1).toMap().value(QStringLiteral("role")).toString(), QStringLiteral("editor"));
+
+        // Refused before anything is saved, with a reason.
+        const QStringList refusedYears{QStringLiteral("abc"), QStringLiteral("0"), QStringLiteral("10000"), QString()};
+        for (const QString& year : refusedYears) {
+            inspector->setYear(book, QStringLiteral("publication_year"), year);
+            QVERIFY2(!inspector->correctionError().isEmpty(), qPrintable(year));
+            QVERIFY(!inspector->saving());
+        }
+        inspector->setText(book, QStringLiteral("subtitle"), QStringLiteral("   "));
+        QVERIFY(!inspector->correctionError().isEmpty());
+        inspector->setText(book, QStringLiteral("publication_year"), QStringLiteral("1999"));  // Not a text field.
+        QVERIFY(!inspector->correctionError().isEmpty());
+        inspector->setContributors(book, QVariantList{QVariantMap{{QStringLiteral("name"), QString()}}});
+        QVERIFY(!inspector->correctionError().isEmpty());
+        inspector->setContributors(book, QVariantList{
+            QVariantMap{{QStringLiteral("name"), QStringLiteral("X")}, {QStringLiteral("role"), QStringLiteral("pilot")}}});
+        QVERIFY(!inspector->correctionError().isEmpty());
+        QTest::qWait(100);
+        QCOMPARE(corrected.size(), 3);
+        QCOMPARE(fieldOf(inspector, QStringLiteral("publication_year")).value(QStringLiteral("mode")).toString(),
+                 QStringLiteral("auto"));
+
+        inspector->setYear(book, QStringLiteral("publication_year"), QStringLiteral(" 1843 "));
+        QVERIFY(inspector->correctionError().isEmpty());
+        QTRY_COMPARE_WITH_TIMEOUT(valueOf(inspector, QStringLiteral("publication_year")), QStringLiteral("1843"), 5000);
+        inspector->setText(book, QStringLiteral("subtitle"), QStringLiteral("Notes"));
+        QTRY_COMPARE_WITH_TIMEOUT(valueOf(inspector, QStringLiteral("subtitle")), QStringLiteral("Notes"), 5000);
+        // Back to the document's value (it has no subtitle).
+        inspector->useDocumentValue(book, QStringLiteral("subtitle"));
+        QTRY_COMPARE_WITH_TIMEOUT(valueOf(inspector, QStringLiteral("subtitle")), QStringLiteral("—"), 5000);
+        QCOMPARE(fieldOf(inspector, QStringLiteral("subtitle")).value(QStringLiteral("mode")).toString(), QStringLiteral("auto"));
+        QTRY_VERIFY_WITH_TIMEOUT(!c.busy(), 10000);
+    }
+
+    // After a restart.
+    LibraryController c;
+    c.setProcessors(fake, std::make_shared<FakeAnalyzer>(fake), true);
+    openAndWait(c, dir.path());
+    QCOMPARE(titles(c.books()), QStringList{QStringLiteral("Cooking Basics")});
+    BookInspector* inspector = c.inspector();
+    QSignalSpy loaded(inspector, &BookInspector::loaded);
+    inspector->select(book);
+    QTRY_COMPARE_WITH_TIMEOUT(loaded.size(), 1, 5000);
+    QCOMPARE(valueOf(inspector, QStringLiteral("title")), QStringLiteral("Cooking Basics"));
+    QCOMPARE(valueOf(inspector, QStringLiteral("edition")), QStringLiteral("—"));
+    QCOMPARE(fieldOf(inspector, QStringLiteral("edition")).value(QStringLiteral("mode")).toString(), QStringLiteral("cleared"));
+    QCOMPARE(valueOf(inspector, QStringLiteral("contributors")), QStringLiteral("Ada Lovelace (author); Charles Babbage (editor)"));
+    QCOMPARE(valueOf(inspector, QStringLiteral("publication_year")), QStringLiteral("1843"));
+}
+
+// "Read title and authors again": a correction made while the rerun runs,
+// and one made before, both survive its publication; the cleared edition
+// does not come back; the document's new value is shown beside them.
+void TestLibraryController::correctionsSurviveARerun()
+{
+    QTemporaryDir dir;
+    auto fake = std::make_shared<FakeExtractor>();
+    fake->edition = QStringLiteral("2nd edition");
+    LibraryController c;
+    c.setProcessors(fake, std::make_shared<FakeAnalyzer>(fake), true);
+    openAndWait(c, dir.path());
+    c.importFiles({fixture("title-page.pdf")});
+    QTRY_COMPARE_WITH_TIMEOUT(titles(c.books()), QStringList{QStringLiteral("Extracted Title")}, 20000);
+    QTRY_VERIFY_WITH_TIMEOUT(!c.busy(), 10000);
+    const QString book = c.books()->bookIdAt(0);
+    BookInspector* inspector = c.inspector();
+    QSignalSpy corrected(inspector, &BookInspector::corrected);
+    inspector->select(book);
+    QTRY_COMPARE_WITH_TIMEOUT(valueOf(inspector, QStringLiteral("edition")), QStringLiteral("2nd edition"), 5000);
+    inspector->clearField(book, QStringLiteral("edition"));
+    QTRY_COMPARE_WITH_TIMEOUT(corrected.size(), 1, 5000);
+
+    const int callsBefore = fake->calls.load();
+    fake->title = QStringLiteral("Second Reading");
+    fake->edition = QStringLiteral("3rd edition");
+    fake->started = false;
+    fake->block = true;
+    c.rerunMetadata(book);
+    QTRY_VERIFY_WITH_TIMEOUT(fake->started.load(), 10000);
+    // While it runs, the earlier results stay shown and a correction is saved.
+    QCOMPARE(valueOf(inspector, QStringLiteral("title")), QStringLiteral("Extracted Title"));
+    inspector->setText(book, QStringLiteral("title"), QStringLiteral("My Title"));
+    QTRY_COMPARE_WITH_TIMEOUT(corrected.size(), 2, 5000);
+    fake->block = false;
+    QTRY_COMPARE_WITH_TIMEOUT(fieldOf(inspector, QStringLiteral("title")).value(QStringLiteral("documentValue")).toString(),
+                              QStringLiteral("Second Reading"), 10000);
+    QCOMPARE(fake->calls.load(), callsBefore + 1);
+    QCOMPARE(valueOf(inspector, QStringLiteral("title")), QStringLiteral("My Title"));
+    QCOMPARE(valueOf(inspector, QStringLiteral("edition")), QStringLiteral("—"));
+    QCOMPARE(fieldOf(inspector, QStringLiteral("edition")).value(QStringLiteral("documentValue")).toString(),
+             QStringLiteral("3rd edition"));
+    QTRY_COMPARE_WITH_TIMEOUT(titles(c.books()), QStringList{QStringLiteral("My Title")}, 5000);
+
+    // Returning the title to Auto shows the new reading, not the old one.
+    inspector->useDocumentValue(book, QStringLiteral("title"));
+    QTRY_COMPARE_WITH_TIMEOUT(valueOf(inspector, QStringLiteral("title")), QStringLiteral("Second Reading"), 5000);
+
+    // Contents can be analyzed again too; the metadata corrections stay.
+    const int bookCallsBefore = int(c.jobs()->rowCount());
+    c.rerunContents(book);
+    QTRY_VERIFY_WITH_TIMEOUT(c.jobs()->rowCount() > bookCallsBefore, 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(!c.busy(), 10000);
+    QCOMPARE(valueOf(inspector, QStringLiteral("edition")), QStringLiteral("—"));
+    QCOMPARE(inspector->contents()->entryCount(), 2);
 }
 
 QTEST_GUILESS_MAIN(TestLibraryController)
