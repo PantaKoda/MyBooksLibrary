@@ -412,6 +412,9 @@ Pane {
                 inspector: pane.inspector
                 bookId: correctionDialog.bookId
                 fieldData: correctionDialog.fieldData
+                // Room left in the window for the rows after the dialog's
+                // title, other fields and buttons (about 260 px).
+                maximumRowsHeight: Math.max(120, (correctionDialog.parent ? correctionDialog.parent.height : 640) - 260)
                 onDone: correctionDialog.close()
             }
         }

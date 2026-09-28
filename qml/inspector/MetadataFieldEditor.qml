@@ -20,8 +20,12 @@ ColumnLayout {
 
     readonly property bool isContributors: fieldData.kind === "contributors"
     // Contributors as [{name, role}]; changed only by add, move and remove.
-    // Names typed into the rows are read back with people().
+    // Names typed into the rows are read back with people(), so every row
+    // stays instantiated (a Repeater, not a ListView).
     property var rows: []
+    property int focusRow: 0  // The row that takes focus when the rows are rebuilt.
+    // Beyond this height the rows scroll, so the buttons stay on screen.
+    property real maximumRowsHeight: 280
     spacing: 8
 
     function people() {
@@ -36,6 +40,15 @@ ColumnLayout {
         const list = editor.people()
         change(list)
         editor.rows = list
+    }
+    function addPerson() {
+        editor.focusRow = editor.rows.length
+        editor.restructure(list => list.push({ name: "", role: "author" }))
+        // Show the new row: it is the last one.
+        Qt.callLater(() => {
+            const flick = rowScroll.contentItem as Flickable
+            flick.contentY = Math.max(0, flick.contentHeight - flick.height)
+        })
     }
     function save() {
         if (editor.isContributors)
@@ -75,7 +88,7 @@ ColumnLayout {
             Accessible.name: qsTr("Name %1").arg(row.index + 1)
             Keys.onReturnPressed: editor.save()
             Keys.onEnterPressed: editor.save()
-            Component.onCompleted: if (row.index === 0) forceActiveFocus()
+            Component.onCompleted: if (row.index === editor.focusRow) forceActiveFocus()
         }
         ComboBox {
             id: roleBox
@@ -135,15 +148,28 @@ ColumnLayout {
             text: qsTr("In the order printed:")
             opacity: 0.7
         }
-        Repeater {
-            id: rowRepeater
-            model: editor.rows
-            delegate: ContributorRow {}
+        ScrollView {
+            id: rowScroll
+            objectName: "contributorRows"
+            Layout.fillWidth: true
+            Layout.preferredHeight: Math.min(rowColumn.implicitHeight, editor.maximumRowsHeight)
+            contentWidth: availableWidth
+            clip: true
+            ColumnLayout {
+                id: rowColumn
+                width: rowScroll.availableWidth
+                spacing: 4
+                Repeater {
+                    id: rowRepeater
+                    model: editor.rows
+                    delegate: ContributorRow {}
+                }
+            }
         }
         Button {
             objectName: "addPersonButton"
             text: qsTr("Add a person")
-            onClicked: editor.restructure(list => list.push({ name: "", role: "author" }))
+            onClicked: editor.addPerson()
         }
     }
 

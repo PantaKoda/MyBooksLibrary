@@ -58,7 +58,15 @@ M07 is split in two:
 | `all_qmllint` | No warnings |
 | `appMyBooksLibrary --import title-page.pdf --inspect-first --correct contributors --screenshot docs/images/m07-correct-contributors.png` (Release, real SDK) | Exit 0, no QML warnings. The contributors editor opens over the inspector with one empty row, a role, Add a person, Save, Cancel and Leave empty |
 
-**Not verified by hand:** keyboard-only use of the dialog, screen readers, and very long contributor lists.
+**Review fixes (PR #16 review of `a58d0b8`):**
+1. *Minor:* with about 18 or more contributors, the dialog grew past the window and Save, Cancel and Leave empty went off-screen. The rows are now in a `ScrollView` capped at the window height minus about 260 px. They stay a `Repeater` so every typed name can be read back. Adding a person scrolls to the new row and focuses it.
+2. *Nit:* the rerun comment in `librarycontroller.h` now says that a rerun returns a job already waiting or running instead of starting a new generation.
+
+| Command | Result |
+| --- | --- |
+| `tst_inspectorpane::correctionDialogSavesAndSurvivesRefreshes`, extended | 25 people added in a 640 px window: once the rows are laid out, Save and Add a person are inside the window, and the newest row is scrolled into view with focus. A name typed in it is saved, and empty rows are ignored. **Against the unfixed editor it fails:** Save at y 824. The first version of this check passed on the unfixed editor because it measured before layout; it now waits for the rows to be laid out. |
+
+**Not verified by hand:** keyboard-only use of the dialog and screen readers.
 
 **Next action:** review of [PR #16](https://github.com/PantaKoda/MyBooksLibrary/pull/16). After it is merged: M07 part 2, TOC edits.
 

@@ -231,6 +231,35 @@ void TestInspectorPane::correctionDialogSavesAndSurvivesRefreshes()
     QTRY_COMPARE_WITH_TIMEOUT(fieldOf(inspector, QStringLiteral("contributors")).value(QStringLiteral("value")).toString(),
                               QStringLiteral("Alan Turing (author); Grace B. Hopper (author)"), 5000);
 
+    // A long list scrolls: Save stays in the window, a new row is scrolled
+    // into view, and a name typed in it (far below the first rows) is saved.
+    QTRY_VERIFY_WITH_TIMEOUT(!dialog->property("visible").toBool(), 5000);
+    QVERIFY(QMetaObject::invokeMethod(pane, "correct", Q_ARG(QVariant, fieldOf(inspector, QStringLiteral("contributors")))));
+    QTRY_VERIFY_WITH_TIMEOUT(dialog->property("opened").toBool(), 5000);
+    for (int i = 0; i < 25; ++i)
+        click(findItem(root, QStringLiteral("addPersonButton")));
+    const QString last = QStringLiteral("contributorName_26");
+    QTRY_VERIFY_WITH_TIMEOUT(findItem(root, last), 5000);
+    const QRectF windowRect(0, 0, window.width(), window.height());
+    const auto sceneRect = [](QQuickItem* item) {
+        return item ? item->mapRectToScene(QRectF(0, 0, item->width(), item->height())) : QRectF();
+    };
+    // Measure only once the rows are laid out (polished), not their initial geometry.
+    QTRY_VERIFY_WITH_TIMEOUT(sceneRect(findItem(root, last)).width() > 100, 5000);
+    QTest::qWait(100);
+    QTRY_VERIFY2_WITH_TIMEOUT(windowRect.contains(sceneRect(findItem(root, QStringLiteral("correctionSaveButton")))),
+                              qPrintable(QStringLiteral("Save at y %1").arg(sceneRect(findItem(root, QStringLiteral("correctionSaveButton"))).top())),
+                              5000);
+    QVERIFY(windowRect.contains(sceneRect(findItem(root, QStringLiteral("addPersonButton")))));
+    QVERIFY(findItem(root, QStringLiteral("contributorRows")));
+    QTRY_VERIFY_WITH_TIMEOUT(sceneRect(findItem(root, QStringLiteral("contributorRows"))).contains(sceneRect(findItem(root, last))), 5000);
+    QVERIFY(findItem(root, last)->hasActiveFocus());
+    findItem(root, last)->setProperty("text", QStringLiteral("Last Person"));
+    click(findItem(root, QStringLiteral("correctionSaveButton")));
+    QTRY_COMPARE_WITH_TIMEOUT(corrected.size(), 3, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(fieldOf(inspector, QStringLiteral("contributors")).value(QStringLiteral("value")).toString(),
+                              QStringLiteral("Alan Turing (author); Grace B. Hopper (author); Last Person (author)"), 5000);
+
     // A refused year: nothing saved, the dialog stays open with the reason.
     QTRY_VERIFY_WITH_TIMEOUT(!dialog->property("visible").toBool(), 5000);
     QVERIFY(QMetaObject::invokeMethod(pane, "correct", Q_ARG(QVariant, fieldOf(inspector, QStringLiteral("publication_year")))));
@@ -242,11 +271,11 @@ void TestInspectorPane::correctionDialogSavesAndSurvivesRefreshes()
     QTest::qWait(200);
     QVERIFY(dialog->property("visible").toBool());
     QVERIFY(findItem(root, QStringLiteral("correctionErrorLabel"))->isVisible());
-    QCOMPARE(corrected.size(), 2);
+    QCOMPARE(corrected.size(), 3);
 
     // Leave empty from the same dialog.
     click(findItem(root, QStringLiteral("correctionClearButton")));
-    QTRY_COMPARE_WITH_TIMEOUT(corrected.size(), 3, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(corrected.size(), 4, 5000);
     QTRY_COMPARE_WITH_TIMEOUT(fieldOf(inspector, QStringLiteral("publication_year")).value(QStringLiteral("mode")).toString(),
                               QStringLiteral("cleared"), 5000);
     // Reopening starts without the earlier error.
