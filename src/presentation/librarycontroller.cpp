@@ -46,6 +46,8 @@ LibraryController::LibraryController(QObject* parent) : QObject(parent)
     m_pool.setObjectName(QStringLiteral("mbl-library-worker"));
     m_jobs.setTitleLookup([this](const domain::BookId& id) { return m_books.titleOf(id); });
     m_search.results()->setStateLookup([this](const domain::BookId& id) { return m_books.processingStateOf(id); });
+    // A correction changes the book's row and what search finds.
+    connect(&m_inspector, &BookInspector::corrected, this, [this] { refresh(); });
 }
 
 LibraryController::~LibraryController()
@@ -227,6 +229,20 @@ void LibraryController::retryJob(const QString& jobId)
         m_coordinator->enqueueMetadata(job->book);
     else
         m_coordinator->enqueueContents(job->book);
+}
+
+void LibraryController::rerunMetadata(const QString& bookId)
+{
+    const domain::BookId book = domain::BookId::fromString(bookId);
+    if (m_coordinator && !m_closing && !book.isNull())
+        m_coordinator->enqueueMetadata(book);
+}
+
+void LibraryController::rerunContents(const QString& bookId)
+{
+    const domain::BookId book = domain::BookId::fromString(bookId);
+    if (m_coordinator && !m_closing && !book.isNull())
+        m_coordinator->enqueueContents(book);
 }
 
 void LibraryController::cancelAllJobs()

@@ -107,6 +107,11 @@ public:
     Q_INVOKABLE void cancelJob(const QString& jobId);
     Q_INVOKABLE void retryJob(const QString& jobId);
     Q_INVOKABLE void cancelAllJobs();
+    // Reruns for a book that may already have results: a new request
+    // generation, so an older run in flight can no longer publish. The shown
+    // results and the user's corrections stay until the new run publishes.
+    Q_INVOKABLE void rerunMetadata(const QString& bookId);
+    Q_INVOKABLE void rerunContents(const QString& bookId);
     // Closing the window: cancels imports and stops processing without
     // cancelling queued jobs (they resume next time). The window then waits
     // for !busy.

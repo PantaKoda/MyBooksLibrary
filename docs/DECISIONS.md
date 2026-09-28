@@ -386,3 +386,18 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
 - **Assumptions:** A view that is detached but not yet destroyed may still use its document, so it must be waited for. The window stays open until the view is destroyed, which normally takes one event-loop turn.
 - **Removed:** `ReaderController::viewReleased()` and the pane's `onItemChanged` / `onViewActiveChanged` release reporting.
 - **Verified:** See IMPLEMENTATION_PROGRESS.md, M06 part 2, "Review fixes".
+
+## 2026-09-28 — M07 part 1: metadata corrections and reruns in the inspector
+
+- **Change:**
+  - `BookInspector` gains correction commands for Value, Leave empty (Cleared) and Use the document's value (Auto), with validation, `saving` and `correctionError`. Title and subtitle are separate fields.
+  - `LibraryController` gains `rerunMetadata` and `rerunContents`.
+  - New `MetadataFieldEditor.qml`, in a dialog; the pane has a "More" menu for the reruns.
+  - Catalog override years must be between 1 and 9999.
+- **Why:** AGENTS.md sections 6 and 7 and the M07 gate: Auto/Value/Cleared persist, a cleared value never falls back, edits during analysis survive, and stale results cannot replace current data. The catalog already guaranteed these, but the user could not reach them.
+- **Assumptions:**
+  - Every correction names its book explicitly, so one can never land on a book selected while the dialog was open.
+  - The editor lives in a dialog, on a copy of the field taken when it opened. A refresh caused by processing recreates the field list and would otherwise destroy what the user is typing.
+  - Reruns keep the shown results and the corrections until the new run publishes (a new generation per enqueue). A rerun asked for while one is waiting or running returns the open job instead of starting another.
+  - TOC edits come in part 2. They need their own schema, and SDK entry IDs are not stable across reruns (AGENTS.md section 6).
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, M07 part 1.

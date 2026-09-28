@@ -7,6 +7,7 @@
 #include "presentation/librarycontroller.h"
 
 #include <QGuiApplication>
+#include <QPointer>
 #include <QQmlComponent>
 #include <QQmlEngine>
 #include <QQmlExtensionPlugin>
@@ -61,6 +62,35 @@ BookId bookWithOneEntry(mbl::catalog::Library& library, int n, const QString& ti
         .result();
 }
 
+// Any item in the window with that object name, including popups.
+QQuickItem* findItem(QQuickItem* root, const QString& name)
+{
+    if (!root)
+        return nullptr;
+    if (root->objectName() == name)
+        return root;
+    for (QQuickItem* child : root->childItems()) {
+        if (QQuickItem* found = findItem(child, name))
+            return found;
+    }
+    return nullptr;
+}
+
+QVariantMap fieldOf(BookInspector* inspector, const QString& code)
+{
+    for (const QVariant& f : inspector->metadataFields()) {
+        if (f.toMap().value(QStringLiteral("field")).toString() == code)
+            return f.toMap();
+    }
+    return {};
+}
+
+void click(QQuickItem* button)
+{
+    QVERIFY(button);
+    QVERIFY(QMetaObject::invokeMethod(button, "clicked"));
+}
+
 QString headingText(QQuickItem* pane)
 {
     auto* heading = pane->findChild<QQuickItem*>(QStringLiteral("entryHeading"));
@@ -74,6 +104,7 @@ class TestInspectorPane : public QObject {
 
 private slots:
     void entryDetailsFollowTheSelectedBook();
+    void correctionDialogSavesAndSurvivesRefreshes();
 };
 
 void TestInspectorPane::entryDetailsFollowTheSelectedBook()
@@ -116,6 +147,113 @@ void TestInspectorPane::entryDetailsFollowTheSelectedBook()
     QTRY_COMPARE_WITH_TIMEOUT(loaded.size(), 2, 5000);
     QTRY_COMPARE_WITH_TIMEOUT(headingText(pane), QStringLiteral("Select an entry to see where it points and why."), 5000);
     QCOMPARE(inspector->contents()->entryCount(), 1);
+}
+
+// The correction editor: typing survives a refresh of the inspector (e.g. a
+// job publishing), Save stores the value for the book it was opened for,
+// contributors keep their typed names through add and reorder, and a refused
+// year keeps the dialog open with the reason.
+void TestInspectorPane::correctionDialogSavesAndSurvivesRefreshes()
+{
+    QTemporaryDir dir;
+    BookId a;
+    BookId b;
+    {
+        auto library = mbl::catalog::Library::open(dir.path());
+        QVERIFY(library);
+        a = bookWithOneEntry(*library.value(), 1, QStringLiteral("Alpha chapter"));
+        b = bookWithOneEntry(*library.value(), 2, QStringLiteral("Beta chapter"));
+    }
+    LibraryController controller;
+    controller.open(dir.path());
+    QTRY_VERIFY_WITH_TIMEOUT(controller.ready() && !controller.busy(), 10000);
+
+    QQmlEngine engine;
+    QQmlComponent component(&engine, QUrl::fromLocalFile(QStringLiteral(MBL_SOURCE_DIR "/qml/inspector/BookInspectorPane.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    QQuickWindow window;
+    window.resize(640, 640);
+    std::unique_ptr<QObject> object(component.createWithInitialProperties(
+        {{QStringLiteral("inspector"), QVariant::fromValue<QObject*>(controller.inspector())}}));
+    auto* pane = qobject_cast<QQuickItem*>(object.get());
+    QVERIFY2(pane, qPrintable(component.errorString()));
+    pane->setParentItem(window.contentItem());
+    pane->setSize(QSizeF(640, 640));
+    window.show();
+    QQuickItem* root = window.contentItem()->parentItem() ? window.contentItem()->parentItem() : window.contentItem();
+
+    BookInspector* inspector = controller.inspector();
+    QSignalSpy loaded(inspector, &BookInspector::loaded);
+    QSignalSpy corrected(inspector, &BookInspector::corrected);
+    inspector->select(a.toString());
+    QTRY_COMPARE_WITH_TIMEOUT(loaded.size(), 1, 5000);
+    auto* dialog = pane->findChild<QObject*>(QStringLiteral("correctionDialog"));
+    QVERIFY(dialog);
+
+    // Title: typed text survives a refresh; saved for book A even though B
+    // is selected before Save.
+    QVERIFY(QMetaObject::invokeMethod(pane, "correct", Q_ARG(QVariant, fieldOf(inspector, QStringLiteral("title")))));
+    QTRY_VERIFY_WITH_TIMEOUT(dialog->property("opened").toBool(), 5000);
+    QPointer<QQuickItem> field = findItem(root, QStringLiteral("correctionValueField"));
+    QVERIFY(field);
+    field->setProperty("text", QStringLiteral("Typed Title"));
+    controller.refresh();
+    QTRY_COMPARE_WITH_TIMEOUT(loaded.size(), 2, 5000);
+    QVERIFY(field);  // Not recreated by the refresh.
+    QCOMPARE(field->property("text").toString(), QStringLiteral("Typed Title"));
+    inspector->select(b.toString());
+    QTRY_COMPARE_WITH_TIMEOUT(loaded.size(), 3, 5000);
+    click(findItem(root, QStringLiteral("correctionSaveButton")));
+    QTRY_COMPARE_WITH_TIMEOUT(corrected.size(), 1, 5000);
+    QCOMPARE(corrected.first().first().toString(), a.toString());
+    QTRY_VERIFY_WITH_TIMEOUT(!dialog->property("visible").toBool(), 5000);
+    QCOMPARE(fieldOf(inspector, QStringLiteral("title")).value(QStringLiteral("mode")).toString(), QStringLiteral("auto"));  // B unchanged.
+    inspector->select(a.toString());
+    QTRY_COMPARE_WITH_TIMEOUT(fieldOf(inspector, QStringLiteral("title")).value(QStringLiteral("value")).toString(),
+                              QStringLiteral("Typed Title"), 5000);
+
+    // Contributors: names typed before Add and Move up are kept, in the new order.
+    QVERIFY(QMetaObject::invokeMethod(pane, "correct", Q_ARG(QVariant, fieldOf(inspector, QStringLiteral("contributors")))));
+    QTRY_VERIFY_WITH_TIMEOUT(dialog->property("opened").toBool(), 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(findItem(root, QStringLiteral("contributorName_0")), 5000);
+    findItem(root, QStringLiteral("contributorName_0"))->setProperty("text", QStringLiteral("Grace Hopper"));
+    click(findItem(root, QStringLiteral("addPersonButton")));
+    QTRY_VERIFY_WITH_TIMEOUT(findItem(root, QStringLiteral("contributorName_1")), 5000);
+    QCOMPARE(findItem(root, QStringLiteral("contributorName_0"))->property("text").toString(), QStringLiteral("Grace Hopper"));
+    findItem(root, QStringLiteral("contributorName_1"))->setProperty("text", QStringLiteral("Alan Turing"));
+    click(findItem(root, QStringLiteral("moveUp_1")));
+    QTRY_COMPARE_WITH_TIMEOUT(findItem(root, QStringLiteral("contributorName_0"))->property("text").toString(),
+                              QStringLiteral("Alan Turing"), 5000);
+    // Typed after the last reorder: Save must read the rows as they are now.
+    findItem(root, QStringLiteral("contributorName_1"))->setProperty("text", QStringLiteral("Grace B. Hopper"));
+    click(findItem(root, QStringLiteral("correctionSaveButton")));
+    QTRY_COMPARE_WITH_TIMEOUT(corrected.size(), 2, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(fieldOf(inspector, QStringLiteral("contributors")).value(QStringLiteral("value")).toString(),
+                              QStringLiteral("Alan Turing (author); Grace B. Hopper (author)"), 5000);
+
+    // A refused year: nothing saved, the dialog stays open with the reason.
+    QTRY_VERIFY_WITH_TIMEOUT(!dialog->property("visible").toBool(), 5000);
+    QVERIFY(QMetaObject::invokeMethod(pane, "correct", Q_ARG(QVariant, fieldOf(inspector, QStringLiteral("publication_year")))));
+    QTRY_VERIFY_WITH_TIMEOUT(dialog->property("opened").toBool(), 5000);
+    field = findItem(root, QStringLiteral("correctionValueField"));
+    QVERIFY(field);
+    field->setProperty("text", QStringLiteral("19x5"));
+    click(findItem(root, QStringLiteral("correctionSaveButton")));
+    QTest::qWait(200);
+    QVERIFY(dialog->property("visible").toBool());
+    QVERIFY(findItem(root, QStringLiteral("correctionErrorLabel"))->isVisible());
+    QCOMPARE(corrected.size(), 2);
+
+    // Leave empty from the same dialog.
+    click(findItem(root, QStringLiteral("correctionClearButton")));
+    QTRY_COMPARE_WITH_TIMEOUT(corrected.size(), 3, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(fieldOf(inspector, QStringLiteral("publication_year")).value(QStringLiteral("mode")).toString(),
+                              QStringLiteral("cleared"), 5000);
+    // Reopening starts without the earlier error.
+    QTRY_VERIFY_WITH_TIMEOUT(!dialog->property("visible").toBool(), 5000);
+    QVERIFY(QMetaObject::invokeMethod(pane, "correct", Q_ARG(QVariant, fieldOf(inspector, QStringLiteral("edition")))));
+    QTRY_VERIFY_WITH_TIMEOUT(dialog->property("opened").toBool(), 5000);
+    QVERIFY(inspector->correctionError().isEmpty());
 }
 
 int main(int argc, char* argv[])

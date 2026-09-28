@@ -7,6 +7,8 @@
 //                                            metadata jobs finished), then quit
 //                     [--activity]           development: open with the activity panel shown
 //                     [--inspect-first]      development: select the first book (inspector shown)
+//                     [--correct <field>]    development: with --inspect-first, open the correction editor
+//                                            of that field ("title", "contributors", ...)
 //                     [--search <text>]      development: search once the library is ready
 //                     [--read-page <n>]      development: open the first book at page n when idle (before
 //                                            --screenshot or --close, if given)
@@ -197,6 +199,8 @@ int main(int argc, char *argv[])
     const bool closeWhenIdle = args.contains(QLatin1String("--close"));
     if (args.contains(QLatin1String("--activity")))
         engine.rootObjects().constFirst()->setProperty("showActivity", true);
+    if (const qsizetype at = args.indexOf(QLatin1String("--correct")); at >= 0 && at + 1 < args.size())
+        engine.rootObjects().constFirst()->setProperty("correctFirst", args.at(at + 1));
     if (args.contains(QLatin1String("--inspect-first")))
         engine.rootObjects().constFirst()->setProperty("inspectFirst", true);
     for (qsizetype i = 1; i + 1 < args.size(); ++i) {

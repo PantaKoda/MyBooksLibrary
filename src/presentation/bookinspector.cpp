@@ -69,8 +69,41 @@ QStringList evidenceLines(const QList<MetadataEvidence>& evidence)
     return lines;
 }
 
-QVariantMap field(const QString& label, const QString& value, ValueSource source,
-                  const std::optional<FieldStatus>& status, bool extracted, const MetadataFieldDetail* detail)
+// What a field shows, and what an editor needs to correct it.
+struct FieldView {
+    MetadataField field = MetadataField::Title;
+    QString label;
+    QString value;          // Effective value as shown.
+    ValueSource source = ValueSource::None;
+    std::optional<FieldStatus> status;
+    OverrideMode mode = OverrideMode::Auto;
+    QString documentValue;  // The document's value, when a correction replaces it.
+};
+
+QString kindOf(MetadataField f)
+{
+    switch (f) {
+    case MetadataField::PublicationYear:
+    case MetadataField::CopyrightYear: return QStringLiteral("year");
+    case MetadataField::Contributors: return QStringLiteral("contributors");
+    default: return QStringLiteral("text");
+    }
+}
+
+QString yearText(const std::optional<int>& year)
+{
+    return year ? QString::number(*year) : QString();
+}
+
+QString contributorsText(const QList<Contributor>& contributors)
+{
+    QStringList people;
+    for (const Contributor& c : contributors)
+        people << QStringLiteral("%1 (%2)").arg(c.name, roleText(c.role));
+    return people.join(QStringLiteral("; "));
+}
+
+QVariantMap field(const FieldView& v, const EffectiveMetadata& m, bool extracted, const MetadataFieldDetail* detail)
 {
     QStringList evidence;
     QStringList alternatives;
@@ -91,9 +124,29 @@ QVariantMap field(const QString& label, const QString& value, ValueSource source
         if (detail->alternatives.size() > kShown)
             alternatives << trn("and %n more", int(detail->alternatives.size() - kShown));
     }
-    return QVariantMap{{QStringLiteral("label"), label},
-                       {QStringLiteral("value"), value.isEmpty() ? QStringLiteral("—") : value},
-                       {QStringLiteral("sourceText"), sourceText(source, status, extracted)},
+    // The editor starts from the value shown (nothing when cleared or absent).
+    QString editText;
+    QVariantList editContributors;
+    switch (v.field) {
+    case MetadataField::Title: editText = m.title.value_or(QString()); break;
+    case MetadataField::Subtitle: editText = m.subtitle.value_or(QString()); break;
+    case MetadataField::Edition: editText = m.edition.value_or(QString()); break;
+    case MetadataField::PublicationYear: editText = yearText(m.publicationYear); break;
+    case MetadataField::CopyrightYear: editText = yearText(m.copyrightYear); break;
+    case MetadataField::Contributors:
+        for (const Contributor& c : m.contributors)
+            editContributors << QVariantMap{{QStringLiteral("name"), c.name}, {QStringLiteral("role"), toCode(c.role)}};
+        break;
+    }
+    return QVariantMap{{QStringLiteral("field"), toCode(v.field)},
+                       {QStringLiteral("kind"), kindOf(v.field)},
+                       {QStringLiteral("label"), v.label},
+                       {QStringLiteral("value"), v.value.isEmpty() ? QStringLiteral("—") : v.value},
+                       {QStringLiteral("mode"), toCode(v.mode)},
+                       {QStringLiteral("sourceText"), sourceText(v.source, v.status, extracted)},
+                       {QStringLiteral("documentValue"), v.documentValue},
+                       {QStringLiteral("editText"), editText},
+                       {QStringLiteral("editContributors"), editContributors},
                        {QStringLiteral("evidence"), evidence},
                        {QStringLiteral("alternatives"), alternatives}};
 }
@@ -191,6 +244,7 @@ void BookInspector::select(const QString& bookId)
     m_book = id;
     m_shownTocRun.reset();
     m_contentsShown = false;
+    setCorrectionError({});
     emit bookChanged();
     load();
 }
@@ -246,27 +300,45 @@ void BookInspector::apply(const Loaded& result)
     m_fileText = d.asset.pageCount ? tr("%1 · %2 pages").arg(d.originalFileName).arg(*d.asset.pageCount)
                                    : d.originalFileName;
 
-    QString title = m.title.value_or(QString());
-    if (m.subtitle)
-        title += QStringLiteral(": ") + *m.subtitle;
-    QStringList people;
-    for (const Contributor& c : m.contributors)
-        people << QStringLiteral("%1 (%2)").arg(c.name, roleText(c.role));
-    const auto year = [](const std::optional<int>& y) { return y ? QString::number(*y) : QString(); };
+    // The document's value, shown next to a correction that replaces it.
+    const auto documentValue = [&](MetadataField f) -> QString {
+        if (!extracted || d.overrides[f].mode == OverrideMode::Auto)
+            return {};
+        const ExtractedMetadata& x = *d.extracted;
+        switch (f) {
+        case MetadataField::Title: return x.title.value_or(QString());
+        case MetadataField::Subtitle: return x.subtitle.value_or(QString());
+        case MetadataField::Contributors: return contributorsText(x.contributors);
+        case MetadataField::Edition: return x.editionStatement.value_or(QString());
+        case MetadataField::PublicationYear: return yearText(x.publicationYear);
+        case MetadataField::CopyrightYear: return yearText(x.copyrightYear);
+        }
+        return {};
+    };
+    const auto view = [&](MetadataField f, const QString& label, const QString& value, ValueSource source,
+                          FieldStatus ExtractedMetadata::*statusMember) {
+        return FieldView{f, label, value, source, status(statusMember), d.overrides[f].mode, documentValue(f)};
+    };
+    // Title and subtitle share one extracted status and one set of evidence.
     m_metadataFields = {
-        field(tr("Title"), title, m.titleSource, status(&ExtractedMetadata::titleStatus), extracted,
-              detailOf(result.fieldDetails, MetadataField::Title)),
-        field(tr("Authors and contributors"), people.join(QStringLiteral("; ")), m.contributorsSource,
-              status(&ExtractedMetadata::contributorsStatus), extracted,
-              detailOf(result.fieldDetails, MetadataField::Contributors)),
-        field(tr("Edition"), m.edition.value_or(QString()), m.editionSource, status(&ExtractedMetadata::editionStatus),
-              extracted, detailOf(result.fieldDetails, MetadataField::Edition)),
-        field(tr("Publication year"), year(m.publicationYear), m.publicationYearSource,
-              status(&ExtractedMetadata::publicationYearStatus), extracted,
-              detailOf(result.fieldDetails, MetadataField::PublicationYear)),
-        field(tr("Copyright year"), year(m.copyrightYear), m.copyrightYearSource,
-              status(&ExtractedMetadata::copyrightYearStatus), extracted,
-              detailOf(result.fieldDetails, MetadataField::CopyrightYear)),
+        field(view(MetadataField::Title, tr("Title"), m.title.value_or(QString()), m.titleSource,
+                   &ExtractedMetadata::titleStatus),
+              m, extracted, detailOf(result.fieldDetails, MetadataField::Title)),
+        field(view(MetadataField::Subtitle, tr("Subtitle"), m.subtitle.value_or(QString()), m.subtitleSource,
+                   &ExtractedMetadata::titleStatus),
+              m, extracted, nullptr),
+        field(view(MetadataField::Contributors, tr("Authors and contributors"), contributorsText(m.contributors),
+                   m.contributorsSource, &ExtractedMetadata::contributorsStatus),
+              m, extracted, detailOf(result.fieldDetails, MetadataField::Contributors)),
+        field(view(MetadataField::Edition, tr("Edition"), m.edition.value_or(QString()), m.editionSource,
+                   &ExtractedMetadata::editionStatus),
+              m, extracted, detailOf(result.fieldDetails, MetadataField::Edition)),
+        field(view(MetadataField::PublicationYear, tr("Publication year"), yearText(m.publicationYear),
+                   m.publicationYearSource, &ExtractedMetadata::publicationYearStatus),
+              m, extracted, detailOf(result.fieldDetails, MetadataField::PublicationYear)),
+        field(view(MetadataField::CopyrightYear, tr("Copyright year"), yearText(m.copyrightYear),
+                   m.copyrightYearSource, &ExtractedMetadata::copyrightYearStatus),
+              m, extracted, detailOf(result.fieldDetails, MetadataField::CopyrightYear)),
     };
     m_contentsSummary = contentsSummaryOf(d.toc);
     m_contentsNotes = contentsNotesOf(d.toc);
@@ -280,6 +352,116 @@ void BookInspector::apply(const Loaded& result)
     }
     emit detailsChanged();
     emit loaded();
+}
+
+QVariantList BookInspector::contributorRoles() const
+{
+    QVariantList roles;
+    for (ContributorRole r : {ContributorRole::Author, ContributorRole::Editor, ContributorRole::Translator,
+                              ContributorRole::Organization})
+        roles << QVariantMap{{QStringLiteral("code"), toCode(r)}, {QStringLiteral("text"), roleText(r)}};
+    return roles;
+}
+
+void BookInspector::setText(const QString& bookId, const QString& field, const QString& value)
+{
+    const auto f = metadataFieldFromCode(field);
+    if (!f || kindOf(*f) != QLatin1String("text")) {
+        setCorrectionError(tr("This field cannot be corrected with text."));
+        return;
+    }
+    const QString text = value.trimmed();
+    if (text.isEmpty()) {
+        setCorrectionError(tr("Enter a value, or use Clear to leave the field empty."));
+        return;
+    }
+    save(bookId, field, MetadataOverride::withText(text));
+}
+
+void BookInspector::setYear(const QString& bookId, const QString& field, const QString& value)
+{
+    const auto f = metadataFieldFromCode(field);
+    if (!f || kindOf(*f) != QLatin1String("year")) {
+        setCorrectionError(tr("This field is not a year."));
+        return;
+    }
+    bool ok = false;
+    const int year = value.trimmed().toInt(&ok);
+    if (!ok || year < 1 || year > 9999) {
+        setCorrectionError(tr("Enter a year such as 2019, or use Clear to leave the field empty."));
+        return;
+    }
+    save(bookId, field, MetadataOverride::withYear(year));
+}
+
+void BookInspector::setContributors(const QString& bookId, const QVariantList& contributors)
+{
+    QList<Contributor> list;
+    for (const QVariant& item : contributors) {
+        const QVariantMap map = item.toMap();
+        const QString name = map.value(QStringLiteral("name")).toString().trimmed();
+        if (name.isEmpty())
+            continue;  // A row added but left empty.
+        const auto role = contributorRoleFromCode(map.value(QStringLiteral("role")).toString());
+        if (!role) {
+            setCorrectionError(tr("Choose a role for %1.").arg(name));
+            return;
+        }
+        list << Contributor{name, *role};
+    }
+    if (list.isEmpty()) {
+        setCorrectionError(tr("Enter at least one name, or use Clear to leave the field empty."));
+        return;
+    }
+    save(bookId, toCode(MetadataField::Contributors), MetadataOverride::withContributors(list));
+}
+
+void BookInspector::clearField(const QString& bookId, const QString& field)
+{
+    save(bookId, field, MetadataOverride::cleared());
+}
+
+void BookInspector::useDocumentValue(const QString& bookId, const QString& field)
+{
+    save(bookId, field, MetadataOverride::automatic());
+}
+
+void BookInspector::save(const QString& bookId, const QString& fieldCode, const MetadataOverride& value)
+{
+    const BookId book = BookId::fromString(bookId);
+    const auto f = metadataFieldFromCode(fieldCode);
+    if (!m_library || book.isNull() || !f) {
+        setCorrectionError(tr("This field cannot be corrected."));
+        return;
+    }
+    setCorrectionError({});
+    if (m_saving++ == 0)
+        emit savingChanged();
+    m_library
+        ->run([book, field = *f, value](QSqlDatabase& db) { return catalog::setOverride(db, book, field, value); })
+        .then(this, [this, book](const Status& saved) {
+            if (--m_saving == 0)
+                emit savingChanged();
+            if (!saved) {
+                if (m_book == book) {
+                    setCorrectionError(saved.error().code == ErrorCode::NotFound
+                                           ? tr("This book is no longer in the library.")
+                                           : tr("The correction was not saved: %1").arg(saved.error().message));
+                }
+                return;
+            }
+            if (m_book == book)
+                load();
+            emit corrected(book.toString());
+        });
+}
+
+void BookInspector::setCorrectionError(const QString& error)
+{
+    if (m_correctionError == error)
+        return;
+    m_correctionError = error;
+    emit correctionErrorChanged();
 }
 
 void BookInspector::clear()
