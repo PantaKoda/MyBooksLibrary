@@ -4,6 +4,7 @@
 #include "catalog/library.h"
 #include "catalog/reading.h"
 #include "catalog/migrations.h"
+#include "catalog/collections.h"
 #include "catalog/tocedits.h"
 
 #include <QSqlDatabase>
@@ -53,6 +54,7 @@ private slots:
     void version3ContentsRunsLoadAfterUpgrade();
     void version4CatalogGainsReadingPositions();
     void version5CatalogGainsEditedContents();
+    void version6CatalogGainsCollections();
     void newerSchemaIsRefusedUnchanged();
     void failedMigrationRollsBack();
     void nonConsecutiveListIsRejected();
@@ -268,6 +270,39 @@ void TestMigrations::version5CatalogGainsEditedContents()
     auto edited = library.value()->run([id, base, rename](QSqlDatabase& db) { return editToc(db, id, base, {rename}); }).result();
     QVERIFY2(edited, edited ? "" : qPrintable(edited.error().message));
     QCOMPARE(edited.value().number, 1);
+}
+
+// A schema 6 catalog with a trashed book upgrades in place: the book stays
+// trashed (no trash time recorded then), and collections work.
+void TestMigrations::version6CatalogGainsCollections()
+{
+    const QString book = QStringLiteral("5c4d3e2f-4b3a-4918-8776-655443322110");
+    QTemporaryDir dir;
+    const QString path = dir.filePath(QLatin1StringView(Library::kCatalogFileName));
+    withConnection(path, [&](QSqlDatabase& db) {
+        QVERIFY(migrate(db, catalogMigrations().mid(0, 6)));
+        QCOMPARE(schemaVersion(db), 6);
+        QVERIFY(!tableExists(db, QStringLiteral("collections")));
+        QSqlQuery q(db);
+        QVERIFY(q.exec(QStringLiteral(
+            "INSERT INTO assets(id, sha256, byte_size, page_count, managed_path, created_at) VALUES "
+            "('a1', '0000000000000000000000000000000000000000000000000000000000000001', 10, 8, 'files/a1/source.pdf', 'x')")));
+        QVERIFY(q.exec(QStringLiteral("INSERT INTO books(id, asset_id, original_file_name, original_path, created_at, "
+                                      "updated_at, lifecycle) VALUES ('%1', 'a1', 'old.pdf', 'C:/old.pdf', 'x', 'x', 'trashed')")
+                           .arg(book)));
+    });
+    auto library = Library::open(dir.path());
+    QVERIFY2(library, library ? "" : qPrintable(library.error().message));
+    QVERIFY(latestSchemaVersion() >= 7);
+    const auto id = mbl::domain::BookId::fromString(book);
+    auto trashed = library.value()->run([](QSqlDatabase& db) { return listBooks(db, mbl::domain::Lifecycle::Trashed); }).result();
+    QVERIFY(trashed);
+    QCOMPARE(trashed.value().size(), 1);
+    QVERIFY(!trashed.value().first().trashedAt.isValid());
+    auto created = library.value()->run([](QSqlDatabase& db) { return createCollection(db, QStringLiteral("Old books")); }).result();
+    QVERIFY(created);
+    QVERIFY(library.value()->run([id](QSqlDatabase& db) { return restoreBook(db, id); }).result());
+    QVERIFY(library.value()->run([c = created.value(), id](QSqlDatabase& db) { return addToCollection(db, c, {id}); }).result());
 }
 
 void TestMigrations::newerSchemaIsRefusedUnchanged()

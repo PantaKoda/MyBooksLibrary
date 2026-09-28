@@ -264,7 +264,28 @@ QList<Migration> buildMigrations()
         QStringLiteral("ALTER TABLE books ADD COLUMN active_toc_revision_id TEXT "
                        "REFERENCES toc_edit_revisions(id) ON DELETE SET NULL"),
     };
-    return {v1, v2, v3, v4, v5, v6};
+    Migration v7;
+    v7.version = 7;
+    v7.name = QStringLiteral("collections and trash time");
+    v7.statements = {
+        // Named groups of books; names are unique regardless of ASCII case.
+        QStringLiteral(R"(CREATE TABLE collections (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL CHECK (length(trim(name)) > 0),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL))"),
+        QStringLiteral("CREATE UNIQUE INDEX collections_name ON collections(name COLLATE NOCASE)"),
+        // Membership only: a book in several collections is still one book and one file.
+        QStringLiteral(R"(CREATE TABLE collection_books (
+            collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+            book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+            added_at TEXT NOT NULL,
+            PRIMARY KEY (collection_id, book_id)))"),
+        QStringLiteral("CREATE INDEX collection_books_book ON collection_books(book_id)"),
+        // When a trashed book was moved to Trash (UTC); NULL for active books.
+        QStringLiteral("ALTER TABLE books ADD COLUMN trashed_at TEXT"),
+    };
+    return {v1, v2, v3, v4, v5, v6, v7};
 }
 
 } // namespace

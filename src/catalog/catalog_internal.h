@@ -69,6 +69,9 @@ domain::Result<domain::RunId> publishMetadataRun(QSqlDatabase& db, const domain:
 domain::Status touchBook(QSqlDatabase& db, const domain::BookId& book);
 domain::Status refreshBookProjection(QSqlDatabase& db, const domain::BookId& book);
 
+// One book's summary, as listBooks() gives it.
+domain::Result<domain::BookSummary> bookSummary(QSqlDatabase& db, const domain::BookId& book);
+
 // Stored JSON of a TOC entry's evidence.
 QString tocEvidenceToJson(const domain::TocEntryEvidence& evidence);
 domain::TocEntryEvidence tocEvidenceFromJson(const QString& json);

@@ -35,6 +35,7 @@ endif()
 qt_add_library(mbl_core STATIC
     src/domain/book.h
     src/domain/codes.cpp
+    src/domain/collection.h
     src/domain/ids.h
     src/domain/importing.h
     src/domain/jobs.h
@@ -60,6 +61,8 @@ qt_add_library(mbl_core STATIC
     src/catalog/reading.cpp
     src/catalog/tocedits.h
     src/catalog/tocedits.cpp
+    src/catalog/collections.h
+    src/catalog/collections.cpp
     src/catalog/library.h
     src/catalog/library.cpp
     src/catalog/migrations.h

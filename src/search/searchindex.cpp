@@ -3,6 +3,7 @@
 #include "search/ftsquery.h"
 
 #include <QHash>
+#include <QSet>
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QVariant>
@@ -190,6 +191,25 @@ domain::Result<domain::SearchResponse> search(QSqlDatabase& db, const domain::Se
                 chapter.title = query.value(8).toString();
                 group.hit.chapters << chapter;
             }
+        }
+    }
+
+    // Within one collection: drop books outside it (membership is catalog
+    // data, read here only). Ranks are unaffected.
+    if (request.collection && !groups.isEmpty()) {
+        QSqlQuery members(db);
+        members.prepare(QStringLiteral("SELECT book_id FROM collection_books WHERE collection_id = ?"));
+        members.addBindValue(request.collection->toString());
+        if (!members.exec())
+            return sqlFailure(members);
+        QSet<QString> inCollection;
+        while (members.next())
+            inCollection.insert(members.value(0).toString());
+        for (auto it = groups.begin(); it != groups.end();) {
+            if (inCollection.contains(it.key()))
+                ++it;
+            else
+                it = groups.erase(it);
         }
     }
 

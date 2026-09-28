@@ -431,3 +431,19 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - **Removed entries stay in the tree**, struck through, so they can be restored. Search, the summary and the list's count leave them out.
   - **Reconciliation shows counts, not a diff.** The banner gives the newer analysis's entry count; comparing the two entry by entry is left for later ("Not yet" in UI.md).
 - **Verified:** See IMPLEMENTATION_PROGRESS.md, M07 part 2b.
+
+## 2026-09-28 — M08 part 1: collections, and trash that ends and restores work
+
+- **Change:**
+  - Schema 7 adds collections (membership only) and `books.trashed_at`, with the new `catalog/collections.*`.
+  - Trash ends the book's jobs in its own transaction; restore ends stale open jobs and queues new jobs for components without results.
+  - `finishJob` keeps the outcome `trashed`.
+  - Search can be limited to a collection.
+- **Why:** AGENTS.md §6 (Trash is reversible: hide from search, invalidate pending generations, prevent late completion from restoring anything; restoration rebuilds visibility) and the M08 gate (collections without duplicate files; queue, cancellation and restore races handled). §9: library and collection navigation.
+- **Assumptions:**
+  - **Trash ends jobs in the catalog, not only at claim time.** Otherwise a job running at trash time stays `running` with a stale generation, and the one-open-job-per-kind rule would make a restore reuse it: its result is refused, and the book would be left without results or a job. Now it is `cancel_requested` and does not count as open.
+  - **The trash reason survives the worker.** The worker ends such a job as a cancellation; `finishJob` keeps outcome `trashed`, so the activity list says why.
+  - **Restore resumes exactly what the trash stopped** (review of PR #19): kinds with a job ended as `trashed` since the trash time. A rule of "no published result" would retry an extraction that had failed before the trash, which AGENTS.md §8 leaves failed until the user asks, and would drop a queued rerun of a book that already had results.
+  - **Collection names are unique regardless of ASCII case** (SQLite `NOCASE`). Non-ASCII names differing only in case are allowed; this is documented, not hidden.
+  - **Searching a collection filters after matching**, so the ranking tiers stay as SEARCH.md describes.
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, M08 part 1.
