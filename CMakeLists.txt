@@ -58,6 +58,8 @@ qt_add_library(mbl_core STATIC
     src/catalog/jobs.cpp
     src/catalog/reading.h
     src/catalog/reading.cpp
+    src/catalog/tocedits.h
+    src/catalog/tocedits.cpp
     src/catalog/library.h
     src/catalog/library.cpp
     src/catalog/migrations.h

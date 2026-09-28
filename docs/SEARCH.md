@@ -7,7 +7,7 @@ Search covers **effective bibliographic fields and table-of-contents titles**. I
 | FTS5 table | One row per | Indexed | Stored alongside (unindexed) |
 | --- | --- | --- | --- |
 | `search_books` | active book | `title` (effective title and subtitle, or the file-name fallback), `contributors` (effective names) | `book_id`, `display_title` |
-| `search_toc` | TOC entry of the active run of an active book | `title` | `book_id`, `entry_key`, order, printed label, destination state/page, source TOC page, in-export-plan flag |
+| `search_toc` | Effective contents entry of an active book: the active edit revision's entries (without removed ones) if the contents are edited, else the active run's (CATALOG.md, "Edited contents") | `title` | `book_id`, `entry_key`, order, printed label, destination state/page, source TOC page, in-export-plan flag |
 
 Tokenizer: `unicode61 remove_diacritics 2 tokenchars '+#'`. Matching is case-insensitive and ignores diacritics ("edition" finds "Édition"). `+` and `#` are part of tokens, so `C++` and `C#` do not match plain `C`.
 

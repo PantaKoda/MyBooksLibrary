@@ -14,7 +14,7 @@
 
 `infrastructure::DatabaseExecutor` owns one `QThread` and the only QSQLITE connection to the catalog. Work is posted as `task(QSqlDatabase&)` and runs in submission order. Callers receive a `QFuture` of a **copied value**. `QSqlQuery` objects and the connection never leave that thread. GUI code must continue from the future (for example with `QFuture::then(context, …)`) rather than calling `result()`. Tests and the windowless modes may block on `result()`.
 
-## Schema (version 5)
+## Schema (version 6)
 
 | Table | Holds |
 | --- | --- |
@@ -26,6 +26,7 @@
 | `search_books`, `search_toc` | A3's FTS5 projections (derived; see SEARCH.md). |
 | `jobs` (schema 3) | Durable processing jobs: book, kind (`metadata`/`toc`), state (`queued`, `running`, `cancel_requested`, `succeeded`, `failed`, `cancelled`, `interrupted`), the request generation and source SHA-256 captured at enqueue, attempt, outcome, error, the published run and timestamps. At most one pending (`queued` or `running`) job per book and kind (partial unique index); a `cancel_requested` job does not block a new request. A succeeded job names its run. See PROCESSING.md. |
 | `toc_entries.evidence_json`, `toc_runs.parse_complete`, `search_covered_document`, `plan_blockers_json`, `stop_reasons_json`, `plan_json` (schema 4) | Per contents entry: source pages, hierarchy and destination reasons, uncertain printed label, resolution method, alternative pages, omission reason (a JSON object; `{}` for entries of earlier runs). Per contents run: parse completeness and search coverage (NULL when unknown), plan blockers and stop reasons (JSON arrays), and the SDK plan JSON. |
+| `toc_edit_revisions`, `toc_edit_entries`, `books.active_toc_revision_id` (schema 6) | The user's contents edits. Each revision is immutable, numbered per book and **based on one TOC run**. Its full entry list holds:<br>- `entry_key`, stable across the book's revisions (parents refer to it);<br>- the base run's `base_sdk_entry_id`, if any;<br>- the same content columns as `toc_entries`;<br>- `edits_json`, the fields the user changed (`title`, `page`, `level`, `added`);<br>- `removed` (kept, not searched).<br>`books.active_toc_revision_id` is the revision in effect (NULL: the active run's entries). Earlier revisions are kept. |
 | `reading_positions` (schema 5) | Per book: the zero-based physical page where it was last read, and when. Removed with the book. `catalog::setReadingPosition` checks the page against the page count when it is known. |
 | `metadata_field_details` (schema 3) | Per metadata run and field: evidence, alternative candidates and reasons as JSON, normalized from the SDK report so the UI can explain a value or an ambiguity without the raw report. |
 | `import_operations` (schema 2) | One row per import attempt: source path, name, size and modification time; phase (`copying`, `verified`, `registered`, `duplicate`, `failed`, `cancelled`, `abandoned`); SHA-256, size and reserved asset ID once verified; the registered or existing book; the error. Open rows (`copying`, `verified`) are recovered at startup (STORAGE.md). |
@@ -34,7 +35,7 @@ Constraints enforce the invariants: one book per asset, one asset per SHA-256, a
 
 ## Migrations
 
-Schema versions: **1** is the catalog, metadata, contents and search projections (M02). **2** adds `import_operations` (M03). **3** adds `jobs` and `metadata_field_details` (M04). **4** adds the contents evidence and plan columns (M05), with `ALTER TABLE … ADD COLUMN` only. **5** adds `reading_positions` (M06). Earlier catalogs upgrade in place (`tst_migrations::version1CatalogUpgradesWithDataIntact`, `version2CatalogGainsJobs`, `version3ContentsRunsLoadAfterUpgrade`, `version4CatalogGainsReadingPositions`).
+Schema versions: **1** is the catalog, metadata, contents and search projections (M02). **2** adds `import_operations` (M03). **3** adds `jobs` and `metadata_field_details` (M04). **4** adds the contents evidence and plan columns (M05), with `ALTER TABLE … ADD COLUMN` only. **5** adds `reading_positions` (M06). **6** adds the contents edit revisions (M07). Earlier catalogs upgrade in place (`tst_migrations::version1CatalogUpgradesWithDataIntact`, `version2CatalogGainsJobs`, `version3ContentsRunsLoadAfterUpgrade`, `version4CatalogGainsReadingPositions`, `version5CatalogGainsEditedContents`).
 
 Migrations live in `catalog/migrations.cpp`. `PRAGMA user_version` records the applied version. Each migration runs in its own transaction together with its `user_version` update:
 
@@ -56,6 +57,22 @@ Migrations live in `catalog/migrations.cpp`. `PRAGMA user_version` records the a
 - Trash increments both generations and removes the search rows. Late results are then refused, even after a restore. Restore re-projects the book.
 - `rebuildSearchIndex` recreates all projections from catalog tables in one transaction, without SDK work.
 
+## Edited contents
+
+`catalog/tocedits.h`. Edits never change an analysis run. **Effective contents** are the active edit revision if there is one, else the active run's entries. `bookDetails` returns them as `toc`, with `tocRevision` and, when a revision is shown, the run's own entries as `analyzedToc`. Search indexes the effective contents without removed entries, in the same transaction as each change.
+
+- **`editToc(book, base, edits)`** applies the edits in order and saves the result as a new active revision. The edits are rename, set page or clear page, set parent or make top-level, remove (with sub-entries), restore (not under a removed parent), and add (a sibling after an entry and its sub-entries). It is refused:
+  - with `StaleGeneration` when `base` (the active run and revision the caller saw) no longer matches;
+  - with `InvalidArgument` for an invalid edit: empty title, page outside the document, unknown entry, or a cycle. Nothing is saved, even if earlier edits in the list were valid;
+  - with `Trashed` for a trashed book.
+- **A new run for a book with edited contents**, in `publishToc`, in the same transaction:
+  - **Same entries in content** (titles, printed labels, pages, source pages and structure, parents compared by position in each list): the edits carry over as a new revision on the new run, tied to the new run's entries. Plan membership and evidence come from the new run.
+  - **Anything else:** the edited contents stay in effect and searchable, and the book **needs reconciliation**. Edits are never moved by position or title alone, because SDK entry IDs are not stable across reruns (AGENTS.md §6).
+- **Reconciliation, only by the user:**
+  - `keepTocEdits` saves the edited entries as a new revision on the newer run, no longer tied to its entries.
+  - `useAnalyzedToc` shows the run's entries again, and also serves as "discard my edits".
+  - Both check `base` like `editToc`. The revisions stay in the catalog (`tocRevisions`).
+
 ## Effective metadata
 
 `domain::effectiveMetadata(extracted, overrides)` computes each field:
@@ -70,4 +87,4 @@ The display title falls back to the original file name (`displayTitleFromFileNam
 
 ## Deferred to later milestones
 
-TOC edit revisions, collections, reading position and export plans will be added in their milestones as new migrations.
+Collections and export plans will be added in their milestones as new migrations. Turning edited contents into an export plan is M09.

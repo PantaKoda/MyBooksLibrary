@@ -24,7 +24,7 @@ namespace mbl::search {
 QStringList projectionSchema();
 
 struct ChapterProjection {
-    qint64 entryKey = 0;  // toc_entries.id
+    qint64 entryKey = 0;  // toc_entries.id, or toc_edit_entries.id for edited contents
     QString title;
     int order = 0;
     std::optional<QString> printedLabel;

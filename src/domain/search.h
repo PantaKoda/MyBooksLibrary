@@ -24,7 +24,7 @@ struct SearchRequest {
 };
 
 struct ChapterHit {
-    qint64 entryKey = 0;             // Catalog row of the TOC entry.
+    qint64 entryKey = 0;             // Catalog row of the entry: toc_entries.id, or toc_edit_entries.id when edited.
     QString title;
     int order = 0;
     std::optional<QString> printedLabel;

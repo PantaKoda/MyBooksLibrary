@@ -1,6 +1,11 @@
 // Table-of-contents contracts. Every parsed entry is kept, including entries
 // without a resolved destination and entries omitted from an export plan.
+//
+// The user's edits never change an analysis run: they are saved as numbered
+// revisions of the book's contents, each based on one run (TocRevisionInfo).
 #pragma once
+
+#include "domain/ids.h"
 
 #include <QByteArray>
 #include <QList>
@@ -30,7 +35,9 @@ struct TocEntryEvidence {
 };
 
 struct TocEntry {
-    QString sdkEntryId;                     // Scoped to its run; not stable across reruns.
+    // Scoped to its run; not stable across reruns. In edited contents: the
+    // entry's key, stable across that book's revisions (parents refer to it).
+    QString sdkEntryId;
     int order = 0;                          // Order within the parsed TOC.
     QString title;                          // UTF-8, as parsed.
     HierarchyState hierarchy = HierarchyState::Unknown;
@@ -41,6 +48,10 @@ struct TocEntry {
     std::optional<int> sourceTocPage;        // Zero-based page where the entry was printed.
     bool inExportPlan = false;               // False for entries the plan omitted.
     TocEntryEvidence evidence;
+    // Edited contents only: what the user changed ("title", "page", "level",
+    // "added"), and whether the entry was removed (kept, but not searched).
+    QStringList edits;
+    bool removed = false;
 };
 
 // Normalised result of one TOC analysis run.
@@ -53,6 +64,44 @@ struct TocAnalysis {
     QStringList planBlockers;                  // Why no ready plan was produced.
     QStringList stopReasons;                   // Why the search stopped.
     QByteArray planJson;                       // The SDK's plan (draft or ready), empty if none.
+};
+
+// The edited revision a book's contents come from.
+struct TocRevisionInfo {
+    TocRevisionId id;
+    int number = 0;       // 1, 2, ... per book; earlier revisions are kept.
+    RunId baseRun;        // The analysis the edits were made on.
+    // A newer analysis with different entries is active: the edits stay in
+    // effect until the user keeps them (keepTocEdits) or returns to the
+    // analysis (useAnalyzedToc). Never reconciled automatically.
+    bool needsReconciliation = false;
+};
+
+// What the caller's view of the contents was based on. An edit is refused
+// (StaleGeneration) when the book's active run or revision has changed since.
+struct TocEditBase {
+    std::optional<RunId> run;
+    std::optional<TocRevisionId> revision;
+};
+
+// One change to a book's contents. Entries are named by key (TocEntry::sdkEntryId
+// of the contents being edited); pages are zero-based physical indices.
+struct TocEdit {
+    enum class Kind {
+        Rename,     // title
+        SetPage,    // page: the entry now points there (Resolved)
+        ClearPage,  // no page (Unresolved)
+        SetParent,  // parentKey: the entry becomes its sub-entry
+        MakeRoot,   // a top-level entry
+        Remove,     // the entry and its sub-entries; kept and restorable
+        Restore,    // the entry and its sub-entries; its parent must not be removed
+        Add,        // title, optional page; inserted after entryKey (empty: first) as its sibling
+    };
+    Kind kind = Kind::Rename;
+    QString entryKey;
+    QString title;
+    std::optional<int> page;
+    QString parentKey;
 };
 
 QString toCode(HierarchyState state);

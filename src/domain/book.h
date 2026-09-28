@@ -60,7 +60,9 @@ struct BookSummary {
     bool hasMetadataRun = false;
     std::optional<FieldStatus> extractedTitleStatus;  // Of the active metadata run, if any.
     bool hasTocRun = false;
-    int tocEntryCount = 0;
+    int tocEntryCount = 0;              // Of the effective contents, without removed entries.
+    bool tocEdited = false;             // The contents come from an edited revision.
+    bool tocNeedsReconciliation = false;
 };
 
 struct BookDetails {
@@ -70,7 +72,14 @@ struct BookDetails {
     QString originalPath;
     std::optional<ExtractedMetadata> extracted;  // Active metadata run.
     MetadataOverrides overrides;
-    std::optional<TocAnalysis> toc;              // Active TOC run.
+    // Effective contents: the active edited revision's entries if there is
+    // one, else the active TOC run's. Run-level fields (outcome, plan) are
+    // the active run's.
+    std::optional<TocAnalysis> toc;
+    std::optional<TocRevisionInfo> tocRevision;  // When the contents are edited.
+    // The active run's own entries, when they are not what `toc` shows (an
+    // edited revision is active), e.g. to compare during reconciliation.
+    std::optional<TocAnalysis> analyzedToc;
     std::optional<RunId> metadataRun;            // IDs of the active runs, e.g. to load their evidence.
     std::optional<RunId> tocRun;
     qint64 metadataGeneration = 0;

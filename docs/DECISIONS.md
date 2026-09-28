@@ -401,3 +401,19 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - Reruns keep the shown results and the corrections until the new run publishes (a new generation per enqueue). A rerun asked for while one is waiting or running returns the open job instead of starting another.
   - TOC edits come in part 2. They need their own schema, and SDK entry IDs are not stable across reruns (AGENTS.md section 6).
 - **Verified:** See IMPLEMENTATION_PROGRESS.md, M07 part 1.
+
+## 2026-09-28 — M07 part 2a: contents edits as revisions based on a run
+
+- **Change:**
+  - Schema 6 stores contents edits as immutable numbered revisions, each a full entry list based on one TOC run; `books.active_toc_revision_id` selects the one in effect.
+  - New `catalog/tocedits.*`: `editToc`, `keepTocEdits`, `useAnalyzedToc` and `tocRevisions`.
+  - `publishToc` carries edits to a new run whose entries are the same in content, and otherwise leaves the book needing reconciliation.
+  - `bookDetails` and the search projection use the effective contents.
+- **Why:** AGENTS.md §6: TOC edits belong to an asset, run and entry revision; SDK entry IDs are not stable across reruns; preserve earlier edited results and require explicit reconciliation; never transfer edits by position or title similarity alone. §7: the index follows edits in the same transaction. M07 gate: edits persist, edits made during analysis survive, and stale results cannot replace current data.
+- **Assumptions:**
+  - **Full lists, not deltas:** a revision stores the whole entry list, not a list of changes. Contents are small, and a full list can be read, searched and later exported without replaying anything.
+  - **Keys:** entries keep the key they had in the book's first revision (the SDK ID of that run), so parents and later edits refer to something stable. Added entries get `added-<uuid>`.
+  - **Carrying over:** edits move to a new run only when every entry is the same in title, printed label, page, source page and structure. With a full match, pairing entries by position is not a guess. Otherwise the user reconciles; the edited contents stay in effect meanwhile, so a rerun never silently replaces the user's work.
+  - **Stale edits:** a caller must pass the run and revision it showed. A newer run or edit makes the edit fail with `StaleGeneration` instead of overwriting.
+  - **Removal hides, never deletes:** a removed entry and its sub-entries stay in the revision, are not searched, and can be restored. A sub-entry cannot be restored under a removed parent.
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, M07 part 2a.

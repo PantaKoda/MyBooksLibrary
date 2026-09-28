@@ -13,14 +13,38 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | SDK 0.3.0 update | Merged | `chore/sdk-0.3.0` / [PR #11](https://github.com/PantaKoda/MyBooksLibrary/pull/11), merge `a4b7d59` | See "SDK 0.3.0 update" |
 | M05 Contents | Merged: part 1 [PR #12](https://github.com/PantaKoda/MyBooksLibrary/pull/12) (merge `9feb9b3`); part 2 [PR #13](https://github.com/PantaKoda/MyBooksLibrary/pull/13) (merge `8ba9f49`) | `feat/m05-a4-contents-analysis`; `feat/m05-presentation-contents-inspector` | See "M05" |
 | M06 Search/read | Merged: part 1 [PR #14](https://github.com/PantaKoda/MyBooksLibrary/pull/14) (merge `c8dc23e`); part 2 [PR #15](https://github.com/PantaKoda/MyBooksLibrary/pull/15) (merge `e964184`) | `feat/m06-presentation-search`; `feat/m06-reader-chapter-navigation` | See "M06" |
-| M07 Corrections/reruns | Part 1 AwaitingReview ([PR #16](https://github.com/PantaKoda/MyBooksLibrary/pull/16), metadata corrections and reruns); part 2 (TOC edits) NotStarted | `feat/m07-presentation-metadata-corrections` | See "M07" |
+| M07 Corrections/reruns | Part 1 Merged ([PR #16](https://github.com/PantaKoda/MyBooksLibrary/pull/16), merge `152eb8c`); part 2 (TOC edits) InProgress | `feat/m07-presentation-metadata-corrections`; `feat/m07-a2-toc-edits` | See "M07" |
 | M08–M11 | NotStarted | | |
 
 ## M07 — Corrections and reruns
 
-M07 is split in two:
-- **Part 1** (this branch): metadata corrections in the inspector, and reruns started by the user.
-- **Part 2**: TOC edits. These need a new schema (edits tied to an asset, run and entry revision), and explicit reconciliation when a rerun changes entries.
+M07 is split in three:
+- **Part 1** (merged): metadata corrections in the inspector, and reruns started by the user.
+- **Part 2a** (A2 + A3): contents edits in the catalog and search.
+- **Part 2b** (presentation): editing the contents and reconciling in the inspector.
+
+### Part 2a: contents edits in the catalog and search (A2 + A3)
+
+**Scope:**
+- **Schema 6:** `toc_edit_revisions` and `toc_edit_entries`, and `books.active_toc_revision_id`.
+- **`catalog/tocedits.*`:** `editToc`, `keepTocEdits`, `useAnalyzedToc` and `tocRevisions`.
+- **Publishing a new run:** `publishToc` carries edits to a new run whose entries are the same in content; otherwise the book needs reconciliation.
+- **`bookDetails` and the search projection:** they use the effective contents. Removed entries are not searched and not counted.
+- **Domain:** `TocRevisionId`, `TocRevisionInfo`, `TocEditBase` and `TocEdit`; `TocEntry::edits` and `removed`; `BookSummary::tocEdited` and `tocNeedsReconciliation`; `BookDetails::tocRevision` and `analyzedToc`.
+- CATALOG.md documents the rules.
+
+**Touched paths:** `src/domain/`, `src/catalog/`, `src/search/searchindex.h`, `CMakeLists.txt`, `tests/catalog/`, `tests/CMakeLists.txt`, `docs/`.
+
+| Command | Result |
+| --- | --- |
+| `pwsh scripts/verify.ps1` (Release) and `-Configuration Debug` | VERIFY PASSED in both; 19/19 `ctest` suites; all smoke checks |
+| `tst_tocedits` (new, 8 cases) | **Edits:** rename, page 0, set parent, clear page, add, remove and restore. Each save is a new numbered revision, earlier ones are kept, and the analysis is unchanged (`analyzedToc`). Search finds the corrected title and not the OCR noise. Everything survives a restart.<br>**Refused, nothing saved:** a stale base; an empty title; pages 50 and -1 in a 50-page book; an unknown entry; a cycle; a parent that is the entry itself; an unknown parent; no edits; a book without contents; a trashed book.<br>**Hierarchy:** removing a parent listed after its child removes both from search, and the child cannot be restored alone. Moving to a parent listed later works.<br>**Identical rerun (new SDK IDs):** the edits carry over and later edits apply.<br>**Changed rerun:** the edits stay in effect and searchable, and the book needs reconciliation. Editing still works; keep, then discard, both work, and the revisions stay.<br>**During analysis:** an edit made while a rerun runs survives; a superseded run is refused; the current identical run carries the edit.<br>**Rebuild:** `rebuildSearchIndex` matches the edited contents. |
+| `tst_migrations::version5CatalogGainsEditedContents` (new) | A schema 5 catalog with a published run upgrades; the book shows the analyzed contents and can be edited |
+| Mutations, each reverted | Carrying edits over to a changed rerun: `changedRerunWaitsForTheUser` fails. No stale-base check: `staleOrInvalidEditsChangeNothing` fails. |
+
+**Not in this part:** the inspector UI for editing and reconciling (part 2b), and export plans from edited contents (M09).
+
+**Next action:** hand over the PR for review. Then M07 part 2b.
 
 ### Part 1: metadata corrections and reruns (presentation + A2)
 
@@ -68,7 +92,7 @@ M07 is split in two:
 
 **Not verified by hand:** keyboard-only use of the dialog and screen readers.
 
-**Next action:** review of [PR #16](https://github.com/PantaKoda/MyBooksLibrary/pull/16). After it is merged: M07 part 2, TOC edits.
+**Next action:** M07 part 2, TOC edits.
 
 ## M06 — Search and reading
 
