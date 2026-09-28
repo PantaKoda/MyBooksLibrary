@@ -3,7 +3,9 @@ pragma ComponentBehavior: Bound
 // The selected book: metadata with where each value came from and why, and
 // the application's table of contents (never the PDF's own bookmarks).
 // Metadata fields can be corrected (MetadataFieldEditor, in a dialog so a
-// refresh while typing does not disturb it). All data and commands go through
+// refresh while typing does not disturb it), and contents entries edited
+// (entryDialog); edited contents show a banner, with the choice to keep them
+// or use the analysis when a newer analysis differs. All data and commands go through
 // BookInspector (C++); extracted text is always plain text.
 import QtQuick
 import QtQuick.Controls
@@ -23,6 +25,8 @@ Pane {
     property bool rerunEnabled: true
     // Development (--inspect-first): make the first entry current when shown.
     property bool selectFirstEntry: false
+    // The entry to make current again once the tree is rebuilt after an edit.
+    property string reselectKey: ""
     padding: 12
 
     ColumnLayout {
@@ -217,8 +221,61 @@ Pane {
                     opacity: 0.7
                 }
 
+                // Edited contents: which version is shown, and the user's choices.
+                Frame {
+                    objectName: "contentsEditBanner"
+                    Layout.fillWidth: true
+                    visible: pane.inspector.contentsEdited
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 4
+                        Label {
+                            Layout.fillWidth: true
+                            text: pane.inspector.contentsEditText
+                            textFormat: Text.PlainText
+                            wrapMode: Text.Wrap
+                            font.bold: pane.inspector.contentsNeedReconciliation
+                        }
+                        Flow {
+                            Layout.fillWidth: true
+                            spacing: 8
+                            Button {
+                                objectName: "keepEditsButton"
+                                visible: pane.inspector.contentsNeedReconciliation
+                                text: qsTr("Keep my edits")
+                                onClicked: pane.inspector.keepContentsEdits(pane.inspector.bookId)
+                                Accessible.description: qsTr("Keep your edited contents instead of the newer analysis")
+                            }
+                            Button {
+                                objectName: "useAnalysisButton"
+                                visible: pane.inspector.contentsNeedReconciliation
+                                text: qsTr("Use the new analysis")
+                                onClicked: pane.inspector.useAnalyzedContents(pane.inspector.bookId)
+                                Accessible.description: qsTr("Show the newer analysis instead of your edited contents")
+                            }
+                            Button {
+                                objectName: "discardEditsButton"
+                                visible: !pane.inspector.contentsNeedReconciliation
+                                flat: true
+                                text: qsTr("Discard my edits…")
+                                onClicked: discardDialog.open()
+                            }
+                        }
+                    }
+                }
+                Label {
+                    objectName: "contentsErrorLabel"
+                    Layout.fillWidth: true
+                    visible: pane.inspector.contentsError.length > 0
+                    text: pane.inspector.contentsError
+                    textFormat: Text.PlainText
+                    wrapMode: Text.Wrap
+                    color: "firebrick"
+                }
+
                 TreeView {
                     id: tree
+                    objectName: "contentsTree"
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     Layout.minimumHeight: 120
@@ -234,8 +291,14 @@ Pane {
                         target: pane.inspector.contents
                         function onModelReset() {
                             Qt.callLater(tree.expandRecursively)
-                            if (pane.selectFirstEntry)
+                            if (pane.reselectKey.length > 0) {
+                                const key = pane.reselectKey
+                                pane.reselectKey = ""
+                                Qt.callLater(() => tree.selectionModel.setCurrentIndex(
+                                                 pane.inspector.contents.indexOfEntry(key), ItemSelectionModel.NoUpdate))
+                            } else if (pane.selectFirstEntry) {
                                 Qt.callLater(() => tree.selectionModel.setCurrentIndex(tree.index(0, 0), ItemSelectionModel.NoUpdate))
+                            }
                         }
                     }
                     Component.onCompleted: Qt.callLater(tree.expandRecursively)
@@ -254,6 +317,7 @@ Pane {
                         required property string title
                         required property string pageText
                         required property bool uncertain
+                        required property bool removed
 
                         implicitWidth: tree.width - 12
                         implicitHeight: rowContent.implicitHeight + 6
@@ -283,6 +347,8 @@ Pane {
                                 text: entry.title
                                 textFormat: Text.PlainText
                                 elide: Text.ElideRight
+                                font.strikeout: entry.removed
+                                opacity: entry.removed && !entry.current ? 0.5 : 1.0
                                 color: entry.current ? pane.palette.highlightedText : pane.palette.windowText
                             }
                             Label {
@@ -340,6 +406,13 @@ Pane {
                         }
                         Label {
                             Layout.fillWidth: true
+                            visible: (detailsFrame.entry.editedText ?? "").length > 0
+                            text: detailsFrame.entry.editedText ?? ""
+                            textFormat: Text.PlainText
+                            font.italic: true
+                        }
+                        Label {
+                            Layout.fillWidth: true
                             visible: (detailsFrame.entry.detail ?? "").length > 0
                             text: detailsFrame.entry.detail ?? ""
                             textFormat: Text.PlainText
@@ -365,6 +438,78 @@ Pane {
                                 Accessible.description: qsTr("Open the page where the contents list this entry")
                             }
                         }
+                        // Editing the entry: saved as a new version of the contents.
+                        Flow {
+                            id: entryActions
+                            Layout.fillWidth: true
+                            visible: detailsFrame.entry.entryId !== undefined
+                            spacing: 4
+                            readonly property string key: detailsFrame.entry.entryId ?? ""
+                            readonly property bool removed: detailsFrame.entry.removed ?? false
+                            Button {
+                                objectName: "renameEntryButton"
+                                visible: !entryActions.removed
+                                text: qsTr("Rename…")
+                                onClicked: pane.editEntry("rename", detailsFrame.entry)
+                            }
+                            Button {
+                                objectName: "setPageButton"
+                                visible: !entryActions.removed
+                                text: (detailsFrame.entry.page ?? -1) > 0 ? qsTr("Change page…") : qsTr("Set page…")
+                                onClicked: pane.editEntry("page", detailsFrame.entry)
+                            }
+                            Button {
+                                objectName: "clearPageButton"
+                                visible: !entryActions.removed && (detailsFrame.entry.page ?? -1) > 0
+                                text: qsTr("No page")
+                                onClicked: {
+                                    pane.reselectKey = entryActions.key
+                                    pane.inspector.clearEntryPage(pane.inspector.bookId, entryActions.key)
+                                }
+                            }
+                            Button {
+                                objectName: "indentButton"
+                                visible: !entryActions.removed
+                                enabled: pane.inspector.contents.entryCount >= 0 && pane.inspector.canIndent(entryActions.key)
+                                text: qsTr("Indent")
+                                onClicked: {
+                                    pane.reselectKey = entryActions.key
+                                    pane.inspector.indentEntry(pane.inspector.bookId, entryActions.key)
+                                }
+                                Accessible.description: qsTr("Make it a sub-entry of the entry above it")
+                            }
+                            Button {
+                                objectName: "outdentButton"
+                                visible: !entryActions.removed
+                                enabled: pane.inspector.contents.entryCount >= 0 && pane.inspector.canOutdent(entryActions.key)
+                                text: qsTr("Outdent")
+                                onClicked: {
+                                    pane.reselectKey = entryActions.key
+                                    pane.inspector.outdentEntry(pane.inspector.bookId, entryActions.key)
+                                }
+                                Accessible.description: qsTr("Move it up one level")
+                            }
+                            Button {
+                                objectName: "addEntryButton"
+                                visible: !entryActions.removed
+                                text: qsTr("Add after…")
+                                onClicked: pane.editEntry("add", detailsFrame.entry)
+                                Accessible.description: qsTr("Add a new entry after this one, at the same level")
+                            }
+                            Button {
+                                objectName: "removeEntryButton"
+                                text: entryActions.removed ? qsTr("Restore") : qsTr("Remove")
+                                onClicked: {
+                                    pane.reselectKey = entryActions.key
+                                    if (entryActions.removed)
+                                        pane.inspector.restoreEntry(pane.inspector.bookId, entryActions.key)
+                                    else
+                                        pane.inspector.removeEntry(pane.inspector.bookId, entryActions.key)
+                                }
+                                Accessible.description: entryActions.removed ? qsTr("Bring the entry back")
+                                                                       : qsTr("Remove the entry and its sub-entries from the contents and search")
+                            }
+                        }
                         Button {
                             visible: detailsFrame.entry.technical !== undefined
                             flat: true
@@ -385,6 +530,133 @@ Pane {
                 }
             }
         }
+    }
+
+    // Opens the entry editor: "rename", "page" or "add", on a copy of the entry.
+    function editEntry(mode, entryData) {
+        pane.inspector.dismissContentsError()
+        entryDialog.mode = mode
+        entryDialog.bookId = pane.inspector.bookId
+        entryDialog.entryKey = entryData.entryId
+        entryDialog.entryTitle = entryData.title
+        entryDialog.open()
+        entryTitleField.text = mode === "rename" ? entryData.title : ""
+        entryPageField.text = mode === "page" && entryData.page > 0 ? String(entryData.page) : ""
+        if (mode === "page")
+            entryPageField.forceActiveFocus()
+        else
+            entryTitleField.forceActiveFocus()
+    }
+
+    Dialog {
+        id: entryDialog
+        objectName: "entryDialog"
+        property string mode: "rename"
+        property string bookId
+        property string entryKey
+        property string entryTitle
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(480, (parent ? parent.width : 480) - 32)
+        modal: true
+        title: mode === "rename" ? qsTr("Rename entry")
+             : mode === "page" ? qsTr("Page of “%1”").arg(entryTitle)
+             : qsTr("Add an entry after “%1”").arg(entryTitle)
+
+        function save() {
+            pane.reselectKey = entryDialog.entryKey
+            if (entryDialog.mode === "rename")
+                pane.inspector.renameEntry(entryDialog.bookId, entryDialog.entryKey, entryTitleField.text)
+            else if (entryDialog.mode === "page")
+                pane.inspector.setEntryPage(entryDialog.bookId, entryDialog.entryKey, entryPageField.text)
+            else
+                pane.inspector.addEntryAfter(entryDialog.bookId, entryDialog.entryKey, entryTitleField.text, entryPageField.text)
+            // A refused value keeps the dialog open with the reason.
+            if (pane.inspector.contentsError.length === 0)
+                entryDialog.close()
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 6
+            Label {
+                visible: entryDialog.mode !== "page"
+                text: qsTr("Title")
+            }
+            TextField {
+                id: entryTitleField
+                objectName: "entryTitleField"
+                visible: entryDialog.mode !== "page"
+                Layout.fillWidth: true
+                Accessible.name: qsTr("Title")
+                Keys.onReturnPressed: entryDialog.save()
+                Keys.onEnterPressed: entryDialog.save()
+            }
+            Label {
+                visible: entryDialog.mode !== "rename"
+                text: entryDialog.mode === "add" ? qsTr("Page (optional, as shown in the reader)")
+                                                 : qsTr("Page, as shown in the reader (1 = first page)")
+            }
+            TextField {
+                id: entryPageField
+                objectName: "entryPageField"
+                visible: entryDialog.mode !== "rename"
+                Layout.fillWidth: true
+                inputMethodHints: Qt.ImhDigitsOnly
+                Accessible.name: qsTr("Page")
+                Keys.onReturnPressed: entryDialog.save()
+                Keys.onEnterPressed: entryDialog.save()
+            }
+            Label {
+                Layout.fillWidth: true
+                visible: pane.inspector.contentsError.length > 0
+                text: pane.inspector.contentsError
+                textFormat: Text.PlainText
+                wrapMode: Text.Wrap
+                color: "firebrick"
+            }
+            RowLayout {
+                Button {
+                    objectName: "entrySaveButton"
+                    text: qsTr("Save")
+                    highlighted: true
+                    onClicked: entryDialog.save()
+                }
+                Button {
+                    text: qsTr("Cancel")
+                    onClicked: entryDialog.close()
+                }
+            }
+        }
+    }
+
+    Dialog {
+        id: discardDialog
+        objectName: "discardDialog"
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(440, (parent ? parent.width : 440) - 32)
+        modal: true
+        title: qsTr("Discard your edits to the contents?")
+        contentItem: ColumnLayout {
+            Label {
+                Layout.fillWidth: true
+                text: qsTr("The analyzed contents will be shown and searched again. Your earlier versions stay in the library.")
+                textFormat: Text.PlainText
+                wrapMode: Text.Wrap
+            }
+        }
+        footer: DialogButtonBox {
+            Button {
+                objectName: "confirmDiscardButton"
+                text: qsTr("Discard edits")
+                DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole
+            }
+            Button {
+                text: qsTr("Cancel")
+                DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
+            }
+        }
+        onAccepted: pane.inspector.useAnalyzedContents(pane.inspector.bookId)
     }
 
     // Opens the editor for one field of the shown book, on a copy of its data.

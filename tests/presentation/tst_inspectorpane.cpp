@@ -7,6 +7,7 @@
 #include "presentation/librarycontroller.h"
 
 #include <QGuiApplication>
+#include <QItemSelectionModel>
 #include <QPointer>
 #include <QQmlComponent>
 #include <QQmlEngine>
@@ -105,6 +106,7 @@ class TestInspectorPane : public QObject {
 private slots:
     void entryDetailsFollowTheSelectedBook();
     void correctionDialogSavesAndSurvivesRefreshes();
+    void contentsEditingInThePane();
 };
 
 void TestInspectorPane::entryDetailsFollowTheSelectedBook()
@@ -283,6 +285,98 @@ void TestInspectorPane::correctionDialogSavesAndSurvivesRefreshes()
     QVERIFY(QMetaObject::invokeMethod(pane, "correct", Q_ARG(QVariant, fieldOf(inspector, QStringLiteral("edition")))));
     QTRY_VERIFY_WITH_TIMEOUT(dialog->property("opened").toBool(), 5000);
     QVERIFY(inspector->correctionError().isEmpty());
+}
+
+// Contents editing in the real pane: the entry dialog renames the current
+// entry, which stays current after the tree is rebuilt; a refused page keeps
+// the dialog open; the banner offers Discard, which shows the analysis again.
+void TestInspectorPane::contentsEditingInThePane()
+{
+    QTemporaryDir dir;
+    BookId a;
+    {
+        auto library = mbl::catalog::Library::open(dir.path());
+        QVERIFY(library);
+        a = bookWithOneEntry(*library.value(), 1, QStringLiteral("Alpha chapter"));
+    }
+    LibraryController controller;
+    controller.open(dir.path());
+    QTRY_VERIFY_WITH_TIMEOUT(controller.ready() && !controller.busy(), 10000);
+
+    QQmlEngine engine;
+    QQmlComponent component(&engine, QUrl::fromLocalFile(QStringLiteral(MBL_SOURCE_DIR "/qml/inspector/BookInspectorPane.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    QQuickWindow window;
+    window.resize(640, 640);
+    std::unique_ptr<QObject> object(component.createWithInitialProperties(
+        {{QStringLiteral("inspector"), QVariant::fromValue<QObject*>(controller.inspector())},
+         {QStringLiteral("selectFirstEntry"), true}}));  // Contents tab; first entry current.
+    auto* pane = qobject_cast<QQuickItem*>(object.get());
+    QVERIFY2(pane, qPrintable(component.errorString()));
+    pane->setParentItem(window.contentItem());
+    pane->setSize(QSizeF(640, 640));
+    window.show();
+    QQuickItem* root = window.contentItem()->parentItem() ? window.contentItem()->parentItem() : window.contentItem();
+
+    BookInspector* inspector = controller.inspector();
+    QSignalSpy corrected(inspector, &BookInspector::corrected);
+    inspector->select(a.toString());
+    QTRY_COMPARE_WITH_TIMEOUT(headingText(pane), QStringLiteral("Alpha chapter · Page 1"), 5000);
+    auto* banner = findItem(root, QStringLiteral("contentsEditBanner"));
+    QVERIFY(banner);
+    QVERIFY(!banner->isVisible());
+
+    // A second entry, made current: the one edited below.
+    inspector->addEntryAfter(a.toString(), QStringLiteral("e0"), QStringLiteral("Beta chapter"), QStringLiteral("2"));
+    QTRY_COMPARE_WITH_TIMEOUT(corrected.size(), 1, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(inspector->contents()->entryCount(), 2, 5000);
+    auto* tree = findItem(root, QStringLiteral("contentsTree"));
+    QVERIFY(tree);
+    auto* selection = qvariant_cast<QItemSelectionModel*>(tree->property("selectionModel"));
+    QVERIFY(selection);
+    QTRY_COMPARE_WITH_TIMEOUT(headingText(pane), QStringLiteral("Alpha chapter · Page 1"), 5000);
+    selection->setCurrentIndex(inspector->contents()->index(1, 0), QItemSelectionModel::NoUpdate);
+    QTRY_COMPARE_WITH_TIMEOUT(headingText(pane), QStringLiteral("Beta chapter · Page 2"), 5000);
+
+    // Rename through the dialog.
+    auto* entryDialog = pane->findChild<QObject*>(QStringLiteral("entryDialog"));
+    QVERIFY(entryDialog);
+    click(findItem(root, QStringLiteral("renameEntryButton")));
+    QTRY_VERIFY_WITH_TIMEOUT(entryDialog->property("opened").toBool(), 5000);
+    QCOMPARE(findItem(root, QStringLiteral("entryTitleField"))->property("text").toString(), QStringLiteral("Beta chapter"));
+    findItem(root, QStringLiteral("entryTitleField"))->setProperty("text", QStringLiteral("Beta, revised"));
+    click(findItem(root, QStringLiteral("entrySaveButton")));
+    QTRY_COMPARE_WITH_TIMEOUT(corrected.size(), 2, 5000);
+    // The same entry is current again in the rebuilt tree, not the first one.
+    QTRY_COMPARE_WITH_TIMEOUT(headingText(pane), QStringLiteral("Beta, revised · Page 2"), 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(banner->isVisible(), 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(!entryDialog->property("visible").toBool(), 5000);
+
+    // A page outside the book: the dialog stays open with the reason.
+    click(findItem(root, QStringLiteral("setPageButton")));
+    QTRY_VERIFY_WITH_TIMEOUT(entryDialog->property("opened").toBool(), 5000);
+    QCOMPARE(findItem(root, QStringLiteral("entryPageField"))->property("text").toString(), QStringLiteral("2"));
+    findItem(root, QStringLiteral("entryPageField"))->setProperty("text", QStringLiteral("99"));
+    click(findItem(root, QStringLiteral("entrySaveButton")));
+    QTest::qWait(200);
+    QVERIFY(entryDialog->property("visible").toBool());
+    QCOMPARE(inspector->contentsError(), QStringLiteral("Enter a page number from 1 to 3."));
+    QCOMPARE(corrected.size(), 2);
+    QMetaObject::invokeMethod(entryDialog, "close");
+    QTRY_VERIFY_WITH_TIMEOUT(!entryDialog->property("visible").toBool(), 5000);
+
+    // Discard, after confirming.
+    auto* discardDialog = pane->findChild<QObject*>(QStringLiteral("discardDialog"));
+    QVERIFY(discardDialog);
+    click(findItem(root, QStringLiteral("discardEditsButton")));
+    QTRY_VERIFY_WITH_TIMEOUT(discardDialog->property("opened").toBool(), 5000);
+    click(findItem(root, QStringLiteral("confirmDiscardButton")));
+    QTRY_COMPARE_WITH_TIMEOUT(corrected.size(), 3, 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(!banner->isVisible(), 5000);
+    QVERIFY(!inspector->contentsEdited());
+    QCOMPARE(inspector->contents()->entryCount(), 1);
+    QCOMPARE(inspector->contents()->data(inspector->contents()->index(0, 0), Qt::DisplayRole).toString(),
+             QStringLiteral("Alpha chapter"));
 }
 
 int main(int argc, char* argv[])

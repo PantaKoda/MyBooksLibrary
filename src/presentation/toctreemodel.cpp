@@ -10,6 +10,7 @@
 namespace mbl::presentation {
 
 using namespace mbl::domain;
+using namespace Qt::StringLiterals;
 
 namespace {
 
@@ -181,21 +182,40 @@ QVariant TocTreeModel::data(const QModelIndex& index, int role) const
     case PrintedLabelRole:
         return e.printedLabel.value_or(QString());
     case UncertainRole:
+        if (e.removed)
+            return false;
         return e.destinationState != DestinationState::Resolved || e.hierarchy == HierarchyState::Unknown
-               || node.parentProblem || e.evidence.printedLabelUncertain;
+               || node.parentProblem || (e.evidence.printedLabelUncertain && !e.edits.contains(u"page"_s));
+    case RemovedRole:
+        return e.removed;
+    case EditedTextRole: {
+        if (e.edits.contains(u"added"_s))
+            return tr("Added by you");
+        QStringList what;
+        if (e.edits.contains(u"title"_s))
+            what << tr("title");
+        if (e.edits.contains(u"page"_s))
+            what << tr("page");
+        if (e.edits.contains(u"level"_s))
+            what << tr("level");
+        return what.isEmpty() ? QString() : tr("Changed by you: %1").arg(what.join(QStringLiteral(", ")));
+    }
     case InPlanRole:
         return e.inExportPlan;
     case StateTextRole: {
+        if (e.removed)
+            return tr("removed by you · not searched");
         QStringList parts;
+        const bool pageByUser = e.edits.contains(u"page"_s) || e.edits.contains(u"added"_s);
         switch (e.destinationState) {
         case DestinationState::Resolved:
-            parts << tr("page confirmed");
+            parts << (pageByUser ? tr("page set by you") : tr("page confirmed"));
             break;
         case DestinationState::Ambiguous:
             parts << tr("several possible pages");
             break;
         case DestinationState::Unresolved:
-            parts << tr("page not found");
+            parts << (pageByUser ? tr("no page") : tr("page not found"));
             break;
         }
         if (e.hierarchy == HierarchyState::Unknown)
@@ -208,31 +228,55 @@ QVariant TocTreeModel::data(const QModelIndex& index, int role) const
     }
     case DetailRole: {
         QStringList lines;
+        // The user's changes first; they replace the analysis's reasons for
+        // the same thing, which described values that no longer apply.
+        const bool added = e.edits.contains(u"added"_s);
+        const bool pageEdited = e.edits.contains(u"page"_s) || added;
+        const bool levelEdited = e.edits.contains(u"level"_s) || added;
+        if (e.removed)
+            lines << tr("You removed this entry. It is kept, but not searched; restore it to bring it back.");
+        if (added)
+            lines << tr("You added this entry.");
+        if (e.edits.contains(u"title"_s))
+            lines << tr("You changed its title.");
+        if (e.edits.contains(u"page"_s)) {
+            lines << (e.destinationState == DestinationState::Resolved
+                          ? tr("You set its page to %1.").arg(*e.destinationPage + 1)
+                          : tr("You removed its page."));
+        }
+        if (e.edits.contains(u"level"_s))
+            lines << tr("You changed its level.");
         if (e.printedLabel) {
             lines << (e.evidence.printedLabelUncertain ? tr("Printed page number “%1” (uncertain)").arg(*e.printedLabel)
                                                         : tr("Printed page number “%1”").arg(*e.printedLabel));
         }
         if (e.sourceTocPage)
             lines << tr("Listed on page %1 of the PDF").arg(*e.sourceTocPage + 1);
-        if (e.destinationState == DestinationState::Resolved && e.evidence.destinationMethod) {
-            const QString how = methodText(*e.evidence.destinationMethod);
-            if (!how.isEmpty())
-                lines << tr("Page %1, %2").arg(*e.destinationPage + 1).arg(how);
+        if (!pageEdited) {
+            if (e.destinationState == DestinationState::Resolved && e.evidence.destinationMethod) {
+                const QString how = methodText(*e.evidence.destinationMethod);
+                if (!how.isEmpty())
+                    lines << tr("Page %1, %2").arg(*e.destinationPage + 1).arg(how);
+            }
+            for (const QString& r : e.evidence.destinationReasons)
+                lines << r;
         }
-        for (const QString& r : e.evidence.destinationReasons)
-            lines << r;
         if (e.hierarchy == HierarchyState::Unknown)
             lines << tr("Its level in the contents could not be determined.");
         if (node.parentProblem)
             lines << tr("It names a parent entry that could not be found; it is shown at the top level.");
-        for (const QString& r : e.evidence.hierarchyReasons)
-            lines << r;
+        if (!levelEdited) {
+            for (const QString& r : e.evidence.hierarchyReasons)
+                lines << r;
+        }
         if (e.evidence.omissionReason)
             lines << tr("Left out of the bookmarks: %1").arg(*e.evidence.omissionReason);
         return lines.join(u'\n');
     }
     case TechnicalRole: {
         QStringList lines{QStringLiteral("id=%1").arg(e.sdkEntryId)};
+        if (!e.edits.isEmpty())
+            lines << QStringLiteral("edits=%1").arg(e.edits.join(u','));
         if (e.evidence.destinationMethod)
             lines << QStringLiteral("method=%1").arg(*e.evidence.destinationMethod);
         if (!e.evidence.sourcePages.isEmpty()) {
@@ -263,6 +307,8 @@ QHash<int, QByteArray> TocTreeModel::roleNames() const
         {InPlanRole, "inPlan"},
         {DetailRole, "detail"},
         {TechnicalRole, "technical"},
+        {RemovedRole, "removed"},
+        {EditedTextRole, "editedText"},
     };
 }
 
@@ -275,6 +321,15 @@ QVariantMap TocTreeModel::entryAt(const QModelIndex& index) const
     for (auto it = roles.cbegin(); it != roles.cend(); ++it)
         out.insert(QString::fromLatin1(it.value()), data(index, it.key()));
     return out;
+}
+
+QModelIndex TocTreeModel::indexOfEntry(const QString& key) const
+{
+    for (int i = 0; i < m_entries.size(); ++i) {
+        if (m_entries.at(i).sdkEntryId == key)
+            return createIndex(rowOf(i), 0, idOf(i));
+    }
+    return {};
 }
 
 } // namespace mbl::presentation

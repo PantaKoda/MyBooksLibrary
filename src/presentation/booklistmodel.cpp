@@ -57,6 +57,10 @@ QString contentsText(const domain::BookSummary& book, const domain::JobRecord* j
     if (job && job->state == JobState::CancelRequested)
         return tr("cancelling contents analysis…");
     if (book.hasTocRun) {
+        if (book.tocNeedsReconciliation)
+            return trn("%n contents entries (edited; a new analysis to review)", book.tocEntryCount);
+        if (book.tocEdited)
+            return trn("%n contents entries (edited)", book.tocEntryCount);
         return book.tocEntryCount > 0 ? trn("%n contents entries", book.tocEntryCount)
                                       : tr("no printed contents found");
     }

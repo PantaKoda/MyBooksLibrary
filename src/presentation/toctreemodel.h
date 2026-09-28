@@ -4,6 +4,10 @@
 // whose parent is missing, itself, or part of a cycle is shown at the top
 // level and marked, never attached to an invented parent; Unknown hierarchy
 // stays at the top level too.
+//
+// Edited contents (catalog revisions) show what the user changed: a page or
+// level the user set replaces the analysis's reasons for it, and a removed
+// entry stays in the tree, marked, so it can be restored.
 #pragma once
 
 #include "domain/toc.h"
@@ -24,7 +28,7 @@ class TocTreeModel : public QAbstractItemModel {
 public:
     enum Role {
         TitleRole = Qt::UserRole + 1,
-        EntryIdRole,        // Run-scoped SDK entry ID.
+        EntryIdRole,        // Run-scoped SDK entry ID; the entry's key in edited contents.
         PageTextRole,       // "Page 4", "Page 5 or 9?", "Page not found" (physical page = index + 1).
         PageRole,           // Physical page number (index + 1) of a resolved entry, else -1.
         SourcePageRole,     // Physical page the entry is printed on, else -1.
@@ -34,6 +38,8 @@ public:
         InPlanRole,         // In the bookmark plan (draft or ready).
         DetailRole,         // Reasons, one per line, in plain language.
         TechnicalRole,      // Method codes and diagnostics.
+        RemovedRole,        // Removed by the user (kept, not searched).
+        EditedTextRole,     // What the user changed, in plain language; empty if nothing.
     };
 
     explicit TocTreeModel(QObject* parent = nullptr);
@@ -51,6 +57,8 @@ public:
 
     // All roles of one entry, by name, for a details pane.
     Q_INVOKABLE QVariantMap entryAt(const QModelIndex& index) const;
+    // The index of the entry with that key (EntryIdRole), or an invalid index.
+    Q_INVOKABLE QModelIndex indexOfEntry(const QString& key) const;
 
     static QString pageText(const domain::TocEntry& entry);
 

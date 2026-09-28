@@ -417,3 +417,17 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - **Stale edits:** a caller must pass the run and revision it showed. A newer run or edit makes the edit fail with `StaleGeneration` instead of overwriting.
   - **Removal hides, never deletes:** a removed entry and its sub-entries stay in the revision, are not searched, and can be restored. A sub-entry cannot be restored under a removed parent.
 - **Verified:** See IMPLEMENTATION_PROGRESS.md, M07 part 2a.
+
+## 2026-09-28 — M07 part 2b: editing contents and reconciling in the inspector
+
+- **Change:**
+  - `BookInspector` gains the contents-edit commands, the reconciliation commands and their state.
+  - `TocTreeModel` shows removed entries and what the user changed.
+  - `BookInspectorPane.qml` gains an edit bar on the selected entry, an entry dialog, a banner for edited contents, and Discard after a confirmation.
+- **Why:** M07 gate (TOC edits persist and survive reanalysis; stale results cannot replace current data) and AGENTS.md §6 (explicit reconciliation), for the user. §9: show the reasons for uncertainty in understandable language, so a page the user set is no longer explained with the analysis's reasons for "no page".
+- **Assumptions:**
+  - **Levels by Indent and Outdent**, relative to the entry above, instead of a parent picker. That covers fixing a wrong level, the common case, without a second tree to choose from.
+  - **Stale views are refused.** Each change carries the run and revision the tree shows; a change based on older contents is refused, the contents are reloaded, and the user repeats the action.
+  - **Removed entries stay in the tree**, struck through, so they can be restored. Search, the summary and the list's count leave them out.
+  - **Reconciliation shows counts, not a diff.** The banner gives the newer analysis's entry count; comparing the two entry by entry is left for later ("Not yet" in UI.md).
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, M07 part 2b.
