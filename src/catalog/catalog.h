@@ -48,8 +48,11 @@ domain::Result<domain::RunId> publishToc(QSqlDatabase& db, const domain::Publish
 domain::Status setOverride(QSqlDatabase& db, const domain::BookId& book, domain::MetadataField field,
                            const domain::MetadataOverride& value);
 
-// Trash hides the book from search and invalidates pending generations.
-// Restore makes it searchable again. Both are idempotent.
+// Trash hides the book from search, records when, invalidates pending
+// generations and ends its jobs (queued: cancelled; running: cancel
+// requested, so the result is refused). Restore makes it searchable again
+// and queues new jobs for components that have no published result. Both
+// are idempotent. Collection memberships are kept.
 domain::Status trashBook(QSqlDatabase& db, const domain::BookId& book);
 domain::Status restoreBook(QSqlDatabase& db, const domain::BookId& book);
 

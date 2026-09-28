@@ -20,6 +20,7 @@ struct SearchRequest {
     int offset = 0;                  // In books.
     int limit = 50;                  // In books.
     int chapterHitsPerBook = 5;      // Bound on chapter hits shown per book.
+    std::optional<CollectionId> collection;  // Only books in this collection, when set.
     quint64 generation = 0;          // Echoed so stale responses can be dropped.
 };
 

@@ -163,6 +163,7 @@ struct BookRow {
     std::optional<TocRevisionId> activeTocRevision;
     QString originalFileName;
     QString originalPath;
+    QDateTime trashedAt;
 };
 
 Result<BookRow> loadBookRow(QSqlDatabase& db, const BookId& id)
@@ -171,8 +172,8 @@ Result<BookRow> loadBookRow(QSqlDatabase& db, const BookId& id)
     q.prepare(QStringLiteral(
         "SELECT b.lifecycle, b.revision, b.metadata_generation, b.toc_generation, b.active_metadata_run_id, "
         "b.active_toc_run_id, b.original_file_name, b.original_path, a.id, a.sha256, a.byte_size, "
-        "a.page_count, a.managed_path, b.active_toc_revision_id FROM books b JOIN assets a ON a.id = b.asset_id "
-        "WHERE b.id = ?"));
+        "a.page_count, a.managed_path, b.active_toc_revision_id, b.trashed_at FROM books b "
+        "JOIN assets a ON a.id = b.asset_id WHERE b.id = ?"));
     q.addBindValue(id.toString());
     if (!q.exec())
         return sqlError(q);
@@ -197,6 +198,8 @@ Result<BookRow> loadBookRow(QSqlDatabase& db, const BookId& id)
     row.asset.managedPath = q.value(12).toString();
     if (!q.value(13).isNull())
         row.activeTocRevision = TocRevisionId::fromString(q.value(13).toString());
+    if (!q.value(14).isNull())
+        row.trashedAt = QDateTime::fromString(q.value(14).toString(), Qt::ISODateWithMs);
     return row;
 }
 
@@ -389,6 +392,7 @@ Result<Computed> compute(QSqlDatabase& db, const BookRow& row)
         for (const TocEntry& e : c.toc->analysis.entries)
             s.tocEntryCount += e.removed ? 0 : 1;
     }
+    s.trashedAt = row.trashedAt;
     s.tocEdited = c.tocRevision.has_value();
     s.tocNeedsReconciliation = c.tocRevision && c.tocRevision->needsReconciliation;
     return c;
@@ -596,6 +600,30 @@ Status validateOverride(MetadataField field, const MetadataOverride& o)
     return Done{};
 }
 
+// Ends a trashed book's open jobs: queued ones are cancelled, a running one
+// is marked cancel-requested (the worker ends it; its result is refused).
+Status endOpenJobs(QSqlDatabase& db, const BookId& id, const QString& stamp)
+{
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral("UPDATE jobs SET state = 'cancelled', outcome = 'trashed', "
+                             "error = 'The book was moved to Trash.', updated_at = ?, finished_at = ? "
+                             "WHERE book_id = ? AND state = 'queued'"));
+    q.addBindValue(stamp);
+    q.addBindValue(stamp);
+    q.addBindValue(id.toString());
+    if (!q.exec())
+        return sqlError(q);
+    // The reason is recorded now; finishJob keeps it when the worker ends the job.
+    q.prepare(QStringLiteral("UPDATE jobs SET state = 'cancel_requested', outcome = 'trashed', "
+                             "error = 'The book was moved to Trash.', updated_at = ? "
+                             "WHERE book_id = ? AND state = 'running'"));
+    q.addBindValue(stamp);
+    q.addBindValue(id.toString());
+    if (!q.exec())
+        return sqlError(q);
+    return Done{};
+}
+
 Status setLifecycle(QSqlDatabase& db, const BookId& id, Lifecycle lifecycle)
 {
     Transaction tx(db);
@@ -607,17 +635,41 @@ Status setLifecycle(QSqlDatabase& db, const BookId& id, Lifecycle lifecycle)
     if (row.value().lifecycle == lifecycle)
         return Done{};
     QSqlQuery q(db);
+    const QString stamp = now();
     if (lifecycle == Lifecycle::Trashed) {
         // Invalidate pending work so late completions cannot restore anything.
         q.prepare(QStringLiteral(
-            "UPDATE books SET lifecycle = 'trashed', metadata_generation = metadata_generation + 1, "
+            "UPDATE books SET lifecycle = 'trashed', trashed_at = ?, metadata_generation = metadata_generation + 1, "
             "toc_generation = toc_generation + 1 WHERE id = ?"));
+        q.addBindValue(stamp);
+        q.addBindValue(id.toString());
+        if (!q.exec())
+            return sqlError(q);
+        // Its jobs end too: queued ones at once, a running one when its SDK
+        // call returns (its result is refused either way).
+        if (auto s = endOpenJobs(db, id, stamp); !s)
+            return s;
     } else {
-        q.prepare(QStringLiteral("UPDATE books SET lifecycle = 'active' WHERE id = ?"));
+        q.prepare(QStringLiteral("UPDATE books SET lifecycle = 'active', trashed_at = NULL WHERE id = ?"));
+        q.addBindValue(id.toString());
+        if (!q.exec())
+            return sqlError(q);
+        // Any job still open predates the trash (its generation is stale):
+        // end it, so it cannot stand in for the new request below.
+        if (auto s = endOpenJobs(db, id, stamp); !s)
+            return s;
+        // Work the trash stopped starts again: a component without published
+        // results gets a new request (a new generation). A job cancelled by
+        // the trash and still running cannot block it or publish.
+        if (!row.value().activeMetadataRun) {
+            if (auto queued = detail::queueJob(db, id, JobKind::Metadata); !queued)
+                return queued.error();
+        }
+        if (!row.value().activeTocRun) {
+            if (auto queued = detail::queueJob(db, id, JobKind::Toc); !queued)
+                return queued.error();
+        }
     }
-    q.addBindValue(id.toString());
-    if (!q.exec())
-        return sqlError(q);
     if (auto s = touchBook(db, id); !s)
         return s;
     if (auto s = refreshProjection(db, id); !s)
@@ -632,6 +684,17 @@ Status setLifecycle(QSqlDatabase& db, const BookId& id, Lifecycle lifecycle)
 Status detail::touchBook(QSqlDatabase& db, const BookId& book)
 {
     return mbl::catalog::touchBook(db, book);
+}
+
+Result<BookSummary> detail::bookSummary(QSqlDatabase& db, const BookId& book)
+{
+    auto row = loadBookRow(db, book);
+    if (!row)
+        return row.error();
+    auto computed = compute(db, row.value());
+    if (!computed)
+        return computed.error();
+    return computed.value().summary;
 }
 
 Status detail::refreshBookProjection(QSqlDatabase& db, const BookId& book)

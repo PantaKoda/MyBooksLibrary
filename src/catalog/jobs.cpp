@@ -233,6 +233,14 @@ Status finishJob(QSqlDatabase& db, const JobId& id, JobState state, const QStrin
 {
     if (isOpen(state) || state == JobState::Succeeded)
         return makeError(ErrorCode::InvalidArgument, QStringLiteral("finishJob needs a terminal state other than Succeeded."));
+    // A job ended because its book was moved to Trash keeps that reason,
+    // whichever way the worker then reports the cancellation.
+    auto current = job(db, id);
+    if (!current)
+        return current.error();
+    if (state == JobState::Cancelled && current.value().state == JobState::CancelRequested
+        && current.value().outcome == QLatin1String("trashed"))
+        return transition(db, id, {JobState::CancelRequested}, state, current.value().outcome, current.value().error);
     return transition(db, id, {JobState::Running, JobState::CancelRequested}, state, outcome, error);
 }
 

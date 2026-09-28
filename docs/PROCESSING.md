@@ -31,7 +31,7 @@ The worker only waits on database futures; no SQL runs on it. `extract()` receiv
 States: `queued`, `running`, `cancel_requested`, `succeeded`, `failed`, `cancelled`, `interrupted`. At most one **pending** job (queued or running) exists per book and kind; a partial unique index enforces it. A `cancel_requested` job is ending and can never publish, so it does not block a new request.
 
 1. `enqueueMetadata(book)` → `catalog::enqueueJob`. If a pending job exists it is returned unchanged. Otherwise (including while an earlier job is still `cancel_requested`), in one transaction, the book's metadata **request generation** is incremented and a queued job records that generation and the asset's SHA-256. Trashed books are refused.
-2. The worker claims the next job (metadata before TOC, then oldest). Queued jobs of trashed books are cancelled with outcome `trashed` instead of running.
+2. The worker claims the next job (metadata before TOC, then oldest). Trash already ends a book's jobs (CATALOG.md, publication rules); as a safeguard, a queued job of a trashed book is still cancelled with outcome `trashed` instead of running.
 3. The worker reads the managed path and calls the SDK step with the job's (or the pair's group) cancel flag.
 4. The result is handled as follows:
 

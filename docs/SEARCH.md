@@ -11,6 +11,8 @@ Search covers **effective bibliographic fields and table-of-contents titles**. I
 
 Tokenizer: `unicode61 remove_diacritics 2 tokenchars '+#'`. Matching is case-insensitive and ignores diacritics ("edition" finds "Édition"). `+` and `#` are part of tokens, so `C++` and `C#` do not match plain `C`.
 
+`SearchRequest.collection` limits results to the books in one collection. The membership is read from `collection_books` after matching, so ranks are unaffected; trashed books are not indexed, so they never appear.
+
 The projections are derived data. A2 updates them inside the same transaction as the catalog change (publication, override, trash, restore), on the same connection. `catalog::rebuildSearchIndex` recreates them from catalog tables.
 
 ## Query syntax (`search::compileQuery`)

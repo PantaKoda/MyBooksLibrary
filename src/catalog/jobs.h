@@ -35,7 +35,8 @@ domain::Result<std::optional<domain::JobRecord>> claimNextJob(QSqlDatabase& db);
 // ends it). Terminal jobs are left unchanged. Returns the job as stored.
 domain::Result<domain::JobRecord> requestJobCancel(QSqlDatabase& db, const domain::JobId& id);
 
-// Running or CancelRequested -> a terminal state other than Succeeded.
+// Running or CancelRequested -> a terminal state other than Succeeded. A job
+// whose book was moved to Trash while it ran keeps the outcome "trashed".
 domain::Status finishJob(QSqlDatabase& db, const domain::JobId& id, domain::JobState state,
                          const QString& outcome, const QString& error);
 

@@ -13,8 +13,47 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | SDK 0.3.0 update | Merged | `chore/sdk-0.3.0` / [PR #11](https://github.com/PantaKoda/MyBooksLibrary/pull/11), merge `a4b7d59` | See "SDK 0.3.0 update" |
 | M05 Contents | Merged: part 1 [PR #12](https://github.com/PantaKoda/MyBooksLibrary/pull/12) (merge `9feb9b3`); part 2 [PR #13](https://github.com/PantaKoda/MyBooksLibrary/pull/13) (merge `8ba9f49`) | `feat/m05-a4-contents-analysis`; `feat/m05-presentation-contents-inspector` | See "M05" |
 | M06 Search/read | Merged: part 1 [PR #14](https://github.com/PantaKoda/MyBooksLibrary/pull/14) (merge `c8dc23e`); part 2 [PR #15](https://github.com/PantaKoda/MyBooksLibrary/pull/15) (merge `e964184`) | `feat/m06-presentation-search`; `feat/m06-reader-chapter-navigation` | See "M06" |
-| M07 Corrections/reruns | Merged: part 1 [PR #16](https://github.com/PantaKoda/MyBooksLibrary/pull/16) (merge `152eb8c`); part 2a [PR #17](https://github.com/PantaKoda/MyBooksLibrary/pull/17) (merge `c215319`). Part 2b AwaitingReview ([PR #18](https://github.com/PantaKoda/MyBooksLibrary/pull/18), editing UI) | `feat/m07-presentation-metadata-corrections`; `feat/m07-a2-toc-edits`; `feat/m07-presentation-toc-editing` | See "M07" |
-| M08–M11 | NotStarted | | |
+| M07 Corrections/reruns | Merged: part 1 [PR #16](https://github.com/PantaKoda/MyBooksLibrary/pull/16) (merge `152eb8c`); part 2a [PR #17](https://github.com/PantaKoda/MyBooksLibrary/pull/17) (merge `c215319`); part 2b [PR #18](https://github.com/PantaKoda/MyBooksLibrary/pull/18) (merge `f40b99c`) | `feat/m07-presentation-metadata-corrections`; `feat/m07-a2-toc-edits`; `feat/m07-presentation-toc-editing` | See "M07" |
+| M08 Organization | InProgress: part 1, collections and trash races in the catalog | `feat/m08-a2-collections-trash` | See "M08" |
+| M09–M11 | NotStarted | | |
+
+## M08 — Organization
+
+M08 is split in two:
+- **Part 1** (A2 + A3): collections and trash races in the catalog and search.
+- **Part 2** (presentation):
+  - collections in the window, and moving books to them;
+  - moving to Trash and restoring, with a Trash view;
+  - restoring a duplicate import that is in Trash;
+  - stopping a trashed book's running job at once.
+
+### Part 1: collections and trash races (A2 + A3)
+
+**Scope:**
+- **Schema 7:** `collections`, `collection_books` and `books.trashed_at`.
+- **`catalog/collections.*`:** create, rename, delete, add, remove, list, a collection's books, and a book's collections.
+- **Trash** ends the book's jobs and records the time. **Restore** ends any stale open job and queues new jobs for components without published results.
+- **`finishJob`** keeps the outcome `trashed`.
+- **Search:** `SearchRequest.collection` filters by collection.
+- **Domain:** `CollectionId`, `CollectionSummary` and `BookSummary::trashedAt`.
+
+**Touched paths:** `src/domain/`, `src/catalog/`, `src/search/searchindex.cpp`, `CMakeLists.txt`, `tests/catalog/`, `tests/CMakeLists.txt`, `docs/`.
+
+| Command | Result |
+| --- | --- |
+| `pwsh scripts/verify.ps1` (Release) and `-Configuration Debug` | VERIFY PASSED in both; 20/20 `ctest` suites; all smoke checks |
+| `tst_organization` (new, 7 cases) | **Collections:** membership only (no asset or book added), a book in two collections, adding twice, removing, and a restart. Names: trimmed, empty refused, case-insensitive duplicates refused on create and rename, renaming to itself in another case allowed. Unknown collection or book gives NotFound, all or nothing. Deleting a collection keeps its books.<br>**Trash:** trashed books keep their memberships but are not listed or counted, cannot be added, record `trashedAt`, and come back on restore.<br>**Search** within a collection.<br>**Jobs:** trash cancels queued jobs with `trashed`; restore queues only the missing components, with current generations, and is idempotent.<br>**Race:** trashed and restored while a job runs, the new request is not blocked; the stale result is refused and ends as `trashed`; the new job runs and publishes. A queued job left by an older trash is ended on restore. Passed 30 times in a row (`--repeat until-fail:30`). |
+| `tst_migrations::version6CatalogGainsCollections` (new) | A schema 6 catalog with a trashed book upgrades; the book stays trashed with no trash time, can be restored and added to a collection |
+| `tst_processingcoordinator::trashedWhileRunningIsNotPublished` (existing) | Still passes: after `finishJob` kept the reason, the job ends `cancelled` / `trashed`. The first run of the change failed here with outcome `cancelled`, which led to that fix. |
+| Mutations, each reverted | No search filter: `searchWithinACollection` fails. Restore not ending stale open jobs: `restoreEndsJobsLeftOpenByAnOlderTrash` fails. |
+
+**Found while testing:**
+- A test helper iterated over `db(...).value()` of a temporary: a use-after-free (heap corruption) that showed up as a garbled outcome. Fixed in the test.
+- One race test depended on the order of two jobs created in the same millisecond. It now selects the metadata job explicitly.
+
+**Not in this part:** the window (part 2), and permanent deletion of trashed books.
+
+**Next action:** hand over the PR for review. Then M08 part 2.
 
 ## M07 — Corrections and reruns
 
@@ -53,7 +92,7 @@ M07 is split in three:
 
 **Not verified by hand:** clicking through the edit bar and dialogs with the mouse and keyboard, and screen readers.
 
-**Next action:** review of [PR #18](https://github.com/PantaKoda/MyBooksLibrary/pull/18). After it is merged, M07 is complete; next is M08, organization (collections and Trash).
+**Next action:** merged; M07 is complete. Next: M08.
 
 ### Part 2a: contents edits in the catalog and search (A2 + A3)
 

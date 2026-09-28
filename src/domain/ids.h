@@ -38,6 +38,7 @@ using RunId = Id<struct RunTag>;  // One metadata or TOC analysis run.
 using ImportId = Id<struct ImportTag>;  // One import operation.
 using JobId = Id<struct JobTag>;        // One processing job.
 using TocRevisionId = Id<struct TocRevisionTag>;  // One saved revision of a book's edited contents.
+using CollectionId = Id<struct CollectionTag>;    // One user collection of books.
 
 } // namespace mbl::domain
 
@@ -45,3 +46,4 @@ Q_DECLARE_METATYPE(mbl::domain::BookId)
 Q_DECLARE_METATYPE(mbl::domain::RunId)
 Q_DECLARE_METATYPE(mbl::domain::JobId)
 Q_DECLARE_METATYPE(mbl::domain::TocRevisionId)
+Q_DECLARE_METATYPE(mbl::domain::CollectionId)

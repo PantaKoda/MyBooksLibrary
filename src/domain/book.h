@@ -63,6 +63,7 @@ struct BookSummary {
     int tocEntryCount = 0;              // Of the effective contents, without removed entries.
     bool tocEdited = false;             // The contents come from an edited revision.
     bool tocNeedsReconciliation = false;
+    QDateTime trashedAt;                // When it was moved to Trash (UTC); invalid when active.
 };
 
 struct BookDetails {
