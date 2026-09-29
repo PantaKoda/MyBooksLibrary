@@ -60,7 +60,9 @@ function Test-Cleaned([string]$Name, [string]$BuildDir, [string]$ExpectedDir) {
 try {
     New-Sentinel $repo
     New-Item -ItemType Directory -Force -Path (Join-Path $repo 'scripts') | Out-Null
-    Copy-Item -LiteralPath (Join-Path $PSScriptRoot '..\scripts\verify.ps1') -Destination (Join-Path $repo 'scripts')
+    foreach ($script in 'verify.ps1', 'toolchain.ps1') {  # verify.ps1 loads toolchain.ps1.
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot "..\scripts\$script") -Destination (Join-Path $repo 'scripts')
+    }
     git -C $repo init -q
     git -C $repo -c user.name=guard -c user.email=guard@example.invalid commit -q --allow-empty -m fixture
     if ($LASTEXITCODE -ne 0) { throw 'Could not create the fixture repository.' }

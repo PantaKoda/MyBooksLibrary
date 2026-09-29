@@ -40,7 +40,7 @@ cmake --build build\cli-debug
 
 Qt Creator's bundled tools can be used if CMake/Ninja are not on `PATH`: `C:\Qt\Tools\CMake_64\bin` and `C:\Qt\Tools\Ninja`.
 
-Running outside Qt Creator needs Qt's DLLs on `PATH` (for example `C:\Qt\6.11.2\msvc2022_64\bin`) until a deployed package exists.
+Running a development build outside Qt Creator needs Qt's DLLs on `PATH` (for example `C:\Qt\6.11.2\msvc2022_64\bin`). The Windows package (below) needs nothing on `PATH`.
 
 ## Running the app
 
@@ -100,6 +100,28 @@ pwsh scripts/verify.ps1 -Configuration Debug -Clean                        # SDK
 `-QtDir` defaults to `QT_ROOT_DIR`, then `C:\Qt\6.11.2\msvc2022_64`.
 
 `-Clean` deletes the build folder only if the script can identify it as this project's build output: a folder under `<repo>\build\` (not `build\` itself), or a folder outside the repository whose `CMakeCache.txt` names this repository as its source. The path is normalized first, so `..` cannot escape `build\`. The repository, its ancestors, other folders inside it, and the SDK and Qt folders (and anything inside them) are refused before anything is deleted. `-ValidateOnly` stops after this check and the clean; the guard tests use it against a disposable fake repository.
+
+## Windows package (`scripts/package.ps1`)
+
+```powershell
+pwsh scripts/package.ps1 -SdkDir C:\Dev\pdfbookmark-sdk\0.3.0
+```
+
+It builds `appMyBooksLibrary` (Release, no tests) in `build\package-release`, then writes `build\package\MyBooksLibrary\` and `build\package\MyBooksLibrary-<version>-win64.zip`. The package holds:
+
+| Part | Where it comes from |
+| --- | --- |
+| `appMyBooksLibrary.exe`, the pdfbookmark DLLs, `models\` | The build folder, where `pdfbookmark_deploy_runtime` placed the SDK's runtime and OCR models. |
+| Qt DLLs, `platforms\`, `sqldrivers\qsqlite.dll`, `qml\` (including `QtQuick\Pdf`) | `windeployqt --release --qmldir qml`. It ships only the SQLite driver, and leaves out software OpenGL, the D3D and DXC shader compilers (Qt Quick's Direct3D 11 backend uses precompiled shaders), QML debugging plugins and translations. |
+| `vcruntime140*.dll`, `msvcp140*.dll`, … | The Visual C++ runtime, app-local, from `VCToolsRedistDir`. |
+| `NOTICE.txt`, `licenses\` | Qt's licence text (`C:\Qt\Licenses\LICENSE` by default, or `-QtLicenseFile`), the SBOM of **every Qt module whose files are shipped**, listing its third-party components (for example PDFium in Qt PDF), and the SDK's `share\doc\pdfbookmark\licenses`. A shipped Qt file whose module the script does not know stops it, so no notice goes missing silently. |
+
+Then it **checks the package from a copy outside the repository**, with `PATH` reduced to Windows' own folders, no Qt variables and the real platform, each run with a time limit:
+- `--sdk-check`, `--sqlite-check` (FTS5);
+- `--reader-check` on a text PDF and, with `--require-ocr`, on `image-only.pdf`, which uses the packaged OCR models;
+- the window: `--import`, `--read-page 15`, `--export-first` (a copy with bookmarks saved to a non-ASCII name through the Export dialog's session), and `--close`.
+
+It prints `PACKAGE PASSED` and exits 0 only if everything passed. It deletes only its own fixed output folders under `build\` and its own temporary copy.
 
 ## Continuous integration
 

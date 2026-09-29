@@ -54,20 +54,8 @@ function Invoke-Step([string]$Name, [scriptblock]$Body) {
     $steps.Add([pscustomobject]@{ Step = $Name; Seconds = [math]::Round($timer.Elapsed.TotalSeconds, 1) })
 }
 
-function Invoke-Native([string]$Exe, [string[]]$Arguments) {
-    & $Exe @Arguments
-    if ($LASTEXITCODE -ne 0) { throw "$Exe $($Arguments -join ' ') failed with exit code $LASTEXITCODE" }
-}
-
-function Add-ToolDir([string]$Tool, [string[]]$Candidates) {
-    if (Get-Command $Tool -ErrorAction SilentlyContinue) { return }
-    foreach ($dir in $Candidates) {
-        if ($dir -and (Test-Path (Join-Path $dir "$Tool.exe"))) {
-            $env:PATH = "$dir;$env:PATH"
-            return
-        }
-    }
-}
+# Invoke-Native and Initialize-Toolchain, shared with scripts/package.ps1.
+. (Join-Path $PSScriptRoot 'toolchain.ps1')
 
 function Get-NormalizedDir([string]$Path) {
     if (-not $Path) { return $null }
@@ -153,32 +141,7 @@ try {
     }
 
     Invoke-Step 'Toolchain' {
-        if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
-            $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-            if (-not (Test-Path $vswhere)) { throw 'cl.exe is not on PATH and vswhere.exe was not found.' }
-            $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-            if (-not $vs) { throw 'No Visual Studio installation with the x64 C++ tools was found.' }
-            $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
-            cmd /c "`"$vcvars`" >nul && set" | ForEach-Object {
-                if ($_ -match '^([^=]+)=(.*)$') { Set-Item -Path "env:$($Matches[1])" -Value $Matches[2] }
-            }
-        }
-        $qtTools = Join-Path $QtDir '..\..\Tools'
-        $vsCMake = if ($env:VSINSTALLDIR) { Join-Path $env:VSINSTALLDIR 'Common7\IDE\CommonExtensions\Microsoft\CMake' } else { '' }
-        Add-ToolDir 'cmake' @((Join-Path $qtTools 'CMake_64\bin'), $(if ($vsCMake) { Join-Path $vsCMake 'CMake\bin' }))
-        Add-ToolDir 'ninja' @((Join-Path $qtTools 'Ninja'), $(if ($vsCMake) { Join-Path $vsCMake 'Ninja' }))
-        foreach ($tool in 'cl', 'cmake', 'ninja') {
-            if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) { throw "$tool was not found." }
-        }
-        if (-not (Test-Path (Join-Path $QtDir 'lib\cmake\Qt6'))) { throw "Qt was not found at $QtDir (use -QtDir)." }
-        if (-not $SdkDir -or -not (Test-Path (Join-Path $SdkDir 'lib\cmake\pdfbookmark'))) {
-            throw "The pdfbookmark SDK was not found at '$SdkDir' (use -SdkDir or PDFBOOKMARK_SDK)."
-        }
-        $env:PATH = "$(Join-Path $QtDir 'bin');$env:PATH"  # Qt DLLs for the smoke checks.
-        Write-Host "cmake: $((Get-Command cmake).Source)"
-        Write-Host "ninja: $((Get-Command ninja).Source)"
-        Write-Host "Qt:    $QtDir"
-        Write-Host "SDK:   $SdkDir"
+        Initialize-Toolchain -QtDir $QtDir -SdkDir $SdkDir
     }
 
     Invoke-Step "Configure ($Configuration)" {
@@ -217,17 +180,22 @@ try {
             }
 
             # Closing the window with a book open: the reader closes the book first
-            # (view, then document) and the reading position is stored.
+            # (view, then document) and the reading position is stored. Before
+            # that, a copy with bookmarks is saved through the Export dialog's
+            # session (outside the library folder, which export refuses).
             $library = Join-Path ([IO.Path]::GetTempPath()) "mbl-verify-close-$([guid]::NewGuid().ToString('N'))"
             try {
-                $output = & $app @('--library', $library, '--import', (Join-Path $fixtures 'contents-book.pdf'),
-                    '--read-page', '15', '--close') 2>&1 | Out-String
+                $copy = Join-Path $library 'export\Book (bookmarked).pdf'
+                New-Item -ItemType Directory -Path (Split-Path -Parent $copy) | Out-Null
+                $output = & $app @('--library', (Join-Path $library 'lib'), '--import', (Join-Path $fixtures 'contents-book.pdf'),
+                    '--read-page', '15', '--export-first', $copy, '--close') 2>&1 | Out-String
                 $code = $LASTEXITCODE
                 Write-Host "---- close while reading (exit $code)"
                 Write-Host $output
                 if ($code -ne 0) { throw "close while reading failed with exit code $code" }
+                if (-not (Test-Path -LiteralPath $copy -PathType Leaf)) { throw "the bookmarked copy was not written at $copy" }
                 $query = 'import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute("SELECT group_concat(page_index) FROM reading_positions").fetchone()[0])'
-                $position = (& (Get-PythonCommand) -c $query (Join-Path $library 'library.sqlite') | Out-String).Trim()
+                $position = (& (Get-PythonCommand) -c $query (Join-Path $library 'lib\library.sqlite') | Out-String).Trim()
                 Write-Host "reading position stored: $position"
                 if ($position -ne '14') { throw "close while reading stored reading position '$position', expected 14 (page 15)" }
             } finally {
