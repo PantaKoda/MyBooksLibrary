@@ -4,7 +4,7 @@
 
 | Piece | Where | Role |
 | --- | --- | --- |
-| Composition root | `main.cpp`, `src/app/libraryroot.*` | Resolves the library folder, creates the `LibraryController`, gives it the SDK metadata extractor (`sdk::SdkMetadataExtractor`) and whether OCR models were found, passes it to `Main.qml` as the required property `library`, and opens the library. |
+| Composition root | `main.cpp`, `src/app/libraryroot.*` | Resolves the library folder, creates the `LibraryController`, gives it the SDK metadata extractor (`sdk::SdkMetadataExtractor`), contents analyzer and bookmark writer (`sdk::SdkBookExporter`) and whether OCR models were found, passes it to `Main.qml` as the required property `library`, and opens the library. |
 | `LibraryController` | `src/presentation/librarycontroller.*` | The library session. It opens the library (lock, migrations, `ImportService::recover`) and imports files on a **one-thread worker pool**. It delivers progress (throttled to about 10 updates a second) and per-file results through queued invocations, and reloads the book list through `QFuture::then(this, …)`, so models change only on the GUI thread. |
 | `LibraryController` and processing | same | Once the library is open, it creates the `ProcessingCoordinator` (docs/PROCESSING.md), runs job recovery, and then starts it. Coordinator signals update the models on the GUI thread: `jobChanged` updates one row, and `metadataPublished` reloads the book list. `refresh()` loads the books, each book's latest job (`catalog::latestJobs`, one window-function pass), the 100 most recent jobs and **every open job** in one database task. Refreshes are coalesced: one runs at a time, and calls made meanwhile schedule a single further one. |
 | `BookListModel` | `src/presentation/booklistmodel.*` | GUI-owned list of copied `BookSummary` values. Roles: `bookId`, `title`, `titleFromFileName`, `contributors`, `processingState`. The processing state combines what the catalog holds with the book's latest metadata job. |
@@ -18,6 +18,8 @@
 | `ReaderPane.qml` | `qml/reader/` | The reader: "Library" (back), title, previous and next page, an editable page number "of *n*", and the PDF. |
 | `CollectionListModel` | `src/presentation/collectionlistmodel.*` | The collections for the sidebar, by name, with active book counts. Roles: `collectionId`, `name`, `bookCount`. Unchanged rows keep their state across refreshes. |
 | `LibrarySidebar.qml` | `qml/library/` | The views: **Library (*n*)**, each collection (*n*), and **Trash (*n*)**; **New collection…**, and Rename… / Delete… on a collection (right-click, press and hold, the Menu key or Shift+F10; F2 renames, Delete asks to delete). Names are plain text. Refusals (a duplicate name) are shown under it. |
+| `ExportController` | `src/presentation/exportcontroller.*` | The Export dialog's session (M09). `prepare(book)` loads on the database thread what the copy will get: the number of bookmarks, a summary, one note per entry left out or moved with the reason, a suggested "*title* (bookmarked).pdf" in Documents, and the book's last export. `exportTo(path)` asks the `ProcessingCoordinator` for the copy and follows its job: Waiting (behind an analysis), Writing, Cancelling, then Saved, NotSaved or Cancelled. A file already at the destination moves to **NeedsReplace**; only `confirmReplace()` replaces it. A refusal shows the coordinator's reason (inside the library folder, a protected file, a book in Trash). |
+| `ExportDialog.qml` | `qml/export/` | "Save a copy with bookmarks", from the inspector's **More** menu. It shows the preview (scrolling when the window is small, so the path, progress and buttons stay visible), a "Save as" field with **Choose…** (a native save dialog whose own overwrite prompt is off, so replacing is always confirmed here), the progress and the result, **Show folder** once saved, and **Cancel saving**. Closing it does not stop a copy being saved; the job queue shows it, and opening the dialog again for that book follows the same copy (progress, result, Cancel). |
 | `BookListView.qml` | `qml/library/` | The book list of the current view. The selection is kept by book ID across every row change (not only resets), so the list and the inspector always show the same book, or none. |
 | `Main.qml` | repository root | The list-first window. QML only reads properties and calls `importUrls`, `cancelImports`, `refresh`, `cancelJob`, `retryJob`, `cancelAllJobs` and `prepareToClose`. There is no SQL, file or SDK work in QML. |
 
@@ -79,11 +81,16 @@
   - A chapter opens at its physical page ("Open chapter" in the inspector; "Open" on a search hit).
   - An entry without a confirmed page opens the page where the contents list it ("Show contents page", or "Contents page" on a search hit). No page is guessed.
   - The position is saved per book and survives a restart.
+- **Saving a copy with bookmarks (M09):** **More → Save a copy with bookmarks…** opens the Export dialog.
+  - Before anything is written, it says how many bookmarks the copy gets, and lists every contents entry left out (no confirmed page) or placed at another level, with the reason. The book in the library is never changed.
+  - **Save copy** writes a new PDF in the background: "Waiting for the current work to finish…" while an analysis runs, then "Writing the bookmarked copy…", then "Saved as …, with *n* bookmarks".
+  - An existing file is replaced only after **Replace**, and only if it is still the same file when the copy is written (PROCESSING.md, "Export jobs"). The library folder, the book's own PDF and imported originals are refused with the reason.
+  - A book in Trash, or one whose contents are not analyzed yet, shows why it cannot be exported.
 - **Closing:** closing while work runs calls `prepareToClose()`, which cancels imports and **stops** processing. Stopping is not cancelling: the running extraction is interrupted and requeued, and waiting jobs stay queued, so the next start continues them. The window shows "Finishing before closing…" and closes when the controller is idle. There is no blocking wait on the GUI thread. The SDK stops at its next checkpoint, so an OCR page in progress finishes first: closing took 6.8 s during OCR of `image-only.pdf` in Release.
 
 ## Not yet
 
-Comparing a newer analysis with the edited contents entry by entry, browsing earlier versions of the contents, emptying Trash (permanent deletion), selecting several books at once, and keyboard shortcuts beyond list navigation.
+A list of all saved copies of a book (the dialog shows the last one), comparing a newer analysis with the edited contents entry by entry, browsing earlier versions of the contents, emptying Trash (permanent deletion), selecting several books at once, and keyboard shortcuts beyond list navigation.
 
 ## Screenshots (Release build, `--screenshot`, library at `C:\MBL-demo\Library`)
 
@@ -114,6 +121,10 @@ The Contents tab with an entry selected: its reasons, Open chapter and Show cont
 The window with the sidebar (Release, real SDK, `--inspect-first`, library at `C:\MBL-demo-Contents`):
 
 ![Library sidebar](images/m08-library-sidebar.png)
+
+The Export dialog for `contents-book.pdf` imported as "Βιβλίο", with an example destination (`tst_exportcontroller`, real SDK, `MBL_SCREENSHOT_DIR`):
+
+![Export dialog](images/m09-export-dialog.png)
 
 Searching "tcp/ip" after importing the three test PDFs: a contents-only match, with its physical page (Release, real SDK, `--search tcp/ip --inspect-first`):
 

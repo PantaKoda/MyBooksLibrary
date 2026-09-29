@@ -14,6 +14,7 @@
 #include "presentation/bookinspector.h"
 #include "presentation/booklistmodel.h"
 #include "presentation/collectionlistmodel.h"
+#include "presentation/exportcontroller.h"
 #include "presentation/joblistmodel.h"
 #include "presentation/searchcontroller.h"
 #include "reader/readercontroller.h"
@@ -37,6 +38,7 @@ namespace mbl::storage {
 class ImportService;
 }
 namespace mbl::processing {
+class BookExporter;
 class ContentsAnalyzer;
 class MetadataExtractor;
 class ProcessingCoordinator;
@@ -69,6 +71,8 @@ class LibraryController : public QObject {
     Q_PROPERTY(bool ocrAvailable READ ocrAvailable CONSTANT)
     Q_PROPERTY(bool closing READ closing NOTIFY closingChanged)
     Q_PROPERTY(mbl::presentation::CollectionListModel* collections READ collections CONSTANT)
+    // The Export dialog's session (M09).
+    Q_PROPERTY(mbl::presentation::ExportController* exporter READ exporter CONSTANT)
     // What the book list shows, and its heading.
     Q_PROPERTY(View view READ view NOTIFY viewChanged)
     Q_PROPERTY(QString viewCollectionId READ viewCollectionId NOTIFY viewChanged)
@@ -103,6 +107,9 @@ public:
     // analyzer, contents jobs fail as unsupported.
     void setProcessors(std::shared_ptr<processing::MetadataExtractor> extractor,
                        std::shared_ptr<processing::ContentsAnalyzer> analyzer, bool ocrAvailable);
+    // Composition root, before open(): writes bookmarked copies (without it,
+    // exports are refused as not available).
+    void setExporter(std::shared_ptr<processing::BookExporter> exporter);
     void setMetadataExtractor(std::shared_ptr<processing::MetadataExtractor> extractor, bool ocrAvailable)
     {
         setProcessors(std::move(extractor), nullptr, ocrAvailable);
@@ -180,6 +187,7 @@ public:
     bool ocrAvailable() const { return m_ocrAvailable; }
     bool closing() const { return m_closing; }
     CollectionListModel* collections() { return &m_collections; }
+    ExportController* exporter() { return &m_export; }
     View view() const { return m_view; }
     QString viewCollectionId() const { return m_view == View::Collection ? m_viewCollection.toString() : QString(); }
     QString viewTitle() const;
@@ -243,6 +251,8 @@ private:
     reader::ReaderController m_reader;
     std::shared_ptr<processing::MetadataExtractor> m_extractor;
     std::shared_ptr<processing::ContentsAnalyzer> m_analyzer;
+    std::shared_ptr<processing::BookExporter> m_exporter;
+    ExportController m_export;
     std::unique_ptr<processing::ProcessingCoordinator> m_coordinator;  // Destroyed before m_library.
     bool m_ocrAvailable = false;
     bool m_recoveringJobs = false;

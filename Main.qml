@@ -79,6 +79,13 @@ ApplicationWindow {
         }
     }
 
+    // Save a copy with bookmarks (M09); opened from the inspector's More menu.
+    ExportDialog {
+        id: exportDialog
+        exporter: window.library.exporter
+        enabledForUse: window.library.ready && !window.closeRequested
+    }
+
     FileDialog {
         id: importDialog
         title: qsTr("Import PDF files")
@@ -205,6 +212,8 @@ ApplicationWindow {
                     onOpenPageRequested: (pageNumber) => window.library.reader.openPageNumber(window.library.inspector.bookId, pageNumber)
                     onRerunMetadataRequested: window.library.rerunMetadata(window.library.inspector.bookId)
                     onRerunContentsRequested: window.library.rerunContents(window.library.inspector.bookId)
+                    onExportRequested: exportDialog.openFor(window.library.inspector.bookId)
+                    exportEnabled: window.library.ready && !window.closeRequested
                     rerunEnabled: window.library.processingAvailable && !window.closeRequested
                     collections: window.library.collections
                     currentCollectionId: window.library.viewCollectionId

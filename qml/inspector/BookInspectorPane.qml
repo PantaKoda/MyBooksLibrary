@@ -23,6 +23,9 @@ Pane {
     signal rerunMetadataRequested()
     signal rerunContentsRequested()
     property bool rerunEnabled: true
+    // Save a copy of the PDF with the contents as bookmarks (the Export dialog).
+    signal exportRequested()
+    property bool exportEnabled: true
     // Organization: the library's collections, the collection the list shows
     // (empty: none), and requests for the shown book.
     property CollectionListModel collections: null
@@ -78,7 +81,7 @@ Pane {
                 text: qsTr("More")
                 visible: pane.inspector.hasBook && pane.inspector.error.length === 0
                 onClicked: moreMenu.open()
-                Accessible.description: qsTr("Read this book's title, authors or contents again")
+                Accessible.description: qsTr("Read this book's title, authors or contents again, save a copy with bookmarks, or organize it")
                 Menu {
                     id: moreMenu
                     y: moreButton.height
@@ -91,6 +94,12 @@ Pane {
                         text: qsTr("Analyze contents again")
                         enabled: pane.rerunEnabled && !pane.inspector.inTrash
                         onTriggered: pane.rerunContentsRequested()
+                    }
+                    MenuItem {
+                        objectName: "exportItem"
+                        text: qsTr("Save a copy with bookmarks…")
+                        enabled: pane.exportEnabled && !pane.inspector.inTrash
+                        onTriggered: pane.exportRequested()
                     }
                     MenuSeparator {}
                     Menu {
