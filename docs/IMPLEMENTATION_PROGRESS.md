@@ -27,11 +27,11 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 
 **Fix:**
 - `BookInspector::contentsNotes` keeps only the short counts.
-- The analysis's reasons are a separate `contentsReasons`, shown on request (**Why? (*n*)**) in a scrolling area at most 120 px high.
+- The analysis's reasons are a separate `contentsReasons`, shown on request (**Why? (*n*)**) in a scrolling popup over the pane. Following review of [PR #27](https://github.com/PantaKoda/MyBooksLibrary/pull/27), it is a popup rather than an area in the layout, so the reasons never move the tree, even at the minimum window size. The popup is headed "What the analysis reported:", since edits made later are not reflected in it.
 - The "Ready / Not ready for a bookmarked copy" line is gone. Since M09 the Export dialog bookmarks every entry with a confirmed page, so it was misleading.
 
 **Tests:**
-- `tst_inspectorpane::manyReasonsLeaveTheTreeInView`: 80 entries and 40 reasons in a 640×640 pane. The tree is in view with at least 120 px, before and after Why? is opened. With the old layout, the tree started at y 1184 and the test fails.
+- `tst_inspectorpane::manyReasonsLeaveTheTreeInView`: 80 entries and 40 reasons. In a 640×640 pane the tree is in view with at least 120 px. Opening and closing **Why?** leaves the tree exactly where it was, at 640×640 and at 300×300. With the first layout, the tree started at y 1184 and the test fails.
 - `tst_librarycontroller` checks that the notes carry only counts.
 
 **Checked on the owner's book**, in a copy of the library: the tree shows Preface (page 17), Acknowledgments, Introduction, "1 Simulation Modeling"…

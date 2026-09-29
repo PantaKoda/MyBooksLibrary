@@ -480,8 +480,22 @@ void TestInspectorPane::manyReasonsLeaveTheTreeInView()
     QQuickItem* why = findItem(pane, QStringLiteral("contentsReasonsButton"));
     QVERIFY(why && why->isVisible());
     QVERIFY(why->property("text").toString().contains(QStringLiteral("40")));
-    QVERIFY(QMetaObject::invokeMethod(why, "clicked"));
-    QTRY_VERIFY_WITH_TIMEOUT(findItem(pane, QStringLiteral("contentsReasons"))->isVisible(), 5000);
+    auto* popup = pane->findChild<QObject*>(QStringLiteral("contentsReasonsPopup"));
+    QVERIFY(popup);
+    // Opening the reasons never moves the tree, even in a small pane (about
+    // the app's minimum window).
+    for (const QSizeF size : {QSizeF(640, 640), QSizeF(300, 300)}) {
+        pane->setSize(size);
+        window.resize(size.toSize());
+        QTest::qWait(100);
+        const QRectF before = sceneRect(tree);
+        QVERIFY(QMetaObject::invokeMethod(why, "clicked"));
+        QTRY_VERIFY_WITH_TIMEOUT(popup->property("opened").toBool(), 5000);
+        QTest::qWait(100);
+        QCOMPARE(sceneRect(tree), before);
+        QVERIFY(QMetaObject::invokeMethod(why, "clicked"));  // Closes it again.
+        QTRY_VERIFY_WITH_TIMEOUT(!popup->property("visible").toBool(), 5000);
+    }
     QTRY_VERIFY2_WITH_TIMEOUT(treeInView(), qPrintable(QDebug::toString(sceneRect(tree))), 5000);
 }
 

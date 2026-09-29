@@ -295,37 +295,50 @@ Pane {
                     wrapMode: Text.Wrap
                     opacity: 0.7
                 }
-                // The analysis's reasons, on request and in a bounded area: a
-                // long list (one line per entry without a page) must never push
-                // the contents tree out of the window.
+                // The analysis's reasons, on request, in a popup over the pane: a
+                // long list (one line per entry without a page) never moves the
+                // contents tree, whatever the window's size.
                 Button {
                     id: reasonsButton
                     objectName: "contentsReasonsButton"
-                    property bool expanded: false
                     visible: pane.inspector.contentsReasons.length > 0
                     flat: true
-                    text: expanded ? qsTr("Hide the reasons") : qsTr("Why? (%1)").arg(pane.inspector.contentsReasons.length)
-                    onClicked: expanded = !expanded
-                    Accessible.description: qsTr("Show or hide what the analysis reported about these contents")
+                    text: qsTr("Why? (%1)").arg(pane.inspector.contentsReasons.length)
+                    onClicked: reasonsPopup.opened ? reasonsPopup.close() : reasonsPopup.open()
+                    Accessible.description: qsTr("Show what the analysis reported about these contents")
                     Connections {
                         target: pane.inspector
-                        function onBookChanged() { reasonsButton.expanded = false }
+                        function onBookChanged() { reasonsPopup.close() }
                     }
-                }
-                ScrollView {
-                    objectName: "contentsReasons"
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: Math.min(reasonsLabel.implicitHeight, 120)
-                    visible: reasonsButton.visible && reasonsButton.expanded
-                    contentWidth: availableWidth
-                    clip: true
-                    Label {
-                        id: reasonsLabel
-                        width: parent ? parent.width : implicitWidth
-                        text: pane.inspector.contentsReasons.join("\n")
-                        textFormat: Text.PlainText
-                        wrapMode: Text.Wrap
-                        opacity: 0.7
+                    Popup {
+                        id: reasonsPopup
+                        objectName: "contentsReasonsPopup"
+                        y: reasonsButton.height
+                        width: Math.min(560, pane.width - 24)
+                        height: Math.min(reasonsColumn.implicitHeight + topPadding + bottomPadding, pane.height * 0.6)
+                        padding: 10
+                        contentItem: ScrollView {
+                            objectName: "contentsReasons"
+                            contentWidth: availableWidth
+                            clip: true
+                            ColumnLayout {
+                                id: reasonsColumn
+                                width: parent ? parent.width : implicitWidth
+                                spacing: 6
+                                Label {
+                                    Layout.fillWidth: true
+                                    // The analysis's own words; edits made since are not reflected.
+                                    text: qsTr("What the analysis reported:")
+                                    font.bold: true
+                                }
+                                Label {
+                                    Layout.fillWidth: true
+                                    text: pane.inspector.contentsReasons.join("\n")
+                                    textFormat: Text.PlainText
+                                    wrapMode: Text.Wrap
+                                }
+                            }
+                        }
                     }
                 }
 
