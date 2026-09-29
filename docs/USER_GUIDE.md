@@ -48,7 +48,7 @@ It holds the library's own **copy** of each PDF and a catalog of everything the 
 │ New collection…│                      │  ( Title and authors | Contents )│
 │ Trash (1)      │                      │                                  │
 ├────────────────┴──────────────────────┴──────────────────────────────────┤
-│ Status: Library ready.   Processing: 2 books waiting            Activity │
+│ Library ready.           Processing idle.                       Activity │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -183,6 +183,15 @@ Choose where to save it (**Choose…**; Documents is suggested) and click **Save
 - The backup is checked first; a damaged or changed backup is refused.
 - **Your current library is never changed.** A restore never goes inside or over it.
 - **Open restored library** opens it in a new window.
+
+**Opening a restored library later.** The app always starts with your usual library, and it has no command to open another one yet. To use a restored library again later, either:
+- **Start the app with its folder:** make a shortcut to `appMyBooksLibrary.exe`, and add `--library` and the folder in quotes at the end of the shortcut's *Target*, for example:
+
+  ```text
+  "C:\Programs\MyBooksLibrary\appMyBooksLibrary.exe" --library "D:\MyBooksLibrary restored 2026-09-29"
+  ```
+
+- **Make it your usual library:** close the app, move your current library folder (`%LOCALAPPDATA%\MyBooksLibrary\MyBooksLibrary\Library`) somewhere safe, then move the restored folder there under the name `Library`.
 - A copy with bookmarks that was still waiting when the backup was made is not written again; ask again if you want it.
 
 Keep backups on another disk, or in cloud storage, to be safe from a disk failure.
@@ -200,7 +209,7 @@ Keep backups on another disk, or in cloud storage, to be safe from a disk failur
 You can close the app at any time.
 - **If something is running**, the window shows "Finishing before closing…" and closes once it has stopped cleanly. An OCR page in progress is finished first, which can take a few seconds.
 - **Unfinished analyses** continue the next time you open the app.
-- **A backup in progress** is cancelled, and leaves nothing behind.
+- **A backup or restore in progress** is cancelled, and leaves nothing half-made.
 
 ## Limitations
 
@@ -208,11 +217,12 @@ You can close the app at any time.
 - **Books are processed one at a time.** Scanned books are slow (OCR, several seconds per page) and use up to about 2.5 GB of memory. You cannot yet choose which book goes next.
 - **Automatic results can be incomplete or uncertain.** Some titles have several candidates; some contents entries get no confirmed page; an unusual table of contents may not be found at all. The app shows this rather than guess, and you can correct everything.
 - **No permanent deletion:** books in Trash stay in the library (and take disk space).
-- **One library per window.** A restored library opens in its own window.
+- **One library per window, and no command to open another library.** The app starts with your usual library. A restored library opens in its own window, and later only as described in [Backing up and restoring](#backing-up-and-restoring).
 - **Windows 10 and 11 (64-bit) only.** macOS and Linux need native builds of the text-recognition library.
-- **Windows "N" and "KN" editions** need the **Media Feature Pack** (from Windows *Settings → Apps → Optional features*); without it the app does not start.
+- **Windows "N" and "KN" editions** need the **Media Feature Pack**; without it the app does not start. Install it from Windows' *Optional features*: on Windows 11, *Settings → System → Optional features*; on Windows 10, *Settings → Apps → Optional features*.
 - **Not code-signed**, so SmartScreen may warn the first time.
-- **No cloud sync**, no online lookup of book data, no annotations, no full-text reading tools beyond the page view.
+- **The reader is simple:** previous and next page, and a page number. It has **no zoom** and **no search inside a book**; for those, open the PDF in another reader.
+- **No cloud sync**, no online lookup of book data, and no annotations.
 
 ## Questions and problems
 
@@ -227,6 +237,8 @@ You can close the app at any time.
 
 **Processing seems stuck.** Look at **Activity**: scanned books take a long time, and the page counter shows progress. **Cancel** and **Retry** are there if needed.
 
-**The app does not start.** On a Windows "N" edition, install the Media Feature Pack. Otherwise, check that the whole unpacked folder is there: the executable needs the files next to it.
+**The app does not start.** On a Windows "N" edition, install the Media Feature Pack (Windows 11: *Settings → System → Optional features*; Windows 10: *Settings → Apps → Optional features*). Otherwise, check that the whole unpacked folder is there: the executable needs the files next to it.
+
+**A restored library is gone after restarting the app.** It is not gone: the app opened your usual library. See [Opening a restored library later](#backing-up-and-restoring).
 
 **Where are the licences?** `NOTICE.txt` and the `licenses` folder, next to the app.
