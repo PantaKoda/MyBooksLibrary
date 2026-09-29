@@ -76,20 +76,36 @@ Result<QString> validateExportDestination(const QString& destination, const Libr
         return makeError(ErrorCode::InvalidArgument, tr("Choose a full path for the copy."));
     if (info.suffix().compare(QLatin1String("pdf"), Qt::CaseInsensitive) != 0)
         return makeError(ErrorCode::InvalidArgument, tr("The copy must be a .pdf file."));
+#ifdef Q_OS_WIN
+    // "book.pdf:x.pdf" names a stream inside another file.
+    if (info.fileName().contains(u':'))
+        return makeError(ErrorCode::InvalidArgument, tr("The file name cannot contain \":\"."));
+#endif
     const auto folder = realPath(info.absolutePath());
     if (!folder || !fs::is_directory(*folder))
         return makeError(ErrorCode::InvalidArgument, tr("The folder %1 does not exist.").arg(QDir::toNativeSeparators(info.absolutePath())));
     const fs::path target = *folder / toFs(info.fileName());
 
     // Nothing inside the library folder: its catalog, sources, reports and staging.
-    if (const auto root = realPath(layout.root()); root && within(target, *root))
-        return makeError(ErrorCode::InvalidArgument, tr("The copy cannot be saved inside the library folder."));
+    // Fails closed: a library folder that cannot be resolved cannot be checked.
+    const auto root = realPath(layout.root());
+    if (!root)
+        return makeError(ErrorCode::InvalidArgument, tr("The library folder could not be checked, so the copy cannot be saved."));
+    const QString insideLibrary = tr("The copy cannot be saved inside the library folder.");
+    if (within(target, *root))
+        return makeError(ErrorCode::InvalidArgument, insideLibrary);
 
     std::error_code ec;
     const bool exists = fs::exists(target, ec);
     if (exists) {
         if (fs::is_directory(target, ec))
             return makeError(ErrorCode::InvalidArgument, tr("That name belongs to a folder."));
+        // An existing name may be a symbolic link into the library.
+        const auto resolved = realPath(fromFs(target));
+        if (!resolved)
+            return makeError(ErrorCode::InvalidArgument, tr("That file could not be checked; choose another name."));
+        if (within(*resolved, *root))
+            return makeError(ErrorCode::InvalidArgument, insideLibrary);
         // A managed source or an imported original under any name, hard links included.
         for (const QString& file : rules.protectedFiles) {
             std::error_code same;
@@ -99,6 +115,11 @@ Result<QString> validateExportDestination(const QString& destination, const Libr
                                     "choose another name."));
             }
         }
+        // A file with other names (hard links) may be any of the library's
+        // internal files, such as its catalog: never written over.
+        const auto links = fs::hard_link_count(target, ec);
+        if (ec || links > 1)
+            return makeError(ErrorCode::InvalidArgument, tr("That file has other names (links); choose another name."));
         if (!rules.replaceExisting)
             return makeError(ErrorCode::Duplicate, tr("A file with that name already exists."));
     }

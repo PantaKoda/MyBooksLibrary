@@ -72,8 +72,8 @@ Result<ExportPlan> buildExportPlan(const TocAnalysis& contents, const AssetRecor
         ExportNode node{e.sdkEntryId, std::nullopt, e.title.trimmed(), *e.destinationPage};
         const std::optional<QString> original = parentOf(e);
         if (e.hierarchy == HierarchyState::Unknown) {
-            plan.promotions << ExportPromotion{node.id, std::nullopt, std::nullopt,
-                                               tr("Its level in the contents is uncertain; it is placed at the top level.")};
+            plan.uncertainLevels << ExportUncertainLevel{
+                node.id, node.title, tr("Its level in the contents is uncertain; it is placed at the top level.")};
         } else if (original) {
             std::optional<QString> parent = original;
             for (qsizetype steps = 0; parent && !kept.contains(*parent) && steps <= entries.size(); ++steps) {

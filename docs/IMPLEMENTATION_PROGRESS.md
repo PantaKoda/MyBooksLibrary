@@ -31,13 +31,14 @@ M09 is split in three:
 - **`domain/export.*`:** `buildExportPlan` turns a book's effective contents (edits included) into bookmarks.
   - Entries with a confirmed page become bookmarks.
   - Others are **omitted**, with the reason ("No page was found for it.", "More than one possible page; none was chosen.").
-  - An entry whose parent has no bookmark goes to its nearest kept ancestor or the top level, and an uncertain level goes to the top level. Both are recorded as **promotions**.
+  - An entry whose parent has no bookmark goes to its nearest kept ancestor or the top level, recorded as a **promotion**. An uncertain level goes to the top level, recorded in **`uncertainLevels`** (not a promotion: it has no parent to move from).
   - Entries the user removed are not bookmarks, and are counted rather than listed as missing.
   - `complete()` is true only when nothing was omitted or moved.
   - It fails when the page count is unknown, a page is outside the book, or nothing can be a bookmark.
 - **`storage/exportdestination.*` (A1):**
   - Accepted: an absolute `.pdf` path in an existing folder.
-  - Never allowed: anywhere inside the library folder, however it is written (case, `..`, short names and links are resolved with `std::filesystem::canonical`), and never a managed source or an imported original under any name (`std::filesystem::equivalent`, so hard links are caught), even when replacing.
+  - Never allowed: anywhere inside the library folder, however it is written (case, `..`, short names and links are resolved with `std::filesystem::canonical`, for the folder and again for an existing file), and never a managed source or an imported original under any name (`std::filesystem::equivalent`, so hard links are caught), even when replacing.
+  - Also refused: an existing file with other names (hard links), which may be an internal file such as the catalog; a library folder that cannot be resolved (fails closed); and on Windows a `:` in the name (a stream inside another file).
   - An existing file is refused (Duplicate) unless replacing is asked for.
   - `suggestedExportPath` gives a sanitized "*title* (bookmarked).pdf" that does not collide.
 - **`processing/bookexporter.h` and `processing/sdk/sdkbookexporter.*` (SDK boundary):**
@@ -53,6 +54,12 @@ M09 is split in three:
 | `tst_exportplan` (new, 4 cases) | **Bookmarks:** a parent listed after its child, page 0, trimmed titles, and a complete plan.<br>**Recorded choices:** an ambiguous entry and one without a page are omitted with their reasons. Their children go to the nearest kept ancestor or the top level, recorded as promotions. An uncertain level goes to the top level, recorded. Removed entries are counted but not listed as omitted.<br>**Refused:** an unknown page count, a page outside the book, and nothing to bookmark. |
 | `tst_exportdestination` (new, 5 cases, real files) | **Accepted:** a new `.PDF` outside the library, and a non-ASCII name.<br>**Refused inside the library:** the root, `derivatives/`, `files/`, through `..`, and in another letter case.<br>**Refused even when replacing:** the imported original, and a hard link to a managed source outside the library. An unrelated file can be replaced when asked, and is otherwise refused (Duplicate).<br>**Refused names:** an empty path, a relative path, `.txt`, a missing folder, and a folder named `.pdf`.<br>**Suggested names:** sanitized, with " (2)" on collision, and "Book" when nothing is left. **With the protected-file check removed, the test fails.** |
 | `tst_sdkbookexporter` (new, 3 cases, real SDK on `contents-book.pdf` with a non-ASCII name) | **Committed copy:** 4 bookmarks (a child before its parent, page 0, non-ASCII titles), reopened with 27 pages; the structure matches, the output digest matches the file, and the source digest is unchanged.<br>**Existing output:** refused (`OutputExists`), and replaced when asked.<br>**Refused, nothing written:** the source as output (even when replacing, and the source is unchanged), a plan bound to other bytes (`InputChanged`), and an invalid plan (`InvalidPlan`, with issues). A cancel before the write writes nothing. |
+
+**Review fixes (PR #21, review of `c904ef0`):**
+- **Must fix, uncertain levels:** a book with any entry of uncertain level could not be exported. The plan sent it to the SDK as a promotion from no parent to no parent, which `validate_plan` refuses (`InvalidPlan`). Now it is listed in `ExportPlan::uncertainLevels`, and `complete()` still counts it. New `tst_sdkbookexporter::plansBuiltFromContentsAreAccepted` sends plans from `buildExportPlan` in nine shapes (no promotion, each kind of promotion, uncertain levels, blank titles, all together) through the real SDK, and all commit.
+- **Low, aliases of internal files:** a hard link to `library.sqlite` outside the library was accepted when replacing. Now an existing file with more than one name is refused, an existing name is resolved and checked against the library folder, an unresolvable library folder refuses, and a `:` in the name is refused on Windows. Covered in `tst_exportdestination`.
+- **Control runs:** with the old behaviour put back in a build, `tst_exportplan`, `tst_sdkbookexporter` (the reviewer's exact `InvalidPlan` issue on the "uncertain level" shape) and `tst_exportdestination` (the catalog hard link accepted) fail.
+- **Verification after the fixes:** `pwsh scripts/verify.ps1` Release and `-Configuration Debug` both **passed**, 25/25 tests.
 
 **Found while testing:** the SDK's `validate_plan` reads an all-zero digest as missing (`MissingInputDigest`), so the test's wrong-digest case uses a non-zero digest to reach `InputChanged`.
 

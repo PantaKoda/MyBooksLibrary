@@ -112,6 +112,23 @@ void TestExportDestination::protectedFilesUnderAnyName()
     QVERIFY(!linked);
     QCOMPARE(linked.error().code, ErrorCode::InvalidArgument);
 
+    // A hard link to an internal library file that is not listed: refused,
+    // because the file has other names.
+    const QString catalogLink = m_outside + QStringLiteral("/catalog.pdf");
+    std::filesystem::create_hard_link(
+        std::filesystem::path(QDir::toNativeSeparators(m_library + QStringLiteral("/library.sqlite")).toStdWString()),
+        std::filesystem::path(QDir::toNativeSeparators(catalogLink).toStdWString()), ec);
+    QVERIFY(!ec);
+    auto catalog = validateExportDestination(catalogLink, layout, rules);
+    QVERIFY(!catalog);
+    QCOMPARE(catalog.error().code, ErrorCode::InvalidArgument);
+
+#ifdef Q_OS_WIN
+    // A stream on a protected original.
+    QCOMPARE(validateExportDestination(m_original + QStringLiteral(":bookmarks.pdf"), layout, rules).error().code,
+             ErrorCode::InvalidArgument);
+#endif
+
     // An unrelated existing file may be replaced when asked.
     const QString other = m_outside + QStringLiteral("/other.pdf");
     QVERIFY(writeFile(other));
@@ -136,6 +153,11 @@ void TestExportDestination::existingFilesAndBadNames()
     ExportDestinationRules replace;
     replace.replaceExisting = true;
     QCOMPARE(validateExportDestination(m_outside + QStringLiteral("/folder.pdf"), layout, replace).error().code,
+             ErrorCode::InvalidArgument);
+
+    // A library folder that cannot be resolved: refused, not unchecked.
+    const LibraryLayout missing(m_dir->filePath(QStringLiteral("NoSuchLibrary")));
+    QCOMPARE(validateExportDestination(m_outside + QStringLiteral("/new.pdf"), missing, {}).error().code,
              ErrorCode::InvalidArgument);
 }
 

@@ -21,6 +21,21 @@ QString fixture(const char* name)
     return QDir(QStringLiteral(MBL_FIXTURES_DIR)).filePath(QLatin1StringView(name));
 }
 
+TocEntry entry(const char* id, const QString& title, std::optional<int> page, const char* parent = nullptr)
+{
+    TocEntry e;
+    e.sdkEntryId = QLatin1StringView(id);
+    e.title = title;
+    e.hierarchy = parent ? HierarchyState::KnownParent : HierarchyState::Root;
+    if (parent)
+        e.parentSdkEntryId = QString::fromLatin1(parent);
+    if (page) {
+        e.destinationState = DestinationState::Resolved;
+        e.destinationPage = page;
+    }
+    return e;
+}
+
 } // namespace
 
 class TestSdkBookExporter : public QObject {
@@ -30,6 +45,7 @@ private slots:
     void init();
 
     void writesAVerifiedCopyAndLeavesTheSourceAlone();
+    void plansBuiltFromContentsAreAccepted();
     void refusals();
     void cancelBeforeTheWriteWritesNothing();
 
@@ -90,6 +106,61 @@ void TestSdkBookExporter::writesAVerifiedCopyAndLeavesTheSourceAlone()
     QCOMPARE(again.errorCode, QStringLiteral("OutputExists"));
     const ExportResult replaced = exporter.exportCopy(m_source, output, plan(), true, cancel);
     QCOMPARE(replaced.status, ExportResult::Status::Committed);
+    QCOMPARE(mbl::storage::sha256OfFile(m_source).value_or(QString()), m_sourceSha);
+}
+
+// Every shape buildExportPlan produces passes the SDK's validate_plan and
+// commits: omissions, each kind of promotion, and uncertain levels.
+void TestSdkBookExporter::plansBuiltFromContentsAreAccepted()
+{
+    TocEntry unknown = entry("k", QStringLiteral("Level unknown"), 5);
+    unknown.hierarchy = HierarchyState::Unknown;
+    TocEntry ambiguous = entry("a", QStringLiteral("Ambiguous"), std::nullopt);
+    ambiguous.destinationState = DestinationState::Ambiguous;
+    TocEntry removed = entry("x", QStringLiteral("Removed"), 9, "r");
+    removed.removed = true;
+    TocEntry removedRoot = entry("z", QStringLiteral("Removed root"), 12);
+    removedRoot.removed = true;
+
+    const QList<std::pair<const char*, QList<TocEntry>>> shapes{
+        {"no promotion", {entry("r", QStringLiteral("Part I"), 1), entry("c", QStringLiteral("Chapter"), 2, "r")}},
+        {"parent without a page, to the grandparent",
+         {entry("r", QStringLiteral("Part I"), 1), entry("u", QStringLiteral("No page"), std::nullopt, "r"),
+          entry("s", QStringLiteral("Section"), 3, "u")}},
+        {"ambiguous parent, to the top level", {ambiguous, entry("t", QStringLiteral("Under ambiguous"), 4, "a")}},
+        {"uncertain level", {entry("r", QStringLiteral("Part I"), 1), unknown}},
+        {"only an uncertain level", {unknown}},
+        {"removed parent, to the grandparent",
+         {entry("r", QStringLiteral("Part I"), 1), removed, entry("y", QStringLiteral("Under removed"), 10, "x")}},
+        {"removed parent, to the top level", {removedRoot, entry("w", QStringLiteral("Under removed root"), 13, "z")}},
+        {"blank title omitted, child moved up",
+         {entry("b", QStringLiteral("  "), 6), entry("v", QStringLiteral("Under blank"), 7, "b")}},
+        {"all together",
+         {entry("r", QStringLiteral("Part I"), 1), entry("u", QStringLiteral("No page"), std::nullopt, "r"),
+          entry("s", QStringLiteral("Section"), 3, "u"), ambiguous, entry("t", QStringLiteral("Under ambiguous"), 4, "a"),
+          unknown, removed, entry("y", QStringLiteral("Under removed"), 10, "x")}},
+    };
+
+    AssetRecord asset;
+    asset.sha256 = m_sourceSha;
+    asset.pageCount = 27;
+    SdkBookExporter exporter;
+    std::atomic_bool cancel{false};
+    int n = 0;
+    for (const auto& [name, entries] : shapes) {
+        TocAnalysis contents;
+        contents.entries = entries;
+        for (int i = 0; i < contents.entries.size(); ++i)
+            contents.entries[i].order = i;
+        const auto plan = buildExportPlan(contents, asset);
+        QVERIFY2(plan, name);
+        const QString output = m_dir->filePath(QStringLiteral("shape %1.pdf").arg(++n));
+        const ExportResult r = exporter.exportCopy(m_source, output, plan.value(), false, cancel);
+        QVERIFY2(r.status == ExportResult::Status::Committed,
+                 qPrintable(QLatin1StringView(name) + u": " + r.errorCode + u' ' + r.planIssues.join(u';')));
+        QCOMPARE(r.outlineItems, plan.value().nodes.size());
+        QVERIFY(r.structureMatches);
+    }
     QCOMPARE(mbl::storage::sha256OfFile(m_source).value_or(QString()), m_sourceSha);
 }
 

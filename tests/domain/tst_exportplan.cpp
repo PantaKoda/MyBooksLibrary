@@ -116,11 +116,21 @@ void TestExportPlan::unknownLevelsAndRemovedEntries()
     QCOMPARE(p.removedByUser, 1);
     QVERIFY(p.omitted.isEmpty());  // Removal is the user's choice, not missing coverage.
     QCOMPARE(p.nodes.size(), 3);
-    QCOMPARE(p.promotions.size(), 2);
-    QCOMPARE(p.promotions.at(0).nodeId, QStringLiteral("k"));
-    QCOMPARE(p.promotions.at(0).reason, QStringLiteral("Its level in the contents is uncertain; it is placed at the top level."));
-    QCOMPARE(p.promotions.at(1).nodeId, QStringLiteral("y"));
+    // An uncertain level is not a move from a parent: listed on its own.
+    QCOMPARE(p.uncertainLevels.size(), 1);
+    QCOMPARE(p.uncertainLevels.at(0).nodeId, QStringLiteral("k"));
+    QCOMPARE(p.uncertainLevels.at(0).reason, QStringLiteral("Its level in the contents is uncertain; it is placed at the top level."));
+    QCOMPARE(p.nodes.at(1).parentId, std::optional<QString>());
+    QCOMPARE(p.promotions.size(), 1);
+    QCOMPARE(p.promotions.at(0).nodeId, QStringLiteral("y"));
+    QVERIFY(p.promotions.at(0).originalParentId != p.promotions.at(0).newParentId);
     QVERIFY(!p.complete());
+
+    // Only an uncertain level: still not complete.
+    auto onlyUnknown = buildExportPlan(contents({entry(QStringLiteral("r"), 0, QStringLiteral("Intro"), 2), unknown}), asset());
+    QVERIFY(onlyUnknown);
+    QVERIFY(onlyUnknown.value().promotions.isEmpty());
+    QVERIFY(!onlyUnknown.value().complete());
 }
 
 void TestExportPlan::refusals()
