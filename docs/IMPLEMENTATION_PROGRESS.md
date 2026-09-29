@@ -15,7 +15,7 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | M06 Search/read | Merged: part 1 [PR #14](https://github.com/PantaKoda/MyBooksLibrary/pull/14) (merge `c8dc23e`); part 2 [PR #15](https://github.com/PantaKoda/MyBooksLibrary/pull/15) (merge `e964184`) | `feat/m06-presentation-search`; `feat/m06-reader-chapter-navigation` | See "M06" |
 | M07 Corrections/reruns | Merged: part 1 [PR #16](https://github.com/PantaKoda/MyBooksLibrary/pull/16) (merge `152eb8c`); part 2a [PR #17](https://github.com/PantaKoda/MyBooksLibrary/pull/17) (merge `c215319`); part 2b [PR #18](https://github.com/PantaKoda/MyBooksLibrary/pull/18) (merge `f40b99c`) | `feat/m07-presentation-metadata-corrections`; `feat/m07-a2-toc-edits`; `feat/m07-presentation-toc-editing` | See "M07" |
 | M08 Organization | Merged: part 1 [PR #19](https://github.com/PantaKoda/MyBooksLibrary/pull/19) (merge `7052536`); part 2 [PR #20](https://github.com/PantaKoda/MyBooksLibrary/pull/20) (merge `c182ec3`). Permanent deletion of trashed books remains open | `feat/m08-a2-collections-trash`; `feat/m08-presentation-organization` | See "M08" |
-| M09 Export | InProgress: part 1, the export core (plan, destination rules, SDK exporter) | `feat/m09-a1-export-core` | See "M09" |
+| M09 Export | Part 1 AwaitingReview ([PR #21](https://github.com/PantaKoda/MyBooksLibrary/pull/21), the export core: plan, destination rules, SDK exporter) | `feat/m09-a1-export-core` | See "M09" |
 | M10–M11 | NotStarted | | |
 
 ## M09 — Export
@@ -58,7 +58,7 @@ M09 is split in three:
 
 **Not in this part:** export records and jobs (part 2), and the window (part 3).
 
-**Next action:** hand over the PR for review. Then M09 part 2.
+**Next action:** review of [PR #21](https://github.com/PantaKoda/MyBooksLibrary/pull/21). Then M09 part 2.
 
 ## M08 — Organization
 
