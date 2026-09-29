@@ -5,10 +5,13 @@
 #pragma once
 
 #include "domain/book.h"
+#include "domain/ids.h"
 #include "domain/result.h"
 #include "domain/toc.h"
 
+#include <QDateTime>
 #include <QList>
+#include <QMetaType>
 #include <QString>
 #include <QStringList>
 
@@ -69,4 +72,45 @@ struct ExportPlan {
 // bookmark, the page count is unknown, or a page lies outside the document.
 Result<ExportPlan> buildExportPlan(const TocAnalysis& contents, const AssetRecord& asset);
 
+// The application plan as stored with an export: nodes, omissions,
+// promotions, uncertain levels and removals, which the SDK's plan JSON does
+// not all carry. exportPlanFromJson fails with InvalidArgument on JSON that is
+// not such a plan.
+QString exportPlanToJson(const ExportPlan& plan);
+Result<ExportPlan> exportPlanFromJson(const QString& json);
+
+// What a finished export wrote, as the SDK reported it after verifying the
+// copy. `committed` is exact: a cancel received after the commit does not
+// change it.
+struct ExportOutput {
+    bool committed = false;
+    QString outputSha256;
+    int outlineItems = 0;
+    int pageCount = 0;
+    bool structureMatches = false;
+    bool sourceUnchanged = false;
+    QString sdkVersion;
+    QString sdkPlanJson;  // The plan as the SDK serialized it, when it got that far.
+};
+
+// One request to write a bookmarked copy of a book, and what came of it. Its
+// job (same ID) holds the state; the record holds what was asked and written.
+struct ExportRecord {
+    JobId job;
+    BookId book;
+    QString destination;             // Absolute path, as validated when requested.
+    bool replaceExisting = false;
+    ExportPlan plan;                 // Built from the effective contents when requested.
+    std::optional<RunId> tocRun;     // The analysis the contents came from...
+    std::optional<TocRevisionId> tocRevision;  // ...and the edited revision, if one was active.
+    // nullopt: not known, because the export has not finished or the
+    // application stopped while writing (the file may or may not exist).
+    std::optional<bool> committed;
+    ExportOutput output;             // When the export finished.
+    QDateTime createdAt;
+    QDateTime finishedAt;
+};
+
 } // namespace mbl::domain
+
+Q_DECLARE_METATYPE(mbl::domain::ExportRecord)

@@ -50,6 +50,7 @@ private slots:
     void omissionsAndPromotionsAreRecorded();
     void unknownLevelsAndRemovedEntries();
     void refusals();
+    void planSurvivesJson();
 };
 
 void TestExportPlan::resolvedEntriesBecomeBookmarks()
@@ -144,6 +145,51 @@ void TestExportPlan::refusals()
                  .code,
              ErrorCode::InvalidArgument);  // Nothing to bookmark.
     QCOMPARE(buildExportPlan(contents({}), asset()).error().code, ErrorCode::InvalidArgument);
+}
+
+// The plan stored with an export keeps what the SDK's own JSON does not
+// carry: omissions, promotions (top level included), uncertain levels and
+// removals.
+void TestExportPlan::planSurvivesJson()
+{
+    TocEntry ambiguous = entry(QStringLiteral("a"), 1, QStringLiteral("Ambiguous"), std::nullopt);
+    ambiguous.destinationState = DestinationState::Ambiguous;
+    TocEntry unknown = entry(QStringLiteral("k"), 3, QStringLiteral("Level unknown — ή"), 4);
+    unknown.hierarchy = HierarchyState::Unknown;
+    TocEntry removed = entry(QStringLiteral("x"), 4, QStringLiteral("Noise"), 6);
+    removed.removed = true;
+    auto built = buildExportPlan(contents({entry(QStringLiteral("r"), 0, QStringLiteral("Part I"), 0), ambiguous,
+                                           entry(QStringLiteral("t"), 2, QStringLiteral("Under ambiguous"), 3,
+                                                 QStringLiteral("a")),
+                                           unknown, removed}),
+                                 asset());
+    QVERIFY(built);
+    const ExportPlan& p = built.value();
+    auto back = exportPlanFromJson(exportPlanToJson(p));
+    QVERIFY(back);
+    const ExportPlan& q = back.value();
+    QCOMPARE(q.sourceSha256, p.sourceSha256);
+    QCOMPARE(q.pageCount, p.pageCount);
+    QCOMPARE(q.removedByUser, 1);
+    QCOMPARE(q.nodes.size(), p.nodes.size());
+    for (int i = 0; i < p.nodes.size(); ++i) {
+        QCOMPARE(q.nodes.at(i).id, p.nodes.at(i).id);
+        QCOMPARE(q.nodes.at(i).parentId, p.nodes.at(i).parentId);
+        QCOMPARE(q.nodes.at(i).title, p.nodes.at(i).title);
+        QCOMPARE(q.nodes.at(i).page, p.nodes.at(i).page);
+    }
+    QCOMPARE(q.nodes.at(0).page, 0);
+    QCOMPARE(q.omitted.size(), 1);
+    QCOMPARE(q.omitted.at(0).reason, p.omitted.at(0).reason);
+    QCOMPARE(q.promotions.size(), 1);
+    QCOMPARE(q.promotions.at(0).originalParentId, std::optional<QString>(QStringLiteral("a")));
+    QCOMPARE(q.promotions.at(0).newParentId, std::optional<QString>());
+    QCOMPARE(q.uncertainLevels.size(), 1);
+    QCOMPARE(q.uncertainLevels.at(0).title, QStringLiteral("Level unknown — ή"));
+    QCOMPARE(q.complete(), p.complete());
+
+    QCOMPARE(exportPlanFromJson(QStringLiteral("{}")).error().code, ErrorCode::InvalidArgument);
+    QCOMPARE(exportPlanFromJson(QStringLiteral("not json")).error().code, ErrorCode::InvalidArgument);
 }
 
 QTEST_GUILESS_MAIN(TestExportPlan)

@@ -7,12 +7,18 @@
 // A book with both a metadata and a contents job queued is served by ONE SDK
 // call (ContentsAnalyzer::analyzeBook), so its pages are read and OCR'd once;
 // each job still publishes, cancels and fails on its own (docs/PROCESSING.md).
+//
+// An export writes a bookmarked copy (BookExporter): its destination is
+// validated (A1) when it is requested and again right before the write, and
+// a committed copy is recorded as written whatever happens after the commit.
 #pragma once
 
 #include "catalog/jobs.h"
+#include "domain/export.h"
 #include "domain/ids.h"
 #include "domain/jobs.h"
 #include "domain/result.h"
+#include "processing/bookexporter.h"
 #include "processing/contentsanalyzer.h"
 #include "processing/metadataextractor.h"
 #include "storage/librarylayout.h"
@@ -75,9 +81,10 @@ class ProcessingCoordinator : public QObject {
     Q_OBJECT
 
 public:
-    // `contents` may be null: contents jobs then fail as "unsupported".
+    // `contents` or `exporter` may be null: those jobs then fail as "unsupported".
     ProcessingCoordinator(catalog::Library& library, std::shared_ptr<MetadataExtractor> metadata,
-                          std::shared_ptr<ContentsAnalyzer> contents = {}, QObject* parent = nullptr);
+                          std::shared_ptr<ContentsAnalyzer> contents = {}, std::shared_ptr<BookExporter> exporter = {},
+                          QObject* parent = nullptr);
     // stop(), then waits for the worker. Only for teardown: the window calls
     // stop() and waits for !busy() (idle) first, staying responsive.
     ~ProcessingCoordinator() override;
@@ -91,6 +98,12 @@ public:
     // worker. jobChanged() reports the queued job.
     void enqueueMetadata(const domain::BookId& book);
     void enqueueContents(const domain::BookId& book);
+    // Validates the destination (outside the library, never a managed source
+    // or an imported original, an existing file only if `replaceExisting`),
+    // builds the plan from the book's effective contents and queues the
+    // export: exportQueued() and jobChanged(), or exportRefused() with the
+    // reason. The copy is written by the worker (exportFinished()).
+    void enqueueExport(const domain::BookId& book, const QString& destination, bool replaceExisting = false);
     void cancelJob(const domain::JobId& job);
     void cancelAll();   // User "Cancel all": cancels running and queued jobs.
     void start();       // Starts the worker if it is not running.
@@ -110,6 +123,11 @@ signals:
     // SDK stage and pages acquired in it (no total exists); throttled.
     void jobProgress(const mbl::domain::JobId& job, const QString& stage, int pagesAcquired);
     void enqueueFailed(const mbl::domain::BookId& book, const QString& error);
+    void exportQueued(const mbl::domain::ExportRecord& record);
+    void exportRefused(const mbl::domain::BookId& book, const QString& error);
+    // The export job ended (written, failed, cancelled or interrupted); its job
+    // holds the state and reason.
+    void exportFinished(const mbl::domain::ExportRecord& record);
     void busyChanged();
     void idle();  // The worker stopped with nothing left to run.
 
@@ -120,6 +138,9 @@ private:
     void runMetadataJob(const domain::JobRecord& job, const QString& pdf);
     void runContentsJob(const domain::JobRecord& job, const QString& pdf);
     void runBookJobs(const domain::JobRecord& metadata, const domain::JobRecord& contents, const QString& pdf);
+    void runExportJob(const domain::JobRecord& job, const QString& pdf);
+    void finishExport(const domain::JobRecord& job, domain::JobState state, const QString& outcome, const QString& error,
+                      const domain::ExportOutput& output);
     // Close a job from its SDK result: publish, or record why not.
     void finishMetadata(const domain::JobRecord& job, const MetadataExtraction& result);
     void finishContents(const domain::JobRecord& job, const ContentsAnalysis& result);
@@ -132,6 +153,7 @@ private:
     storage::LibraryLayout m_layout;
     std::shared_ptr<MetadataExtractor> m_metadata;
     std::shared_ptr<ContentsAnalyzer> m_contents;
+    std::shared_ptr<BookExporter> m_exporter;
     QThreadPool m_pool;  // One thread: one SDK operation at a time.
     std::atomic_bool m_running{false};
     std::atomic_bool m_wake{false};

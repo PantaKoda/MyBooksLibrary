@@ -84,6 +84,7 @@ const std::pair<ImportPhase, const char*> kImportPhase[] = {
 const std::pair<JobKind, const char*> kJobKind[] = {
     {JobKind::Metadata, "metadata"},
     {JobKind::Toc, "toc"},
+    {JobKind::Export, "export"},
 };
 const std::pair<JobState, const char*> kJobState[] = {
     {JobState::Queued, "queued"},

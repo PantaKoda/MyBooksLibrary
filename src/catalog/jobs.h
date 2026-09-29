@@ -19,14 +19,14 @@
 
 namespace mbl::catalog {
 
-// Queues a job of `kind` for the book, starting a new request generation for
-// that component. If a queued or running job of that kind already exists,
+// Queues a metadata or TOC job for the book, starting a new request generation
+// for that component (exports: catalog::enqueueExport). If a queued or running job of that kind already exists,
 // returns it unchanged (no new generation). A job whose cancel was requested
 // does not count: the new request supersedes it. Fails with Trashed for a
 // trashed book.
 domain::Result<domain::JobRecord> enqueueJob(QSqlDatabase& db, const domain::BookId& book, domain::JobKind kind);
 
-// Takes the next queued job (metadata before TOC, then oldest first), marks it
+// Takes the next queued job (exports, then metadata, then TOC; oldest first), marks it
 // Running and increments its attempt. Queued jobs of trashed books are
 // cancelled on the way. Returns nullopt when nothing is queued.
 domain::Result<std::optional<domain::JobRecord>> claimNextJob(QSqlDatabase& db);
@@ -66,7 +66,7 @@ domain::Result<std::optional<domain::JobRecord>> claimQueuedJob(QSqlDatabase& db
 
 struct JobRecovery {
     int interrupted = 0;  // Running jobs closed as Interrupted...
-    int requeued = 0;     // ...and replaced by a new queued job.
+    int requeued = 0;     // ...and replaced by a new queued job (never an export).
     int cancelled = 0;    // CancelRequested jobs closed as Cancelled.
 };
 // Run at startup, before the worker starts.

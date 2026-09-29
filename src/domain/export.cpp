@@ -2,6 +2,9 @@
 
 #include <QCoreApplication>
 #include <QHash>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QSet>
 
 #include <algorithm>
@@ -99,6 +102,94 @@ Result<ExportPlan> buildExportPlan(const TocAnalysis& contents, const AssetRecor
     if (plan.nodes.isEmpty()) {
         return makeError(ErrorCode::InvalidArgument,
                          tr("No contents entry has a confirmed page, so there is nothing to bookmark."));
+    }
+    return plan;
+}
+
+namespace {
+
+QJsonValue optionalText(const std::optional<QString>& text)
+{
+    return text ? QJsonValue(*text) : QJsonValue(QJsonValue::Null);
+}
+
+std::optional<QString> optionalTextFrom(const QJsonValue& value)
+{
+    return value.isString() ? std::optional<QString>(value.toString()) : std::nullopt;
+}
+
+} // namespace
+
+// JSON shape: {sha256, pages, removed, nodes [{id, parent, title, page}],
+// omitted [{id, title, reason}], promotions [{id, from, to, reason}],
+// uncertain [{id, title, reason}]}; a null parent, from or to is the top level.
+QString exportPlanToJson(const ExportPlan& plan)
+{
+    QJsonArray nodes, omitted, promotions, uncertain;
+    for (const ExportNode& n : plan.nodes)
+        nodes.append(QJsonObject{{QStringLiteral("id"), n.id},
+                                 {QStringLiteral("parent"), optionalText(n.parentId)},
+                                 {QStringLiteral("title"), n.title},
+                                 {QStringLiteral("page"), n.page}});
+    for (const ExportOmission& o : plan.omitted)
+        omitted.append(QJsonObject{{QStringLiteral("id"), o.entryId},
+                                   {QStringLiteral("title"), o.title},
+                                   {QStringLiteral("reason"), o.reason}});
+    for (const ExportPromotion& p : plan.promotions)
+        promotions.append(QJsonObject{{QStringLiteral("id"), p.nodeId},
+                                      {QStringLiteral("from"), optionalText(p.originalParentId)},
+                                      {QStringLiteral("to"), optionalText(p.newParentId)},
+                                      {QStringLiteral("reason"), p.reason}});
+    for (const ExportUncertainLevel& u : plan.uncertainLevels)
+        uncertain.append(QJsonObject{{QStringLiteral("id"), u.nodeId},
+                                     {QStringLiteral("title"), u.title},
+                                     {QStringLiteral("reason"), u.reason}});
+    const QJsonObject root{{QStringLiteral("sha256"), plan.sourceSha256},
+                           {QStringLiteral("pages"), plan.pageCount},
+                           {QStringLiteral("removed"), plan.removedByUser},
+                           {QStringLiteral("nodes"), nodes},
+                           {QStringLiteral("omitted"), omitted},
+                           {QStringLiteral("promotions"), promotions},
+                           {QStringLiteral("uncertain"), uncertain}};
+    return QString::fromUtf8(QJsonDocument(root).toJson(QJsonDocument::Compact));
+}
+
+Result<ExportPlan> exportPlanFromJson(const QString& json)
+{
+    QJsonParseError error;
+    const QJsonDocument doc = QJsonDocument::fromJson(json.toUtf8(), &error);
+    const QJsonObject root = doc.object();
+    if (error.error != QJsonParseError::NoError || !doc.isObject() || !root.value(QStringLiteral("nodes")).isArray()
+        || !root.value(QStringLiteral("sha256")).isString() || !root.value(QStringLiteral("pages")).isDouble())
+        return makeError(ErrorCode::InvalidArgument, QStringLiteral("The stored export plan cannot be read."));
+    ExportPlan plan;
+    plan.sourceSha256 = root.value(QStringLiteral("sha256")).toString();
+    plan.pageCount = root.value(QStringLiteral("pages")).toInt();
+    plan.removedByUser = root.value(QStringLiteral("removed")).toInt();
+    for (const QJsonValue& v : root.value(QStringLiteral("nodes")).toArray()) {
+        const QJsonObject o = v.toObject();
+        plan.nodes << ExportNode{o.value(QStringLiteral("id")).toString(),
+                                 optionalTextFrom(o.value(QStringLiteral("parent"))),
+                                 o.value(QStringLiteral("title")).toString(), o.value(QStringLiteral("page")).toInt()};
+    }
+    for (const QJsonValue& v : root.value(QStringLiteral("omitted")).toArray()) {
+        const QJsonObject o = v.toObject();
+        plan.omitted << ExportOmission{o.value(QStringLiteral("id")).toString(),
+                                       o.value(QStringLiteral("title")).toString(),
+                                       o.value(QStringLiteral("reason")).toString()};
+    }
+    for (const QJsonValue& v : root.value(QStringLiteral("promotions")).toArray()) {
+        const QJsonObject o = v.toObject();
+        plan.promotions << ExportPromotion{o.value(QStringLiteral("id")).toString(),
+                                           optionalTextFrom(o.value(QStringLiteral("from"))),
+                                           optionalTextFrom(o.value(QStringLiteral("to"))),
+                                           o.value(QStringLiteral("reason")).toString()};
+    }
+    for (const QJsonValue& v : root.value(QStringLiteral("uncertain")).toArray()) {
+        const QJsonObject o = v.toObject();
+        plan.uncertainLevels << ExportUncertainLevel{o.value(QStringLiteral("id")).toString(),
+                                                     o.value(QStringLiteral("title")).toString(),
+                                                     o.value(QStringLiteral("reason")).toString()};
     }
     return plan;
 }

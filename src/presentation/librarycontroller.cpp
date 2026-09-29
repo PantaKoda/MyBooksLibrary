@@ -226,7 +226,7 @@ void LibraryController::retryJob(const QString& jobId)
     if (!m_coordinator || m_closing)
         return;
     const auto job = m_jobs.job(domain::JobId::fromString(jobId));
-    if (!job)
+    if (!job || job->kind == domain::JobKind::Export)  // Exports are asked for again with a destination.
         return;
     if (job->kind == domain::JobKind::Metadata)
         m_coordinator->enqueueMetadata(job->book);
