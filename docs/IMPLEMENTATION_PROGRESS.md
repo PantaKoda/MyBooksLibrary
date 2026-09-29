@@ -14,7 +14,7 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | M05 Contents | Merged: part 1 [PR #12](https://github.com/PantaKoda/MyBooksLibrary/pull/12) (merge `9feb9b3`); part 2 [PR #13](https://github.com/PantaKoda/MyBooksLibrary/pull/13) (merge `8ba9f49`) | `feat/m05-a4-contents-analysis`; `feat/m05-presentation-contents-inspector` | See "M05" |
 | M06 Search/read | Merged: part 1 [PR #14](https://github.com/PantaKoda/MyBooksLibrary/pull/14) (merge `c8dc23e`); part 2 [PR #15](https://github.com/PantaKoda/MyBooksLibrary/pull/15) (merge `e964184`) | `feat/m06-presentation-search`; `feat/m06-reader-chapter-navigation` | See "M06" |
 | M07 Corrections/reruns | Merged: part 1 [PR #16](https://github.com/PantaKoda/MyBooksLibrary/pull/16) (merge `152eb8c`); part 2a [PR #17](https://github.com/PantaKoda/MyBooksLibrary/pull/17) (merge `c215319`); part 2b [PR #18](https://github.com/PantaKoda/MyBooksLibrary/pull/18) (merge `f40b99c`) | `feat/m07-presentation-metadata-corrections`; `feat/m07-a2-toc-edits`; `feat/m07-presentation-toc-editing` | See "M07" |
-| M08 Organization | Part 1 AwaitingReview ([PR #19](https://github.com/PantaKoda/MyBooksLibrary/pull/19), collections and trash races in the catalog); part 2 (window) NotStarted | `feat/m08-a2-collections-trash` | See "M08" |
+| M08 Organization | Part 1 Merged ([PR #19](https://github.com/PantaKoda/MyBooksLibrary/pull/19), merge `7052536`); part 2 (window) InProgress | `feat/m08-a2-collections-trash`; `feat/m08-presentation-organization` | See "M08" |
 | M09–M11 | NotStarted | | |
 
 ## M08 — Organization
@@ -26,6 +26,34 @@ M08 is split in two:
   - moving to Trash and restoring, with a Trash view;
   - restoring a duplicate import that is in Trash;
   - stopping a trashed book's running job at once.
+
+### Part 2: organizing in the window (presentation)
+
+**Scope:**
+- **`LibraryController`:**
+  - views `showLibrary`, `showCollection` and `showTrash` (`view`, `viewCollectionId`, `viewTitle`), with the library and Trash counts;
+  - collection commands, `moveToTrash`, `restoreFromTrash` and `restoreTrashedDuplicates`, with `organizeError`.
+  - **Trash** also raises the running job's cancel flag, so its SDK call stops early. **Restore** wakes the worker (both from the PR #19 review notes).
+- **Refresh** loads the view's books and the collections, and keeps title and state lookups for every book (`BookListModel::setKnownBooks`), so the Activity list and search still know books outside the view.
+- **New `CollectionListModel`**, and **`SearchController::setCollection`**.
+- **`BookInspector::inTrash`**. The pane's **More** menu gains Add to collection, Remove from the collection, and Move to Trash; a trashed book shows **Restore**.
+- **New `LibrarySidebar.qml`**; `Main.qml` gains the sidebar, the view heading, empty-state texts per view, and the restore offer for duplicates in Trash.
+
+**Touched paths:** `src/presentation/`, `qml/`, `Main.qml`, `CMakeLists.txt`, `tests/presentation/`, `tests/CMakeLists.txt`, `docs/`.
+
+| Command | Result |
+| --- | --- |
+| `pwsh scripts/verify.ps1` (Release) and `-Configuration Debug` | VERIFY PASSED in both; 21/21 `ctest` suites; all smoke checks. `tst_librarycontroller` and `tst_librarysidebar` passed 10 times in a row |
+| `tst_librarycontroller::collectionsAndViews` (new) | **Collections:** create; a duplicate name refused with a message; add; the collection view lists its book with its name as the heading; search follows it (1 result, 2 in the library).<br>**Trash:** the trashed book leaves the library and the collection, is listed in Trash "In Trash since …", keeps its title for the Activity list, and cannot be added to a collection. Restore brings it back into its collection.<br>**Rename and delete:** a rename changes the heading; deleting the shown collection returns to the library and keeps the books. |
+| `tst_librarycontroller::trashStopsTheRunningJobAndRestoreResumesIt` (new) | Trashing a book whose extraction blocks until cancelled makes the controller idle ("Book moved to Trash"). Restoring starts the extraction again without a restart, and the title is published. **With the cancel flag not raised, the test fails** (the call keeps running). |
+| `tst_librarycontroller::aDuplicateInTrashCanBeRestored` (new) | Importing a file whose book is in Trash offers one restore; restoring moves it back to the library. |
+| `tst_librarysidebar` (new, real QML) | New collection through the dialog; switching to Trash and back; a duplicate name shows the reason; delete after confirming. No QML warnings. |
+| `tst_inspectorpane` | Still passes, with no QML warnings, after the More menu gained the collections submenu |
+| `appMyBooksLibrary --library C:\MBL-demo-Contents --inspect-first --screenshot docs/images/m08-library-sidebar.png` (Release, real SDK) | Exit 0. The sidebar shows Library (1), Collections ("No collections yet."), New collection… and Trash (0); the schema 6 demo library upgraded to 7 on open. |
+
+**Not verified by hand:** right-click and press-and-hold menus on collections, the More menu's collections submenu with the mouse, and keyboard-only use.
+
+**Next action:** hand over the PR for review. After it is merged, M08 is complete (permanent deletion remains open); next is M09, export.
 
 ### Part 1: collections and trash races (A2 + A3)
 
@@ -65,7 +93,7 @@ M08 is split in two:
 - after a restore, the window must wake the processing worker (`start()`); otherwise the resumed jobs wait for the next launch;
 - trash must raise the running job's cancel flag so its SDK call stops early.
 
-**Next action:** review of [PR #19](https://github.com/PantaKoda/MyBooksLibrary/pull/19). After it is merged: M08 part 2, the window.
+**Next action:** merged. Then M08 part 2.
 
 ## M07 — Corrections and reruns
 

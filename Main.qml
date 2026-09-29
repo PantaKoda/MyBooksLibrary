@@ -95,9 +95,13 @@ ApplicationWindow {
             spacing: 8
 
             Label {
-                text: qsTr("Library")
+                objectName: "viewTitleLabel"
+                text: window.library.viewTitle
+                textFormat: Text.PlainText
                 font.bold: true
                 font.pixelSize: 16
+                elide: Text.ElideRight
+                Layout.maximumWidth: 220
             }
             Label {
                 Layout.preferredWidth: 160
@@ -155,10 +159,18 @@ ApplicationWindow {
                     }
                 }
 
-                // Book list, and the selected book's inspector beside it.
+                // The views (library, collections, Trash), the book list, and
+                // the selected book's inspector beside it.
                 SplitView {
                     anchors.fill: parent
                     orientation: Qt.Horizontal
+
+                LibrarySidebar {
+                    library: window.library
+                    enabledActions: window.library.ready && !window.closeRequested
+                    SplitView.preferredWidth: 190
+                    SplitView.minimumWidth: 140
+                }
 
                 Item {
                     SplitView.fillWidth: true
@@ -243,6 +255,9 @@ ApplicationWindow {
                             opacity: 0.7
                             text: window.library.opening ? qsTr("Opening the library…")
                                   : window.library.failed ? qsTr("The library could not be opened.")
+                                  : window.library.view === LibraryController.Trash ? qsTr("Trash is empty.")
+                                  : window.library.view === LibraryController.Collection
+                                    ? qsTr("No books in this collection yet. Select a book and use More → Add to collection.")
                                   : qsTr("No books yet. Choose “Import PDFs…” or drop PDF files here.")
                         }
                     }
@@ -267,6 +282,14 @@ ApplicationWindow {
                     onRerunMetadataRequested: window.library.rerunMetadata(window.library.inspector.bookId)
                     onRerunContentsRequested: window.library.rerunContents(window.library.inspector.bookId)
                     rerunEnabled: window.library.processingAvailable && !window.closeRequested
+                    collections: window.library.collections
+                    currentCollectionId: window.library.viewCollectionId
+                    currentCollectionName: window.library.view === LibraryController.Collection ? window.library.viewTitle : ""
+                    organizeEnabled: window.library.ready && !window.closeRequested
+                    onAddToCollectionRequested: (collectionId) => window.library.addToCollection(collectionId, window.library.inspector.bookId)
+                    onRemoveFromCollectionRequested: (collectionId) => window.library.removeFromCollection(collectionId, window.library.inspector.bookId)
+                    onMoveToTrashRequested: window.library.moveToTrash(window.library.inspector.bookId)
+                    onRestoreRequested: window.library.restoreFromTrash(window.library.inspector.bookId)
                     selectFirstEntry: window.inspectFirst
                     visible: window.library.inspector.hasBook
                     SplitView.preferredWidth: Math.max(320, window.width * 0.55)
@@ -478,6 +501,13 @@ ApplicationWindow {
                     elide: Text.ElideRight
                     opacity: 0.8
                 }
+            }
+            Button {
+                objectName: "restoreDuplicatesButton"
+                visible: window.library.trashedDuplicateCount > 0
+                text: qsTr("Restore %n book(s) from Trash", "", window.library.trashedDuplicateCount)
+                onClicked: window.library.restoreTrashedDuplicates()
+                Accessible.description: qsTr("The imported files are already in the library, in Trash: bring those books back")
             }
             Button {
                 id: moreProblemsButton

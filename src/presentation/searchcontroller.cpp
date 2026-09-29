@@ -67,6 +67,15 @@ void SearchController::setScope(int scope)
         run(0);
 }
 
+void SearchController::setCollection(const std::optional<domain::CollectionId>& collection)
+{
+    if (collection == m_collection)
+        return;
+    m_collection = collection;
+    if (active())
+        run(0);
+}
+
 void SearchController::clear()
 {
     m_debounce.stop();
@@ -102,6 +111,7 @@ void SearchController::run(int offset, int limit)
     SearchRequest request;
     request.text = m_text;
     request.scope = m_scope;
+    request.collection = m_collection;
     request.offset = offset;
     request.limit = limit;
     request.generation = ++m_generation;

@@ -12,6 +12,7 @@
 #include <QTimer>
 
 #include <memory>
+#include <optional>
 
 namespace mbl::catalog {
 class Library;
@@ -43,6 +44,8 @@ public:
     void setText(const QString& text);  // Debounced.
     int scope() const { return int(m_scope); }
     void setScope(int scope);           // Runs at once.
+    // Only books in this collection (nullopt: the whole library). Runs at once.
+    void setCollection(const std::optional<domain::CollectionId>& collection);
     bool active() const { return !m_text.trimmed().isEmpty(); }
     bool searching() const { return m_searching; }
     QString statusText() const { return m_statusText; }
@@ -72,6 +75,7 @@ private:
     QTimer m_debounce;
     QString m_text;
     domain::SearchScope m_scope = domain::SearchScope::All;
+    std::optional<domain::CollectionId> m_collection;
     quint64 m_generation = 0;  // Newest request; older responses are dropped.
     bool m_searching = false;
     int m_totalBooks = 0;
