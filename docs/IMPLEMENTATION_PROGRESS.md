@@ -40,6 +40,32 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 
 **Also seen, not a bug:** the book's title is "uncertain", because the SDK found several candidates. The app shows the file name rather than guess. The owner can pick or type it with **Correct**.
 
+### A user guide
+
+**Asked by the owner:** a guide to what the window's features do, for someone who does not know the app, and to its limitations.
+
+- **`docs/USER_GUIDE.md`** covers:
+  - getting started, and where the library lives;
+  - a tour of the window;
+  - adding books, and what happens automatically (and how long it takes);
+  - a book's details (Title and authors, corrections; Contents, pages, editing);
+  - searching (what is and is not searched, and query tips), reading, collections and Trash;
+  - saving a copy with bookmarks, backing up and restoring, the Activity panel, and closing;
+  - **limitations**, and **questions and problems**.
+- Its labels and rules were checked against the QML, `BookInspector` and SEARCH.md.
+- **`scripts/package.ps1`** ships it as `USER_GUIDE.md` next to the app, and the `v0.1.0` release notes point to it.
+- **A `README.md`** for the repository's front page (there was none): what the app is, the Releases page, the guide, and the developer docs.
+- **Review fixes ([PR #29](https://github.com/PantaKoda/MyBooksLibrary/pull/29), review of `bb7d70a`):**
+  - **Reopening a restored library later:** the app has no *Open library…* command, so the guide now explains a shortcut with `--library "<folder>"`, or moving the folder into place while the app is closed. It is listed under Limitations and in the questions.
+  - **The Media Feature Pack:** its location for Windows 11 (*Settings → System → Optional features*) as well as Windows 10, in the guide and the release notes.
+  - **The reader:** it has no zoom and no search inside a book, stated plainly.
+  - **Closing:** it covers a restore in progress as well as a backup.
+  - **The diagram's status line:** it matches the app.
+  - **The release notes:** open `USER_GUIDE.md` with Notepad if Windows asks.
+  - **Follow-up worth an issue:** an *Open library…* command in the app.
+
+**Verification:** `pwsh scripts/package.ps1 -SdkDir <sdk>` **passed**, with `USER_GUIDE.md` in the package. `pwsh scripts/verify.ps1` **passed**: 177 text files, 31/31 tests.
+
 ## Releases on GitHub
 
 **Asked by the owner (2026-09-29):** a Releases page to download the Windows app, with every change going through a PR and CI, and changes grouped into releases.
