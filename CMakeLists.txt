@@ -118,6 +118,8 @@ qt_add_library(mbl_presentation STATIC
     src/presentation/collectionlistmodel.cpp
     src/presentation/exportcontroller.h
     src/presentation/exportcontroller.cpp
+    src/presentation/backupcontroller.h
+    src/presentation/backupcontroller.cpp
     src/presentation/joblistmodel.h
     src/presentation/joblistmodel.cpp
     src/presentation/toctreemodel.h
@@ -179,6 +181,7 @@ qt_add_qml_module(appMyBooksLibrary
         qml/search/SearchResultsView.qml
         qml/reader/ReaderPane.qml
         qml/export/ExportDialog.qml
+        qml/backup/BackupDialog.qml
 )
 
 set_target_properties(appMyBooksLibrary PROPERTIES

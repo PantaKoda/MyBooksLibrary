@@ -79,6 +79,13 @@ ApplicationWindow {
         }
     }
 
+    // Back up… and Restore… (M10), from the toolbar's Backup menu.
+    BackupDialog {
+        id: backupDialog
+        backup: window.library.backup
+        enabledForUse: window.library.ready && !window.closeRequested
+    }
+
     // Save a copy with bookmarks (M09); opened from the inspector's More menu.
     ExportDialog {
         id: exportDialog
@@ -142,6 +149,28 @@ ApplicationWindow {
                 enabled: window.library.ready && !window.closeRequested
                 onClicked: importDialog.open()
                 Accessible.description: qsTr("Choose PDF files to copy into the library")
+            }
+            Button {
+                id: backupButton
+                objectName: "backupMenuButton"
+                text: qsTr("Backup")
+                enabled: window.library.ready && !window.closeRequested
+                onClicked: backupMenu.open()
+                Accessible.description: qsTr("Back up this library, or restore a backup as a new library")
+                Menu {
+                    id: backupMenu
+                    y: backupButton.height
+                    MenuItem {
+                        objectName: "backUpItem"
+                        text: qsTr("Back up the library…")
+                        onTriggered: backupDialog.openForBackup()
+                    }
+                    MenuItem {
+                        objectName: "restoreItem"
+                        text: qsTr("Restore a backup…")
+                        onTriggered: backupDialog.openForRestore()
+                    }
+                }
             }
         }
     }

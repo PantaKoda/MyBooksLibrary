@@ -16,7 +16,7 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | M07 Corrections/reruns | Merged: part 1 [PR #16](https://github.com/PantaKoda/MyBooksLibrary/pull/16) (merge `152eb8c`); part 2a [PR #17](https://github.com/PantaKoda/MyBooksLibrary/pull/17) (merge `c215319`); part 2b [PR #18](https://github.com/PantaKoda/MyBooksLibrary/pull/18) (merge `f40b99c`) | `feat/m07-presentation-metadata-corrections`; `feat/m07-a2-toc-edits`; `feat/m07-presentation-toc-editing` | See "M07" |
 | M08 Organization | Merged: part 1 [PR #19](https://github.com/PantaKoda/MyBooksLibrary/pull/19) (merge `7052536`); part 2 [PR #20](https://github.com/PantaKoda/MyBooksLibrary/pull/20) (merge `c182ec3`). Permanent deletion of trashed books remains open | `feat/m08-a2-collections-trash`; `feat/m08-presentation-organization` | See "M08" |
 | M09 Export | Merged: part 1 [PR #21](https://github.com/PantaKoda/MyBooksLibrary/pull/21) (merge `acc2b89`); part 2 [PR #22](https://github.com/PantaKoda/MyBooksLibrary/pull/22) (merge `f2bd6b4`); part 3 [PR #23](https://github.com/PantaKoda/MyBooksLibrary/pull/23) (merge `1dbbe0c`) | `feat/m09-a1-export-core`; `feat/m09-a2-export-jobs`; `feat/m09-presentation-export` | See "M09" |
-| M10 Windows release | Part 1 Merged ([PR #24](https://github.com/PantaKoda/MyBooksLibrary/pull/24), merge `0c682c3`); part 2 AwaitingReview (the Windows package, `feat/m10-packaging`) | `feat/m10-a1-backup-restore` | See "M10" |
+| M10 Windows release | Merged: part 1 [PR #24](https://github.com/PantaKoda/MyBooksLibrary/pull/24) (merge `0c682c3`); part 2 [PR #25](https://github.com/PantaKoda/MyBooksLibrary/pull/25) (merge `54ed8fc`); part 3 [PR #26](https://github.com/PantaKoda/MyBooksLibrary/pull/26). The owner's manual check of the package on a machine without Qt or Visual Studio remains | `feat/m10-a1-backup-restore`; `feat/m10-packaging`; `feat/m10-presentation-backup` | See "M10" |
 | M11 | NotStarted | | |
 
 ## M10 — Windows release
@@ -109,7 +109,43 @@ M10 is split in three:
 - **The owner's manual check of the zip** on a machine without Qt or Visual Studio is still to do.
 - Backup and restore in the window come in part 3.
 
-**Next action:** open the PR for review. Then part 3.
+**Next action:** merged ([PR #25](https://github.com/PantaKoda/MyBooksLibrary/pull/25), merge `54ed8fc`).
+
+### Part 3: Back up… and Restore… in the window (presentation)
+
+Independent of part 2 (packaging, [PR #25](https://github.com/PantaKoda/MyBooksLibrary/pull/25)), so it is branched from `main` after part 1.
+
+**Scope:**
+- **`BackupController`** (`src/presentation/backupcontroller.*`), owned by `LibraryController` as `backup`:
+  - runs `storage::createBackup` and `restoreBackup` (part 1) on its own one-thread pool, with progress and the result delivered through queued calls, as plain-language status text;
+  - restore passes the open library's root as `librariesInUse`, so a target inside or around it is refused;
+  - a running backup or restore makes the session busy: `prepareToClose()` cancels it, and the window waits;
+  - `openRestoredLibrary()` starts MyBooksLibrary with `--library` on the restored folder in a new window.
+- **`BackupDialog.qml`** (`qml/backup/`), from the toolbar's **Backup** menu: back up to a folder (Documents by default), or restore a backup as a new folder "MyBooksLibrary restored *date*". It has progress, the result, Show folder, Open restored library, and Cancel.
+
+**Touched paths:** `src/presentation/{backupcontroller.*,librarycontroller.*}`, `qml/backup/BackupDialog.qml`, `Main.qml`, `CMakeLists.txt`, `tests/presentation/tst_backupcontroller.cpp`, `tests/CMakeLists.txt`, `docs/`.
+
+| Command | Result |
+| --- | --- |
+| `pwsh scripts/verify.ps1` (Release) and `-Configuration Debug` | **Passed** in both configurations: guard tests, whitespace and text checks, configure, build, **31/31 tests** (ctest), and the smoke checks. Verified on the working tree based on `0c682c3`. |
+| `tst_backupcontroller` (new, 4 cases, real library) | **Off the GUI thread:** running and busy while it works, then "Backed up 1 book (…) to …" with progress, a folder URL accepted, and only the backup in the folder. The restore says "Restored 1 book …" and the new library has its catalog. After reset, nothing is left to open.<br>**Refusals, in words:** backup inside the library folder; restore under the open library's `staging/` (not created); a folder that is not a backup.<br>**Closing:** `prepareToClose()` during a backup waits until it has stopped, and nothing partial is left.<br>**The real `BackupDialog.qml`:** Documents suggested; **Back up** writes the backup and shows "Backed up". The restore mode suggests a new folder, is disabled until a backup is chosen, restores, and shows **Open restored library**. |
+
+**Review fixes ([PR #26](https://github.com/PantaKoda/MyBooksLibrary/pull/26), review of `87aadf2`):**
+- **Dismissed while a job ran:** Escape or a click outside closed the dialog during a backup or restore. Reopening it with the other menu item then showed that job under the other mode's fields. Now `closePolicy` is `NoAutoClose` while a job runs, and both menu items show the running job's mode with its fields as they were.
+- **A second restore the same day:** it was refused because the suggested "MyBooksLibrary restored *date*" folder already existed and was not empty. The suggestion is now the first free name ("… (2)", …), as for backups.
+- **Tests:** `tst_backupcontroller` checks the close policy and the reopened mode while a backup runs, and restores twice the same day into the suggested folders. With each fix undone, its test fails.
+- **Verification after the fixes:** `pwsh scripts/verify.ps1` Release and `-Configuration Debug` both **passed**, 31/31 tests.
+
+**UI evidence:** `docs/images/m10-backup-dialog.png` (UI.md).
+
+**M10 gate** (after parts 1–3 are merged):
+- **Backup and restore verified:** part 1's tests, and this window's.
+- **A clean packaged runtime with models, SQL and the reader:** part 2's `package.ps1` checks.
+- **Responsive shutdown and recovery:** closing waits for running work without blocking the GUI thread. This now includes a backup or restore.
+- **Dependency notices:** part 2.
+- **Still open:** the owner's manual check of the package on a clean machine.
+
+**Next action:** merged with [PR #26](https://github.com/PantaKoda/MyBooksLibrary/pull/26). M10 is complete, apart from the owner's manual check of the package on a clean machine. M11 (native macOS and Linux) needs native SDK packages first.
 
 ## M09 — Export
 

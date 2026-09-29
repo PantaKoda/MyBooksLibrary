@@ -536,3 +536,13 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - **Notices by construction:** each shipped Qt file is mapped to its Qt module, and that module's SBOM (its third-party components with their licences) is shipped with Qt's licence text. An unmapped file stops the script, so a new dependency cannot be shipped without its notice.
   - **Smoke checks on the real platform:** the package ships no offscreen plugin, because users do not need it. The checks open real windows briefly, so running the script needs a desktop session.
 - **Verified:** See IMPLEMENTATION_PROGRESS.md, M10 part 2.
+
+## 2026-09-29 — M10 part 3: Back up… and Restore… in the window
+
+- **Change:** `BackupController` and `BackupDialog.qml`, opened from the toolbar's Backup menu, run part 1's backup and restore off the GUI thread.
+- **Why:** AGENTS.md §10 asks for a recoverable backup and restore workflow before release, and §8 for a GUI that stays responsive with a closing state that waits for running work.
+- **Assumptions:**
+  - **Restore opens a new window:** a restored library is started with `--library` in a new process, not swapped into the running session. Switching libraries in place would mean closing and reopening every session object (catalog, coordinator, reader), which is more risk than the feature needs. The two libraries have separate locks.
+  - **Closing cancels a backup:** a backup or restore counts as busy, so the window's normal closing flow cancels it and waits. Part 1 guarantees that a cancelled backup or restore leaves nothing half-made.
+  - **Documents by default:** the suggested backup folder is Documents, and a restore goes into a new dated folder there. Both are outside the library.
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, M10 part 3.
