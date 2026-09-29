@@ -19,6 +19,27 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | M10 Windows release | Merged: part 1 [PR #24](https://github.com/PantaKoda/MyBooksLibrary/pull/24) (merge `0c682c3`); part 2 [PR #25](https://github.com/PantaKoda/MyBooksLibrary/pull/25) (merge `54ed8fc`); part 3 [PR #26](https://github.com/PantaKoda/MyBooksLibrary/pull/26). The owner's manual check of the package on a machine without Qt or Visual Studio remains | `feat/m10-a1-backup-restore`; `feat/m10-packaging`; `feat/m10-presentation-backup` | See "M10" |
 | M11 | NotStarted | | |
 
+## After M10: fixes from the owner's testing
+
+### The contents tree hidden by a long list of reasons (presentation)
+
+**Found by the owner:** a 746-page book (*Simulation Modeling and Arena*) seemed to have no contents. The analysis had published 221 entries, 204 with a confirmed page, and indexed all of them for search. But the Contents tab listed every analysis reason as a "Why:" line (18 here, one per entry without a page). At the default window size those lines pushed the tree out of view.
+
+**Fix:**
+- `BookInspector::contentsNotes` keeps only the short counts.
+- The analysis's reasons are a separate `contentsReasons`, shown on request (**Why? (*n*)**) in a scrolling area at most 120 px high.
+- The "Ready / Not ready for a bookmarked copy" line is gone. Since M09 the Export dialog bookmarks every entry with a confirmed page, so it was misleading.
+
+**Tests:**
+- `tst_inspectorpane::manyReasonsLeaveTheTreeInView`: 80 entries and 40 reasons in a 640×640 pane. The tree is in view with at least 120 px, before and after Why? is opened. With the old layout, the tree started at y 1184 and the test fails.
+- `tst_librarycontroller` checks that the notes carry only counts.
+
+**Checked on the owner's book**, in a copy of the library: the tree shows Preface (page 17), Acknowledgments, Introduction, "1 Simulation Modeling"…
+
+**Verification:** `pwsh scripts/verify.ps1` Release and `-Configuration Debug` both **passed**, 31/31 tests.
+
+**Also seen, not a bug:** the book's title is "uncertain", because the SDK found several candidates. The app shows the file name rather than guess. The owner can pick or type it with **Correct**.
+
 ## M10 — Windows release
 
 M10 is split in three:

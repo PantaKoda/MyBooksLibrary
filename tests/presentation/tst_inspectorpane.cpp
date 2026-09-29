@@ -110,6 +110,7 @@ private slots:
     void correctionDialogSavesAndSurvivesRefreshes();
     void contentsEditingInThePane();
     void addToCollectionMenuFollowsTheCollections();
+    void manyReasonsLeaveTheTreeInView();
 };
 
 void TestInspectorPane::entryDetailsFollowTheSelectedBook()
@@ -396,6 +397,94 @@ void TestInspectorPane::contentsEditingInThePane()
 
 // The More menu's "Add to collection" submenu lists the library's
 // collections as they change, and a choice asks for that collection.
+// A long list of analysis reasons (one per entry without a page, as for a
+// 746-page book with 17 of them) never pushes the contents tree out of the
+// pane: the reasons are shown on request, in a bounded area.
+void TestInspectorPane::manyReasonsLeaveTheTreeInView()
+{
+    QTemporaryDir dir;
+    BookId book;
+    {
+        auto library = mbl::catalog::Library::open(dir.path());
+        QVERIFY(library);
+        book = library.value()
+                   ->run([](QSqlDatabase& db) {
+                       NewBook b;
+                       b.asset.id = AssetId::create();
+                       b.asset.sha256 = QString(64, u'd');
+                       b.asset.byteSize = 1;
+                       b.asset.pageCount = 300;
+                       b.asset.managedPath = QStringLiteral("files/%1/source.pdf").arg(b.asset.id.toString());
+                       b.originalFileName = QStringLiteral("long.pdf");
+                       b.originalPath = b.originalFileName;
+                       const BookId id = mbl::catalog::registerBook(db, b).value();
+                       const PublishTicket ticket = mbl::catalog::requestTocRun(db, id).value();
+                       TocAnalysis toc;
+                       toc.outcome = QStringLiteral("analysis_partial");
+                       for (int i = 0; i < 80; ++i) {
+                           TocEntry e;
+                           e.sdkEntryId = QStringLiteral("e%1").arg(i);
+                           e.order = i;
+                           e.title = QStringLiteral("%1 Chapter title number %1").arg(i + 1);
+                           e.hierarchy = HierarchyState::Root;
+                           if (i % 2 == 0) {
+                               e.destinationState = DestinationState::Resolved;
+                               e.destinationPage = i;
+                           } else {
+                               toc.planBlockers << QStringLiteral("Entry '%1' is unresolved: No justified destination").arg(e.title);
+                           }
+                           toc.entries << e;
+                       }
+                       RunIdentity run;
+                       run.sourceSha256 = b.asset.sha256;
+                       run.sdkVersion = QStringLiteral("test");
+                       run.optionsJson = QStringLiteral("{}");
+                       run.outcome = toc.outcome;
+                       mbl::catalog::publishToc(db, ticket, run, toc).value();
+                       return id;
+                   })
+                   .result();
+    }
+    LibraryController controller;
+    controller.open(dir.path());
+    QTRY_VERIFY_WITH_TIMEOUT(controller.ready() && !controller.busy(), 10000);
+
+    QQmlEngine engine;
+    QQmlComponent component(&engine, QUrl::fromLocalFile(QStringLiteral(MBL_SOURCE_DIR "/qml/inspector/BookInspectorPane.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    QQuickWindow window;
+    window.resize(640, 640);
+    std::unique_ptr<QObject> object(component.createWithInitialProperties(
+        {{QStringLiteral("inspector"), QVariant::fromValue<QObject*>(controller.inspector())},
+         {QStringLiteral("selectFirstEntry"), true}}));  // Contents tab.
+    auto* pane = qobject_cast<QQuickItem*>(object.get());
+    QVERIFY2(pane, qPrintable(component.errorString()));
+    pane->setParentItem(window.contentItem());
+    pane->setSize(QSizeF(640, 640));
+    window.show();
+
+    controller.inspector()->select(book.toString());
+    QTRY_COMPARE_WITH_TIMEOUT(controller.inspector()->contents()->entryCount(), 80, 5000);
+    QCOMPARE(controller.inspector()->contentsReasons().size(), 40);
+    const auto sceneRect = [](QQuickItem* item) {
+        return item ? item->mapRectToScene(QRectF(0, 0, item->width(), item->height())) : QRectF();
+    };
+    QQuickItem* tree = findItem(pane, QStringLiteral("contentsTree"));
+    QVERIFY(tree);
+    const auto treeInView = [&] {
+        const QRectF r = sceneRect(tree);
+        return tree->isVisible() && r.height() >= 120 && r.bottom() <= 640 + 0.5;
+    };
+    QTRY_VERIFY2_WITH_TIMEOUT(treeInView(), qPrintable(QDebug::toString(sceneRect(tree))), 5000);
+    // The reasons, shown on request, stay bounded: the tree keeps its room.
+    QQuickItem* why = findItem(pane, QStringLiteral("contentsReasonsButton"));
+    QVERIFY(why && why->isVisible());
+    QVERIFY(why->property("text").toString().contains(QStringLiteral("40")));
+    QVERIFY(QMetaObject::invokeMethod(why, "clicked"));
+    QTRY_VERIFY_WITH_TIMEOUT(findItem(pane, QStringLiteral("contentsReasons"))->isVisible(), 5000);
+    QTRY_VERIFY2_WITH_TIMEOUT(treeInView(), qPrintable(QDebug::toString(sceneRect(tree))), 5000);
+}
+
 void TestInspectorPane::addToCollectionMenuFollowsTheCollections()
 {
     QTemporaryDir dir;

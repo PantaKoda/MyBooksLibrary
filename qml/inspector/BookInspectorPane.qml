@@ -295,6 +295,39 @@ Pane {
                     wrapMode: Text.Wrap
                     opacity: 0.7
                 }
+                // The analysis's reasons, on request and in a bounded area: a
+                // long list (one line per entry without a page) must never push
+                // the contents tree out of the window.
+                Button {
+                    id: reasonsButton
+                    objectName: "contentsReasonsButton"
+                    property bool expanded: false
+                    visible: pane.inspector.contentsReasons.length > 0
+                    flat: true
+                    text: expanded ? qsTr("Hide the reasons") : qsTr("Why? (%1)").arg(pane.inspector.contentsReasons.length)
+                    onClicked: expanded = !expanded
+                    Accessible.description: qsTr("Show or hide what the analysis reported about these contents")
+                    Connections {
+                        target: pane.inspector
+                        function onBookChanged() { reasonsButton.expanded = false }
+                    }
+                }
+                ScrollView {
+                    objectName: "contentsReasons"
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: Math.min(reasonsLabel.implicitHeight, 120)
+                    visible: reasonsButton.visible && reasonsButton.expanded
+                    contentWidth: availableWidth
+                    clip: true
+                    Label {
+                        id: reasonsLabel
+                        width: parent ? parent.width : implicitWidth
+                        text: pane.inspector.contentsReasons.join("\n")
+                        textFormat: Text.PlainText
+                        wrapMode: Text.Wrap
+                        opacity: 0.7
+                    }
+                }
 
                 // Edited contents: which version is shown, and the user's choices.
                 Frame {

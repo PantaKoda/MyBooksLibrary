@@ -223,9 +223,9 @@ QStringList contentsNotesOf(const std::optional<TocAnalysis>& toc)
         notes << tr("Level uncertain:") + of.arg(unknownLevel);
     if (toc->parseComplete == false)
         notes << tr("The contents list may be incomplete.");
-    notes << (toc->planReady ? tr("Ready for a bookmarked copy.") : tr("Not ready for a bookmarked copy."));
-    for (const QString& blocker : toc->planBlockers)
-        notes << tr("Why: %1").arg(blocker);
+    // Whether a bookmarked copy can be saved, and with what, is the Export
+    // dialog's to say (it bookmarks every entry with a confirmed page). The
+    // analysis's own reasons are contentsReasons, shown on request.
     return notes;
 }
 
@@ -364,6 +364,7 @@ void BookInspector::apply(const Loaded& result)
     };
     m_contentsSummary = contentsSummaryOf(d.toc);
     m_contentsNotes = contentsNotesOf(d.toc);
+    m_contentsReasons = d.toc ? d.toc->planBlockers : QStringList();
 
     // Rebuild the tree only when the contents changed (a new run, or an
     // edited revision saved, kept or discarded), so expanded
@@ -756,6 +757,7 @@ void BookInspector::clear()
     m_metadataFields.clear();
     m_contentsSummary.clear();
     m_contentsNotes.clear();
+    m_contentsReasons.clear();
     m_error.clear();
     m_shownTocRun.reset();
     m_shownTocRevision.reset();

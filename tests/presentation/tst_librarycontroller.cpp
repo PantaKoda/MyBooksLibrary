@@ -774,7 +774,11 @@ void TestLibraryController::inspectorShowsWhatWasPublished()
 
     QCOMPARE(inspector->contentsSummary(), QStringLiteral("2 contents entries, 1 with a confirmed page."));
     QVERIFY(inspector->contentsNotes().contains(QStringLiteral("No page found: 1 of 2.")));
-    QVERIFY(inspector->contentsNotes().contains(QStringLiteral("Not ready for a bookmarked copy.")));
+    QVERIFY(inspector->contentsReasons().isEmpty());  // This analysis reported none.
+    for (const QString& note : inspector->contentsNotes()) {  // Only short counts; export readiness is the Export dialog's.
+        QVERIFY2(!note.startsWith(QStringLiteral("Why:")), qPrintable(note));
+        QVERIFY2(!note.contains(QStringLiteral("bookmarked copy")), qPrintable(note));
+    }
     QCOMPARE(inspector->contents()->entryCount(), 2);
     QCOMPARE(inspector->contents()->data(inspector->contents()->index(0, 0), mbl::presentation::TocTreeModel::PageTextRole)
                  .toString(),
