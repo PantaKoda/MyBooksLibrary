@@ -16,7 +16,7 @@
     3. licenses\: NOTICE.txt (what is shipped, under which licence), Qt's
        licence text and the SBOM of every Qt module whose files are shipped,
        the pdfbookmark SDK's third-party licences, and the OCR models' licence
-       (from the SDK, or -ModelsLicenseFile while the SDK lacks it). A shipped
+       (from the SDK, else the pinned copy in third_party\licenses). A shipped
        Qt or SDK file whose licence is not known, or a missing licence, stops
        the script, so no notice is silently missing.
        Then every shipped binary's imports (dumpbin): anything neither shipped
@@ -31,7 +31,7 @@
     5. build\package\MyBooksLibrary-<version>-win64.zip (unless -SkipZip).
 
 .EXAMPLE
-    pwsh scripts/package.ps1 -SdkDir C:\Dev\pdfbookmark-sdk\0.3.0 -ModelsLicenseFile C:\Dev\PaddleOCR\LICENSE
+    pwsh scripts/package.ps1 -SdkDir C:\Dev\pdfbookmark-sdk\0.3.0
 #>
 [CmdletBinding()]
 param(
@@ -39,10 +39,12 @@ param(
     [string]$SdkDir = $env:PDFBOOKMARK_SDK,
     # Qt kit folder (the one containing lib\cmake\Qt6); defaults to QT_ROOT_DIR, then the standard install.
     [string]$QtDir = $(if ($env:QT_ROOT_DIR) { $env:QT_ROOT_DIR } else { 'C:\Qt\6.11.2\msvc2022_64' }),
-    # Qt's licence text; defaults to the Licenses folder of a Qt online installation.
+    # Qt's licence text; defaults to the pinned copy in third_party\licenses
+    # (CI's Qt, from aqtinstall, has no Licenses folder).
     [string]$QtLicenseFile = '',
     # The PaddleOCR licence (Apache-2.0) for the OCR models in models\, used while
-    # the SDK does not ship it itself (its licenses\PaddleOCR-PP-OCR-models.txt).
+    # the SDK does not ship it itself (its licenses\PaddleOCR-PP-OCR-models.txt);
+    # defaults to the pinned copy in third_party\licenses.
     [string]$ModelsLicenseFile = '',
     [switch]$SkipZip
 )
@@ -57,7 +59,8 @@ Set-Location $repo
 $buildDir = Join-Path $repo 'build\package-release'
 $packageRoot = Join-Path $repo 'build\package'
 $stage = Join-Path $packageRoot 'MyBooksLibrary'
-if (-not $QtLicenseFile) { $QtLicenseFile = Join-Path $QtDir '..\..\Licenses\LICENSE' }
+if (-not $QtLicenseFile) { $QtLicenseFile = Join-Path $repo 'third_party\licenses\Qt-LICENSE.txt' }
+if (-not $ModelsLicenseFile) { $ModelsLicenseFile = Join-Path $repo 'third_party\licenses\PaddleOCR-LICENSE.txt' }
 
 # Which Qt module each shipped Qt file comes from, by its path in the package
 # (with forward slashes), for its SBOM and the notice. A file matching none of
@@ -286,14 +289,19 @@ Windows "N" and "KN" editions need the Media Feature Pack: the OCR library
         }
         # The real platform, as users run it (the package ships no offscreen plugin).
         [Environment]::SetEnvironmentVariable('QT_QPA_PLATFORM', $null, 'Process')
+        # Each check with its own time limit (seconds). OCR of the scanned PDF
+        # takes about 2 minutes per pass on a 2-core CI runner; its check skips
+        # the Qt-only control phase (which runs as long as the SDK phase and is
+        # already covered by the text check), and still gets a generous limit.
         $checks = [ordered]@{
-            'sdk-check'                 = @('--sdk-check', (Join-Path $fixtures 'title-page.pdf'))
-            'sqlite-check (FTS5)'       = @('--sqlite-check')
-            'reader-check (text PDF)'   = @('--reader-check', (Join-Path $fixtures 'contents-book.pdf'), '--rounds', '2')
-            'reader-check (OCR models)' = @('--reader-check', (Join-Path $fixtures 'image-only.pdf'), '--rounds', '1', '--require-ocr')
+            'sdk-check'                 = @{ Limit = 300; Args = @('--sdk-check', (Join-Path $fixtures 'title-page.pdf')) }
+            'sqlite-check (FTS5)'       = @{ Limit = 300; Args = @('--sqlite-check') }
+            'reader-check (text PDF)'   = @{ Limit = 300; Args = @('--reader-check', (Join-Path $fixtures 'contents-book.pdf'), '--rounds', '2') }
+            'reader-check (OCR models)' = @{ Limit = 900; Args = @('--reader-check', (Join-Path $fixtures 'image-only.pdf'), '--rounds', '1',
+                                                                   '--require-ocr', '--no-control') }
         }
         foreach ($check in $checks.GetEnumerator()) {
-            $run = Invoke-App $app $check.Value 300
+            $run = Invoke-App $app $check.Value.Args $check.Value.Limit
             Write-Host "---- $($check.Key) (exit $($run.Code))"
             Write-Host $run.Output
             if ($run.Code -ne 0) { throw "$($check.Key) failed (exit $($run.Code))" }

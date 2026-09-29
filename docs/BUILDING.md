@@ -104,10 +104,10 @@ pwsh scripts/verify.ps1 -Configuration Debug -Clean                        # SDK
 ## Windows package (`scripts/package.ps1`)
 
 ```powershell
-pwsh scripts/package.ps1 -SdkDir C:\Dev\pdfbookmark-sdk\0.3.0 -ModelsLicenseFile C:\Dev\PaddleOCR\LICENSE
+pwsh scripts/package.ps1 -SdkDir C:\Dev\pdfbookmark-sdk\0.3.0
 ```
 
-`-ModelsLicenseFile` is the PaddleOCR licence (Apache-2.0: the `LICENSE` file of github.com/PaddlePaddle/PaddleOCR) for the OCR models. SDK 0.3.0 does not ship it ([PantaKoda/PDFMegine#6](https://github.com/PantaKoda/PDFMegine/issues/6)), and the script refuses to package the models without it.
+Qt's licence text and the OCR models' licence (PaddleOCR, Apache-2.0) come from pinned copies in `third_party/licenses/` (see its README). CI's Qt has no `Licenses` folder, and SDK 0.3.0 does not ship the models' licence ([PantaKoda/PDFMegine#6](https://github.com/PantaKoda/PDFMegine/issues/6)). `-QtLicenseFile` and `-ModelsLicenseFile` override them, and the script refuses to package the models without a licence.
 
 It builds `appMyBooksLibrary` (Release, no tests) in `build\package-release`, then writes `build\package\MyBooksLibrary\` and `build\package\MyBooksLibrary-<version>-win64.zip`. The package holds:
 
@@ -133,13 +133,17 @@ It prints `PACKAGE PASSED` and exits 0 only if everything passed. It deletes onl
 
 `.github/workflows/ci.yml` runs on pull requests to `main` and on pushes to `main`. Its single job, **`build-and-test`**, is the required check. It runs on `windows-2025-vs2026` (MSVC from Visual Studio 2026, the toolset the SDK is built with):
 
-1. installs Qt 6.11.2 `win64_msvc2022_64` with the `qtpdf` extension (open-source packages, via `jurplel/install-qt-action`/aqtinstall, cached). aqtinstall comes from a pinned commit of its main branch, because release 3.3.0 cannot read Qt 6.11's repository layout;
-2. downloads the public pdfbookmark SDK release (version and SHA-256 pinned in the workflow; cached; never committed) into `.deps/`;
-3. runs `scripts/verify.ps1 -Configuration Release`.
+1. sets up Qt and the SDK through the local composite action `.github/actions/setup`, which the release workflow uses too:
+   - Qt 6.11.2 `win64_msvc2022_64` with the `qtpdf` extension (open-source packages, via `jurplel/install-qt-action`/aqtinstall, cached). aqtinstall comes from a pinned commit of its main branch, because release 3.3.0 cannot read Qt 6.11's repository layout;
+   - the public pdfbookmark SDK release (version and SHA-256 pinned in the action; cached; never committed) into `.deps/`;
+2. runs `scripts/verify.ps1 -Configuration Release`;
+3. runs `scripts/package.ps1 -SkipZip`: the Windows package and its checks, as a release does.
 
-The workflow has read-only permissions and uses no secrets, and third-party actions are pinned to commit SHAs. Newer runs for the same PR cancel older ones. The long OCR coexistence runs (`--require-ocr`) are not part of CI or `verify.ps1`; see READER.md.
+The workflow has read-only permissions and uses no secrets, and third-party actions are pinned to commit SHAs. Newer runs for the same PR cancel older ones. The long OCR coexistence runs (`--require-ocr`) are not part of CI or `verify.ps1` (see READER.md); the package's own OCR check is a short one.
 
-To move to a new SDK release, update `PDFBOOKMARK_SDK_VERSION` and `PDFBOOKMARK_SDK_SHA256` in the workflow together with `find_package(pdfbookmark …)`.
+To move to a new SDK release, update `PDFBOOKMARK_SDK_VERSION` and `PDFBOOKMARK_SDK_SHA256` in `.github/actions/setup/action.yml`, together with `find_package(pdfbookmark …)`.
+
+**Releases:** `.github/workflows/release.yml` publishes the Windows package on the Releases page when a `vX.Y.Z` tag is pushed on `main`; see docs/RELEASING.md.
 
 ## Test fixtures
 

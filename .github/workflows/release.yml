@@ -1,0 +1,90 @@
+# Release: publishes the Windows package on the repository's Releases page.
+#
+# Pushing a tag vX.Y.Z on main runs this. It publishes only if everything
+# passes:
+#   1. the tag is on main and matches `project(MyBooksLibrary VERSION X.Y.Z)`
+#      in CMakeLists.txt, and docs/releases/vX.Y.Z.md exists (the notes);
+#   2. scripts/verify.ps1 (text checks, build, all tests, smoke checks);
+#   3. scripts/package.ps1 (the package, its notices and imports, and the
+#      checks run from a copy outside the repository);
+# then creates the GitHub Release with MyBooksLibrary-X.Y.Z-win64.zip, its
+# SHA-256, and the notes followed by the list of merged pull requests.
+# See docs/RELEASING.md.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: release
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 90
+    permissions:
+      contents: write  # Creating the release and uploading the package.
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0  # The tag's ancestry, to check it is on main.
+
+      - name: Check the tag, the version and the notes
+        env:
+          TAG: ${{ github.ref_name }}  # Through the environment, never pasted into the script.
+        run: |
+          $tag = $env:TAG
+          $version = (Select-String -Path CMakeLists.txt -Pattern 'project\(MyBooksLibrary VERSION ([0-9.]+)').Matches[0].Groups[1].Value
+          if ($tag -ne "v$version") { throw "The tag $tag does not match VERSION $version in CMakeLists.txt." }
+          git merge-base --is-ancestor $env:GITHUB_SHA origin/main
+          if ($LASTEXITCODE -ne 0) { throw "The tag $tag is not on main." }
+          if (-not (Test-Path "docs/releases/$tag.md")) { throw "The release notes docs/releases/$tag.md are missing." }
+          Add-Content -Path $env:GITHUB_ENV -Value "VERSION=$version" -Encoding utf8
+
+      - name: Set up Qt and the pdfbookmark SDK (.github/actions/setup)
+        uses: ./.github/actions/setup
+
+      - name: Verify (scripts/verify.ps1)
+        run: >
+          ./scripts/verify.ps1 -Configuration Release
+          -QtDir "$env:QT_ROOT_DIR"
+          -SdkDir "$env:PDFBOOKMARK_SDK"
+
+      - name: Package (scripts/package.ps1)
+        run: >
+          ./scripts/package.ps1
+          -QtDir "$env:QT_ROOT_DIR"
+          -SdkDir "$env:PDFBOOKMARK_SDK"
+
+      # A draft first, published only once both files are attached: a release
+      # never appears with a missing or half-uploaded package.
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          $tag = $env:TAG
+          $name = "MyBooksLibrary-$env:VERSION-win64.zip"
+          $zip = "build/package/$name"
+          $sha = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLowerInvariant()
+          Set-Content -Path "$zip.sha256" -Value "$sha  $name" -Encoding ascii
+          gh release create $tag $zip "$zip.sha256" --draft --verify-tag --title "MyBooksLibrary $env:VERSION" `
+            --notes-file "docs/releases/$tag.md" --generate-notes
+          if ($LASTEXITCODE -ne 0) { throw "Creating the draft release failed." }
+          $assets = (gh release view $tag --json assets | ConvertFrom-Json).assets
+          foreach ($expected in $name, "$name.sha256") {
+            $asset = $assets | Where-Object { $_.name -eq $expected }
+            if (-not $asset -or $asset.state -ne 'uploaded') { throw "The draft release lacks $expected." }
+          }
+          gh release edit $tag --draft=false
+          if ($LASTEXITCODE -ne 0) { throw "Publishing the draft release failed." }
