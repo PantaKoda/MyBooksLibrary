@@ -127,6 +127,19 @@ Result<QString> validateExportDestination(const QString& destination, const Libr
     return QDir::cleanPath(fromFs(target));
 }
 
+bool isInsideFolder(const QString& path, const QString& folder)
+{
+    const auto root = realPath(folder);
+    if (!root)
+        return false;
+    if (const auto real = realPath(path))
+        return within(*real, *root);
+    // Not there yet: its folder, resolved, and its name.
+    const QFileInfo info(path);
+    const auto parent = realPath(info.absolutePath());
+    return parent && within(*parent / toFs(info.fileName()), *root);
+}
+
 std::optional<FileIdentity> fileIdentity(const QString& path)
 {
     const QFileInfo info(path);

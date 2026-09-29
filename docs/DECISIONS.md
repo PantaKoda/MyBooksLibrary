@@ -504,3 +504,21 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - **Closing the dialog does not cancel:** a copy being saved continues. The job queue shows it, and the next preview of the book names the last copy.
   - **English plurals** use the app's existing "(s)" form, since no translations are installed yet (as elsewhere in the window).
 - **Verified:** See IMPLEMENTATION_PROGRESS.md, M09 part 3.
+
+## 2026-09-29 — M10 part 1: backup and restore
+
+- **Change:**
+  - `catalog::snapshotCatalog` copies the catalog with `VACUUM INTO` and lists the files it references.
+  - `storage::createBackup`, `verifyBackup` and `restoreBackup` write a verified backup folder with a manifest, and restore it into a new library folder.
+- **Why:** AGENTS.md §10 asks for a recoverable backup and restore before release. The copy must be consistent (a live `.sqlite` file alone can miss WAL state), must include the catalog's referenced source and report files, and the restore must be verified, including corrections and chapter search.
+- **Assumptions:**
+  - **`VACUUM INTO` instead of closing connections:** §10 describes quiescing, checkpointing and closing, then copying. `VACUUM INTO` gets the same result, a consistent copy of the committed state with WAL content, without closing the library. It runs as one task on the only connection that writes the catalog, so no publication can interleave.
+    - Jobs and imports are not stopped: sources and reports are immutable, and a referenced one is never removed. Files installed but not yet registered are not in the snapshot, and are not needed.
+    - If permanent deletion is added, it must not remove files while a backup copies them.
+  - **Verified before named:** an incomplete or damaged backup never looks like a backup.
+    - A source whose bytes changed stops the backup rather than preserve damage.
+    - A missing report is listed but not fatal: reports are diagnostic evidence, and one lost file must not make every backup fail.
+  - **Restore makes a new library:** never over the library in use, so a mistaken restore cannot lose current work. Opening a different library is the application's choice (part 3).
+  - **The manifest is untrusted on restore:** its paths must stay under `files/` or `reports/`, and every digest is checked twice (verify, then the copy).
+  - **Not in a backup:** `derivatives/`, `cache/` and `staging/`. Nothing in them is needed, and an interrupted import in a restored library is closed as abandoned by the usual recovery.
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, M10 part 1.
