@@ -65,6 +65,8 @@ private slots:
     void savesACopyAndReplacesOnlyAfterConfirming();
     void refusalsAreExplained();
     void theDialogPreviewsAndSaves();
+    void theDialogFitsASmallWindow();
+    void reopeningFollowsACopyBeingSaved();  // Stops processing: keep it after the tests that save.
     void partialCoverageIsSpelledOut();
 
 private:
@@ -237,11 +239,88 @@ void TestExportController::theDialogPreviewsAndSaves()
     pathField->setProperty("text", output);
     QQuickItem* save = findItem(content, QStringLiteral("saveCopyButton"));
     QVERIFY(save && save->isVisible() && save->isEnabled());
-    QVERIFY(QMetaObject::invokeMethod(save, "clicked"));
+
+    // Enter in the path field does only what Save allows: nothing while the
+    // window closes (enabledForUse false)...
+    pathField->forceActiveFocus();
+    QTRY_VERIFY_WITH_TIMEOUT(pathField->hasActiveFocus(), 5000);
+    dialog->setProperty("enabledForUse", false);
+    QVERIFY(!save->isEnabled());
+    QTest::keyClick(&window, Qt::Key_Return);
+    QTest::qWait(200);
+    QCOMPARE(m_controller->exporter()->phase(), Phase::Idle);
+    QVERIFY(!QFile::exists(output));
+    // ...and saves when Save is enabled (the key does reach the field).
+    dialog->setProperty("enabledForUse", true);
+    QTest::keyClick(&window, Qt::Key_Return);
     QTRY_COMPARE_WITH_TIMEOUT(m_controller->exporter()->phase(), Phase::Saved, 30000);
     QVERIFY(QFile::exists(output));
     QQuickItem* phase = findItem(content, QStringLiteral("exportPhase"));
     QVERIFY(phase && phase->property("text").toString().startsWith(QStringLiteral("Saved as")));
+}
+
+// At the window's minimum size, asking to replace (the tallest state), the
+// preview scrolls and every button stays inside the dialog and the window.
+void TestExportController::theDialogFitsASmallWindow()
+{
+    QQmlEngine engine;
+    QQmlComponent component(&engine, QUrl::fromLocalFile(QStringLiteral(MBL_SOURCE_DIR "/qml/export/ExportDialog.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    QQuickWindow window;
+    window.resize(480, 360);  // Main.qml's minimum.
+    std::unique_ptr<QObject> dialog(component.createWithInitialProperties(
+        {{QStringLiteral("exporter"), QVariant::fromValue<QObject*>(m_controller->exporter())},
+         {QStringLiteral("parent"), QVariant::fromValue<QObject*>(window.contentItem())}}));
+    QVERIFY2(dialog, qPrintable(component.errorString()));
+    window.show();
+    QVERIFY(QMetaObject::invokeMethod(dialog.get(), "openFor", Q_ARG(QVariant, m_book)));
+    QTRY_VERIFY_WITH_TIMEOUT(dialog->property("opened").toBool() && !m_controller->exporter()->loading(), 10000);
+    auto* content = qvariant_cast<QQuickItem*>(dialog->property("contentItem"));
+    QQuickItem* pathField = findItem(content, QStringLiteral("exportPathField"));
+    QVERIFY(pathField);
+    const QString existing = m_out->filePath(QStringLiteral("from the dialog.pdf"));  // Saved by the test before.
+    QVERIFY(QFile::exists(existing));
+    pathField->setProperty("text", existing);
+    QVERIFY(QMetaObject::invokeMethod(findItem(content, QStringLiteral("saveCopyButton")), "clicked"));
+    QTRY_COMPARE_WITH_TIMEOUT(m_controller->exporter()->phase(), Phase::NeedsReplace, 10000);
+    QTest::qWait(100);  // Layout.
+
+    const qreal dialogBottom = dialog->property("y").toReal() + dialog->property("height").toReal();
+    QVERIFY(dialogBottom <= window.height());
+    for (const char* name : {"replaceButton", "saveCopyButton", "closeExportButton"}) {
+        QQuickItem* button = findItem(content, QLatin1StringView(name));
+        QVERIFY2(button && button->isVisible(), name);
+        const qreal bottom = button->mapToScene(QPointF(0, button->height())).y();
+        QVERIFY2(bottom <= dialogBottom, qPrintable(QStringLiteral("%1 ends at %2, the dialog at %3")
+                                                        .arg(QLatin1StringView(name)).arg(bottom).arg(dialogBottom)));
+    }
+    m_controller->exporter()->declineReplace();
+}
+
+// The dialog is closed while a copy waits (processing stopped, as when the
+// window closes); opened again for that book, it follows the same copy and
+// can cancel it.
+void TestExportController::reopeningFollowsACopyBeingSaved()
+{
+    ExportController* e = m_controller->exporter();
+    prepared(m_book);
+    m_controller->prepareToClose();  // Nothing more runs: the copy stays queued.
+    QTRY_VERIFY_WITH_TIMEOUT(!m_controller->busy(), 30000);
+    const QString output = m_out->filePath(QStringLiteral("waiting.pdf"));
+    e->exportTo(output);
+    QTRY_COMPARE_WITH_TIMEOUT(e->phase(), Phase::Waiting, 10000);
+
+    prepared(m_book);  // The dialog opened again.
+    QTRY_COMPARE_WITH_TIMEOUT(e->phase(), Phase::Waiting, 10000);
+    QVERIFY(e->running());
+    QCOMPARE(QDir::cleanPath(e->resultPath()), QDir::cleanPath(output));
+    QVERIFY(e->lastExportText().isEmpty());  // Followed, not a still line.
+    e->cancel();
+    QTRY_COMPARE_WITH_TIMEOUT(e->phase(), Phase::Cancelled, 10000);
+    QVERIFY(!QFile::exists(output));
+    prepared(m_book);
+    QCOMPARE(e->phase(), Phase::Idle);
+    QVERIFY(e->lastExportText().contains(QStringLiteral("not saved")));
 }
 
 // A book whose contents are partly mapped: the preview names every entry

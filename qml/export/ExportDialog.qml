@@ -47,64 +47,74 @@ Dialog {
     contentItem: ColumnLayout {
         spacing: 8
 
-        Label {
+        // The preview scrolls, so the path, the progress and the buttons
+        // below always stay in the window, whatever its size and however
+        // many entries are left out.
+        ScrollView {
+            id: previewScroll
+            objectName: "exportPreview"
             Layout.fillWidth: true
-            text: dialog.exporter.bookTitle
-            textFormat: Text.PlainText
-            font.bold: true
-            wrapMode: Text.Wrap
-        }
-        BusyIndicator {
-            visible: dialog.exporter.loading
-            running: visible
-            Layout.alignment: Qt.AlignHCenter
-        }
-        Label {
-            objectName: "exportProblem"
-            Layout.fillWidth: true
-            visible: text.length > 0
-            text: dialog.exporter.problem
-            textFormat: Text.PlainText
-            wrapMode: Text.Wrap
-        }
-        Label {
-            objectName: "exportSummary"
-            Layout.fillWidth: true
-            visible: text.length > 0
-            text: dialog.exporter.summary
-            textFormat: Text.PlainText
-            wrapMode: Text.Wrap
-        }
-        // Every entry left out or moved, with the reason.
-        Frame {
-            Layout.fillWidth: true
-            Layout.preferredHeight: Math.min(160, notesList.contentHeight + topPadding + bottomPadding)
-            visible: dialog.exporter.notes.length > 0
-            ListView {
-                id: notesList
-                objectName: "exportNotes"
-                anchors.fill: parent
-                clip: true
-                model: dialog.exporter.notes
-                ScrollBar.vertical: ScrollBar {}
-                delegate: Label {
-                    required property string modelData
-                    width: ListView.view.width
-                    text: modelData
+            Layout.fillHeight: true
+            Layout.minimumHeight: 48
+            Layout.preferredHeight: previewColumn.implicitHeight
+            contentWidth: availableWidth
+            clip: true
+
+            ColumnLayout {
+                id: previewColumn
+                width: previewScroll.availableWidth
+                spacing: 8
+
+                Label {
+                    Layout.fillWidth: true
+                    text: dialog.exporter.bookTitle
+                    textFormat: Text.PlainText
+                    font.bold: true
+                    wrapMode: Text.Wrap
+                }
+                BusyIndicator {
+                    visible: dialog.exporter.loading
+                    running: visible
+                    Layout.alignment: Qt.AlignHCenter
+                }
+                Label {
+                    objectName: "exportProblem"
+                    Layout.fillWidth: true
+                    visible: text.length > 0
+                    text: dialog.exporter.problem
                     textFormat: Text.PlainText
                     wrapMode: Text.Wrap
-                    bottomPadding: 4
                 }
-                Accessible.name: qsTr("Contents entries left out or moved")
+                Label {
+                    objectName: "exportSummary"
+                    Layout.fillWidth: true
+                    visible: text.length > 0
+                    text: dialog.exporter.summary
+                    textFormat: Text.PlainText
+                    wrapMode: Text.Wrap
+                }
+                // Every entry left out or moved, with the reason.
+                Repeater {
+                    objectName: "exportNotes"
+                    model: dialog.exporter.notes
+                    delegate: Label {
+                        required property string modelData
+                        Layout.fillWidth: true
+                        leftPadding: 12
+                        text: modelData
+                        textFormat: Text.PlainText
+                        wrapMode: Text.Wrap
+                    }
+                }
+                Label {
+                    Layout.fillWidth: true
+                    visible: text.length > 0
+                    text: dialog.exporter.lastExportText
+                    textFormat: Text.PlainText
+                    wrapMode: Text.Wrap
+                    font.italic: true
+                }
             }
-        }
-        Label {
-            Layout.fillWidth: true
-            visible: text.length > 0
-            text: dialog.exporter.lastExportText
-            textFormat: Text.PlainText
-            wrapMode: Text.Wrap
-            font.italic: true
         }
 
         Label {
@@ -121,8 +131,10 @@ Dialog {
                 enabled: !dialog.exporter.running
                 selectByMouse: true
                 Accessible.name: qsTr("File to save the copy as")
-                Keys.onReturnPressed: saveButton.clicked()
-                Keys.onEnterPressed: saveButton.clicked()
+                // Only what the Save button itself allows (not while closing,
+                // asking to replace, or without a name).
+                Keys.onReturnPressed: if (saveButton.enabled) saveButton.clicked()
+                Keys.onEnterPressed: if (saveButton.enabled) saveButton.clicked()
             }
             Button {
                 text: qsTr("Choose…")
@@ -194,6 +206,7 @@ Dialog {
                 onClicked: dialog.exporter.exportTo(pathField.text, false)
             }
             Button {
+                objectName: "closeExportButton"
                 text: qsTr("Close")
                 onClicked: dialog.close()
                 Accessible.description: qsTr("Close; a copy being saved continues in the background")

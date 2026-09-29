@@ -30,6 +30,9 @@ struct Preview {
     QString problem;
     QString suggestedPath;
     QString lastExport;
+    // A copy of this book still waiting or being written: the dialog follows it.
+    std::optional<JobRecord> openJob;
+    QString openDestination;
 };
 
 QString when(const QDateTime& time)
@@ -45,8 +48,6 @@ QString describeLastExport(const ExportRecord& record, const JobRecord& job)
         return ExportController::tr("Last copy: saved %1 as %2 (%3).")
             .arg(when(record.finishedAt), path, trn("%n bookmark(s)", record.output.outlineItems));
     }
-    if (isOpen(job.state))
-        return ExportController::tr("A copy is being saved as %1.").arg(path);
     if (job.state == JobState::Interrupted && !record.committed)
         return ExportController::tr("Last copy: interrupted while %1 was being written; it may or may not have been saved.")
             .arg(path);
@@ -127,8 +128,14 @@ void ExportController::prepare(const QString& bookId)
             p.suggestedPath = storage::suggestedExportPath(p.title, folder);
             if (auto exports = catalog::bookExports(db, book); exports && !exports.value().isEmpty()) {
                 const ExportRecord& latest = exports.value().first();
-                if (auto job = catalog::job(db, latest.job))
-                    p.lastExport = describeLastExport(latest, job.value());
+                if (auto job = catalog::job(db, latest.job)) {
+                    if (isOpen(job.value().state)) {
+                        p.openJob = job.value();
+                        p.openDestination = latest.destination;
+                    } else {
+                        p.lastExport = describeLastExport(latest, job.value());
+                    }
+                }
             }
             return p;
         })
@@ -142,6 +149,26 @@ void ExportController::prepare(const QString& bookId)
             m_suggestedPath = p.suggestedPath;
             m_lastExportText = p.lastExport;
             emit previewChanged();
+            if (p.openJob)
+                follow(*p.openJob, p.openDestination);
+        });
+}
+
+void ExportController::follow(const JobRecord& job, const QString& destination)
+{
+    // As if the copy had been asked for here: its progress, and Cancel.
+    m_job = job.id;
+    m_resultPath = destination;
+    setPhase(Phase::Waiting, tr("Waiting for the current work to finish…"));
+    onJobChanged(job);
+    // The job may have moved on between the preview and now, before this
+    // dialog followed it: read it once more. Any later change arrives as
+    // jobChanged, which is followed from here on.
+    const quint64 generation = m_generation;
+    m_library->run([id = job.id](QSqlDatabase& db) { return catalog::job(db, id); })
+        .then(this, [this, generation](const Result<JobRecord>& current) {
+            if (generation == m_generation && current)
+                onJobChanged(current.value());
         });
 }
 

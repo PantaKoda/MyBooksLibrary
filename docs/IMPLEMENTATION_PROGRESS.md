@@ -143,6 +143,17 @@ M09 is split in three:
 | `tst_exportcontroller` (new, 5 cases, **real SDK** analysis and export, non-ASCII names) | **Preview:** bookmarks, summary ("not changed"), notes when not complete, suggested name.<br>**Saved** through the job queue, from a file URL; a new file with a different digest.<br>**Same name again:** NeedsReplace; declining keeps the file, and confirming replaces it. The next preview names the last copy.<br>**Refused with reasons:** the library folder, an empty name, a book in Trash (no export), an unknown book.<br>**The real `ExportDialog.qml`:** the suggested name arrives with the preview, the summary shows, and **Save copy** writes the file and shows "Saved as".<br>**Partial coverage** (synthetic book): the exact "Left out" and "Top level" notes. Without SDK processors, "not available". |
 | `tst_exportjobs`, `tst_inspectorpane`, `tst_librarycontroller` | Pass, with the changed `exportRefused` signal. |
 
+**Review fixes (PR #23, review of `799f747`):**
+- **Enter in the path field** ran Save even when Save was disabled, for example while the window closes. It now does only what the Save button allows.
+- **Reopening the dialog while that book's copy waits or is being written** showed a still line. Now the preview returns the open export, and the dialog follows it as if started there: progress, result, and **Cancel saving**. The job is read once more after following, so a change in between is not missed.
+- **At the window's minimum size** (480×360), asking to replace pushed the buttons out of the dialog. The preview (title, summary, notes, last copy) now scrolls, and the path, progress and buttons stay visible.
+- **New tests:**
+  - in `tst_exportcontroller::theDialogPreviewsAndSaves`, Enter with `enabledForUse` false does nothing, and with it true it saves;
+  - `theDialogFitsASmallWindow`: 480×360 while asking to replace, and every button is inside the dialog;
+  - `reopeningFollowsACopyBeingSaved`: a copy queued with processing stopped, the dialog reopened, then Waiting, Cancel, and not saved.
+- **Controls:** with each fix undone in one build, the matching test fails. At the small size, Save ends at y 388, below the dialog's 344.
+- **Verification after the fixes:** `pwsh scripts/verify.ps1` Release and `-Configuration Debug` both **passed**, 29/29 tests.
+
 **UI evidence:** `docs/images/m09-export-dialog.png` (UI.md), captured by `tst_exportcontroller` with the Windows platform and an example destination.
 
 **M09 gate:**

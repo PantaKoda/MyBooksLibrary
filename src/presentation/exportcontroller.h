@@ -67,7 +67,9 @@ public:
     void setCoordinator(processing::ProcessingCoordinator* coordinator);
 
     // Loads the preview for a book and resets the export state. A previous
-    // request keeps running; its result is no longer shown here.
+    // request keeps running; its result is no longer shown here, unless it is
+    // this book's: a copy of it still waiting or being written is followed
+    // again (progress, result and Cancel).
     Q_INVOKABLE void prepare(const QString& bookId);
     // Asks for the copy at `destination` (a path or a file URL). With
     // `replace`, an existing file there is replaced -- only after the user
@@ -104,6 +106,7 @@ signals:
 
 private:
     void setPhase(Phase phase, const QString& text);
+    void follow(const domain::JobRecord& job, const QString& destination);
     void onQueued(const domain::ExportRecord& record);
     void onRefused(const domain::BookId& book, const QString& error, bool fileExists);
     void onJobChanged(const domain::JobRecord& job);
