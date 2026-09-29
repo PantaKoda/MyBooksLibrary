@@ -26,6 +26,9 @@ ColumnLayout {
     property int focusRow: 0  // The row that takes focus when the rows are rebuilt.
     // Beyond this height the rows scroll, so the buttons stay on screen.
     property real maximumRowsHeight: 280
+    // After Add, the rows follow their end while they are laid out (the new
+    // row's height arrives later on a slow machine), until the user scrolls.
+    property bool followEnd: false
     spacing: 8
 
     function people() {
@@ -45,10 +48,12 @@ ColumnLayout {
         editor.focusRow = editor.rows.length
         editor.restructure(list => list.push({ name: "", role: "author" }))
         // Show the new row: it is the last one.
-        Qt.callLater(() => {
-            const flick = rowScroll.contentItem as Flickable
-            flick.contentY = Math.max(0, flick.contentHeight - flick.height)
-        })
+        editor.followEnd = true
+        Qt.callLater(editor.showEnd)
+    }
+    function showEnd() {
+        const flick = rowScroll.contentItem as Flickable
+        flick.contentY = Math.max(0, flick.contentHeight - flick.height)
     }
     function save() {
         if (editor.isContributors)
@@ -155,6 +160,13 @@ ColumnLayout {
             Layout.preferredHeight: Math.min(rowColumn.implicitHeight, editor.maximumRowsHeight)
             contentWidth: availableWidth
             clip: true
+            Connections {
+                target: rowScroll.contentItem
+                enabled: editor.followEnd
+                function onContentHeightChanged() { editor.showEnd() }
+                function onHeightChanged() { editor.showEnd() }
+                function onMovementStarted() { editor.followEnd = false }
+            }
             ColumnLayout {
                 id: rowColumn
                 width: rowScroll.availableWidth

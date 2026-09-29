@@ -80,12 +80,17 @@ M10 is split in three:
 - **`--export-first <pdf>`** (development flag): when idle, the first book is saved as a copy with bookmarks through the Export dialog's session, and the app exits 1 unless it was saved. `verify.ps1`'s window check now uses it too.
 - **`scripts/toolchain.ps1`:** the toolchain setup (MSVC, CMake, Ninja, Qt and SDK checks), moved out of `verify.ps1` so both scripts use it.
 
-**Touched paths:** `scripts/{package.ps1,toolchain.ps1,verify.ps1}`, `tools/test_verify_guards.ps1`, `main.cpp`, `docs/`.
+**Touched paths:** `scripts/{package.ps1,toolchain.ps1,verify.ps1}`, `tools/test_verify_guards.ps1`, `main.cpp`, `docs/`; for the CI fix, `qml/inspector/MetadataFieldEditor.qml` and `tests/presentation/tst_inspectorpane.cpp`.
 
 | Command | Result |
 | --- | --- |
 | `pwsh scripts/package.ps1 -SdkDir <sdk>` | **PACKAGE PASSED**: 323 MB, zip 166 MB; Qt modules qtbase, qtdeclarative, qtpdf, qtsvg.<br>**From the copy in `%TEMP%`:** `sdk-check`, `sqlite-check` (fts5, bm25, remove_diacritics, prefix), and `reader-check` on `contents-book.pdf` (all PASS; `pdfquickplugin` and `Qt6PdfQuick` loaded from the package).<br>**OCR with the packaged models** on `image-only.pdf`: 4 pages OCR'd, 0 failed, peak 2.4 GB; all checks PASS.<br>**The window:** import, page 15, `export=saved` to "Βιβλίο (bookmarked).pdf" (10 404 bytes), `close: reader.open=0`. |
 | `pwsh scripts/verify.ps1` (Release) and `-Configuration Debug` | **Passed** in both configurations: guard tests, whitespace and text checks, configure, build, **30/30 tests**, and the smoke checks. The window check now reports `export=saved`. Verified on the working tree based on `0c682c3`. |
+
+**CI failure on the first head (`f9769c8`), twice:** `tst_inspectorpane::correctionDialogSavesAndSurvivesRefreshes` found the last of 27 contributor rows outside the scroll area. This was a real race in `MetadataFieldEditor.qml`, not caused by this PR, but exposed by a slower runner:
+- After **Add**, the list scrolled to its end once (`Qt.callLater`). When the layout settled later, the new row ended below the visible area.
+- Now the list follows its end while the rows or their view change size after Add, and stops as soon as the user scrolls.
+- The test also shrinks the rows' visible height after Add. With the fix disabled it fails like CI did (last row at y 565, rows ending at 375); with the fix it passes.
 
 **Found while packaging:** with `QT_QPA_PLATFORM=offscreen`, the packaged reader check waited on Qt's "no platform plugin" message box. The package ships only the Windows platform plugin, as users need. The checks now use the real platform and a time limit.
 
