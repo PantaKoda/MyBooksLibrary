@@ -6,6 +6,7 @@
 // imported. An existing file is kept unless replacing it was asked for.
 #pragma once
 
+#include "domain/export.h"
 #include "domain/result.h"
 #include "storage/librarylayout.h"
 
@@ -27,6 +28,10 @@ struct ExportDestinationRules {
 // asked for).
 domain::Result<QString> validateExportDestination(const QString& destination, const LibraryLayout& layout,
                                                   const ExportDestinationRules& rules);
+
+// The size and modification time of the file at `path`; nullopt when there
+// is no file (nothing, or a folder).
+std::optional<domain::FileIdentity> fileIdentity(const QString& path);
 
 // "<title> (bookmarked).pdf" in `folder`, with characters that file names
 // cannot hold replaced, and " (2)", " (3)"... added if the name is taken.

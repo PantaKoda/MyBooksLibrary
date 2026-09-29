@@ -126,6 +126,7 @@ private slots:
     void aCancelAfterTheCommitStillRecordsTheCopy();
     void aCancelBeforeTheCommitWritesNothing();
     void stopDuringAnExportDoesNotRequeueIt();
+    void onlyTheConfirmedFileIsReplaced();
     void sdkRefusalsAreRecorded();
     void withoutAnExporterExportsAreUnsupported();
 
@@ -147,6 +148,11 @@ private:
     // Enqueues through the coordinator and waits for the export to end.
     ExportRecord exportToEnd(const QString& destination, bool replace = false);
     JobId startExport(const QString& destination);  // Enqueues and waits until the exporter runs.
+    // Enqueues on a coordinator that is then stopped, so the export stays
+    // queued, as when the application closes while an analysis runs.
+    JobId queueWithoutRunning(const QString& destination, bool replace);
+    // A new coordinator (after a restart when `restart`) runs what is queued.
+    ExportRecord runQueued(const JobId& id, bool restart);
     QList<JobRecord> exportJobs()
     {
         QList<JobRecord> out;
@@ -251,6 +257,41 @@ JobId TestExportJobs::startExport(const QString& destination)
         return {};
     }
     return queued.first().at(0).value<ExportRecord>().job;
+}
+
+JobId TestExportJobs::queueWithoutRunning(const QString& destination, bool replace)
+{
+    auto* c = coordinator();
+    QSignalSpy queued(c, &ProcessingCoordinator::exportQueued);
+    c->enqueueExport(m_book, destination, replace);
+    c->stop();  // Before the request is answered: nothing starts.
+    if (!QTest::qWaitFor([&] { return !queued.isEmpty(); }, 10000)) {
+        QTest::qFail("the export was not queued", __FILE__, __LINE__);
+        return {};
+    }
+    return queued.first().at(0).value<ExportRecord>().job;
+}
+
+ExportRecord TestExportJobs::runQueued(const JobId& id, bool restart)
+{
+    m_coordinator.reset();
+    if (restart) {
+        m_library.reset();
+        auto reopened = Library::open(m_root->path());
+        if (!reopened)
+            qFatal("reopen failed");
+        m_library = std::move(reopened.value());
+    }
+    auto* c = coordinator();
+    if (!c->recover().result())
+        qFatal("recover failed");
+    QSignalSpy finished(c, &ProcessingCoordinator::exportFinished);
+    c->start();
+    if (!QTest::qWaitFor([&] { return !finished.isEmpty(); }, 20000)) {
+        QTest::qFail("the export did not finish", __FILE__, __LINE__);
+        return {};
+    }
+    return recordOf(id);
 }
 
 void TestExportJobs::writesTheCopyOnTheWorkerAndRecordsIt()
@@ -428,6 +469,58 @@ void TestExportJobs::stopDuringAnExportDoesNotRequeueIt()
     for (const JobRecord& j : exportJobs())
         QVERIFY(!isOpen(j.state));
     QCOMPARE(m_exporter->calls.load(), 1);
+}
+
+// Replacing is agreed for the file that was there when the user asked. An
+// export that waited (behind an analysis, or until the next session) never
+// replaces a file that is new or changed since.
+void TestExportJobs::onlyTheConfirmedFileIsReplaced()
+{
+    const auto writeText = [](const QString& path, const QByteArray& text) {
+        QFile f(path);
+        if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate) || f.write(text) != text.size())
+            qFatal("cannot write %s", qPrintable(path));
+    };
+    const auto readText = [](const QString& path) {
+        QFile f(path);
+        return f.open(QIODevice::ReadOnly) ? f.readAll() : QByteArray();
+    };
+
+    // The user agreed to replace Report.pdf, then saved another document
+    // under that name before the export ran in the next session.
+    const QString report = m_out->filePath(QStringLiteral("Report.pdf"));
+    writeText(report, "old report");
+    const JobId changed = queueWithoutRunning(report, true);
+    QCOMPARE(jobOf(changed).state, JobState::Queued);
+    QVERIFY(recordOf(changed).confirmedFile.has_value());
+    writeText(report, "a different document, saved later");
+    const ExportRecord refused = runQueued(changed, true);
+    QCOMPARE(refused.committed, std::optional<bool>(false));
+    QCOMPARE(jobOf(changed).state, JobState::Failed);
+    QCOMPARE(jobOf(changed).outcome, QStringLiteral("output_exists"));
+    QVERIFY(jobOf(changed).error.contains(QStringLiteral("changed since you chose to replace it")));
+    QCOMPARE(readText(report), QByteArray("a different document, saved later"));
+    QCOMPARE(m_exporter->calls.load(), 0);
+
+    // No file was there when the user asked; one appeared since.
+    const QString fresh = m_out->filePath(QStringLiteral("Fresh.pdf"));
+    const JobId appeared = queueWithoutRunning(fresh, true);
+    QVERIFY(!recordOf(appeared).confirmedFile.has_value());
+    writeText(fresh, "someone else's file");
+    QCOMPARE(runQueued(appeared, false).committed, std::optional<bool>(false));
+    QCOMPARE(jobOf(appeared).outcome, QStringLiteral("output_exists"));
+    QCOMPARE(readText(fresh), QByteArray("someone else's file"));
+    QCOMPARE(m_exporter->calls.load(), 0);
+
+    // The confirmed file, unchanged: it is replaced as agreed.
+    const QString same = m_out->filePath(QStringLiteral("Same.pdf"));
+    writeText(same, "confirmed");
+    const JobId unchanged = queueWithoutRunning(same, true);
+    const ExportRecord written = runQueued(unchanged, true);
+    QCOMPARE(written.committed, std::optional<bool>(true));
+    QCOMPARE(m_exporter->calls.load(), 1);
+    QVERIFY(m_exporter->replaceExisting);
+    QVERIFY(readText(same).startsWith("%PDF"));
 }
 
 void TestExportJobs::sdkRefusalsAreRecorded()

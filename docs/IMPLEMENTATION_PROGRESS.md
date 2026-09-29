@@ -104,6 +104,15 @@ M09 is split in three:
 - no second destination check: `tst_exportjobs::theDestinationIsCheckedAgainBeforeTheWrite`;
 - exports requeued on recovery: `tst_exports::restartDoesNotRequeueAnExport`.
 
+**Review fixes (PR #22, review of `cbd2000`):**
+- **Should fix, replacing a file nobody confirmed:** a queued export with "replace" could run later, in the same session behind an analysis or in the next one, and overwrite whatever file was at the path by then.
+  - Now the request records the confirmed file's size and modification time in `exports.replace_size` and `replace_modified`, or that none was there.
+  - Before the write, a new or different file is kept, and the job fails `output_exists` without an SDK call.
+  - New `tst_exportjobs::onlyTheConfirmedFileIsReplaced`, the reviewer's scenario: the file is changed and the library restarts before the export runs. It also covers a file that appears where none was, and an unchanged confirmed file, which is replaced as agreed. New `tst_exports::theConfirmedFileIsRecorded`.
+  - **Control:** without the check, the later document is replaced (`committed` true) and the test fails.
+  - **Verification after the fix:** `pwsh scripts/verify.ps1` Release and `-Configuration Debug` both **passed**, 28/28 tests.
+- **Note for part 3:** an export asked for while an analysis runs waits for it. The dialog should say "Waiting".
+
 **Found while testing:** a helper in the new test looped over `db(...).value()` of a temporary `Result` (a use-after-free, which crashed only in Release). It is fixed in the test, and no product code has the pattern.
 
 **Not in this part:** the Export dialog, the controller wiring of `SdkBookExporter`, and showing export records (part 3).

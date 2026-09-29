@@ -321,7 +321,8 @@ QList<Migration> buildMigrations()
                        "WHERE state IN ('queued', 'running')"),
         QStringLiteral("CREATE INDEX jobs_by_state ON jobs(state, created_at)"),
         // What an export job was asked to write and what it wrote. Its state,
-        // times and error are the job's. `committed` is NULL until the job
+        // times and error are the job's. replace_size/replace_modified: the
+        // file the user agreed to replace (NULL: none was there). `committed` is NULL until the job
         // reports (and stays NULL if the application stopped while writing).
         // The plan is the application's (see domain::exportPlanToJson); the
         // SDK's own plan JSON is kept as it was sent.
@@ -330,6 +331,8 @@ QList<Migration> buildMigrations()
             book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
             destination TEXT NOT NULL CHECK (length(destination) > 0),
             replace_existing INTEGER NOT NULL CHECK (replace_existing IN (0, 1)),
+            replace_size INTEGER CHECK (replace_size IS NULL OR replace_size >= 0),
+            replace_modified TEXT,
             toc_run_id TEXT,
             toc_revision_id TEXT,
             plan_json TEXT NOT NULL,
@@ -341,7 +344,9 @@ QList<Migration> buildMigrations()
             source_unchanged INTEGER CHECK (source_unchanged IS NULL OR source_unchanged IN (0, 1)),
             sdk_version TEXT,
             sdk_plan_json TEXT,
-            CHECK (committed IS NOT 1 OR output_sha256 IS NOT NULL)))"),
+            CHECK (committed IS NOT 1 OR output_sha256 IS NOT NULL),
+            CHECK ((replace_size IS NULL) = (replace_modified IS NULL)),
+            CHECK (replace_existing = 1 OR replace_size IS NULL)))"),
         QStringLiteral("CREATE INDEX exports_book ON exports(book_id)"),
     };
     return {v1, v2, v3, v4, v5, v6, v7, v8};

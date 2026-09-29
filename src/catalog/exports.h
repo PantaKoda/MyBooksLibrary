@@ -26,11 +26,15 @@ domain::Result<ProtectedFiles> protectedFiles(QSqlDatabase& db);
 
 // In one transaction: builds the plan from the book's effective contents
 // (its edited revision, else its analysis) and queues an export job with its
-// record. The caller has validated `destination`. Fails with NotFound,
-// Trashed, InvalidArgument (no contents, or nothing to bookmark), or
-// Duplicate when an export of the book is already waiting or running.
+// record. The caller has validated `destination`. With `replaceExisting`,
+// `confirmedFile` is the file there that the user agreed to replace (nullopt:
+// none was there); it is recorded so that a different file is never replaced.
+// Fails with NotFound, Trashed, InvalidArgument (no contents, or nothing to
+// bookmark), or Duplicate when an export of the book is already waiting or
+// running.
 domain::Result<domain::ExportRecord> enqueueExport(QSqlDatabase& db, const domain::BookId& book,
-                                                   const QString& destination, bool replaceExisting);
+                                                   const QString& destination, bool replaceExisting,
+                                                   const std::optional<domain::FileIdentity>& confirmedFile = std::nullopt);
 
 // In one transaction: closes a Running or CancelRequested export job with
 // what the SDK reported. A committed copy always closes Succeeded ("written"),

@@ -22,7 +22,8 @@ const QString kSelect = QStringLiteral(
     "SELECT e.job_id, e.book_id, e.destination, e.replace_existing, e.toc_run_id, e.toc_revision_id, e.plan_json, "
     "CASE WHEN e.committed IS NULL AND j.started_at IS NULL AND j.state NOT IN ('queued', 'running', "
     "'cancel_requested') THEN 0 ELSE e.committed END, e.output_sha256, e.outline_items, e.output_page_count, "
-    "e.structure_matches, e.source_unchanged, e.sdk_version, e.sdk_plan_json, j.created_at, j.finished_at "
+    "e.structure_matches, e.source_unchanged, e.sdk_version, e.sdk_plan_json, j.created_at, j.finished_at, "
+    "e.replace_size, e.replace_modified "
     "FROM exports e JOIN jobs j ON j.id = e.job_id");
 
 QVariant textOrNull(const QString& text)
@@ -57,6 +58,9 @@ Result<ExportRecord> readRecord(const QSqlQuery& q)
     r.output.sdkPlanJson = q.value(14).toString();
     r.createdAt = QDateTime::fromString(q.value(15).toString(), Qt::ISODateWithMs);
     r.finishedAt = QDateTime::fromString(q.value(16).toString(), Qt::ISODateWithMs);
+    if (!q.value(17).isNull())
+        r.confirmedFile = FileIdentity{q.value(17).toLongLong(),
+                                       QDateTime::fromString(q.value(18).toString(), Qt::ISODateWithMs).toUTC()};
     return r;
 }
 
@@ -77,7 +81,7 @@ Result<ProtectedFiles> protectedFiles(QSqlDatabase& db)
 }
 
 Result<ExportRecord> enqueueExport(QSqlDatabase& db, const BookId& book, const QString& destination,
-                                   bool replaceExisting)
+                                   bool replaceExisting, const std::optional<FileIdentity>& confirmedFile)
 {
     if (destination.trimmed().isEmpty())
         return makeError(ErrorCode::InvalidArgument, QStringLiteral("Choose where to save the copy."));
@@ -117,7 +121,7 @@ Result<ExportRecord> enqueueExport(QSqlDatabase& db, const BookId& book, const Q
     if (!q.exec())
         return sqlError(q);
     q.prepare(QStringLiteral("INSERT INTO exports(job_id, book_id, destination, replace_existing, toc_run_id, "
-                             "toc_revision_id, plan_json) VALUES (?, ?, ?, ?, ?, ?, ?)"));
+                             "toc_revision_id, plan_json, replace_size, replace_modified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"));
     q.addBindValue(id.toString());
     q.addBindValue(book.toString());
     q.addBindValue(destination);
@@ -125,6 +129,10 @@ Result<ExportRecord> enqueueExport(QSqlDatabase& db, const BookId& book, const Q
     q.addBindValue(details.value().tocRun ? textOrNull(details.value().tocRun->toString()) : textOrNull({}));
     q.addBindValue(details.value().tocRevision ? textOrNull(details.value().tocRevision->id.toString()) : textOrNull({}));
     q.addBindValue(exportPlanToJson(plan.value()));
+    const bool confirmed = replaceExisting && confirmedFile;
+    q.addBindValue(confirmed ? QVariant(confirmedFile->size) : QVariant(QMetaType(QMetaType::LongLong)));
+    q.addBindValue(confirmed ? QVariant(confirmedFile->modified.toUTC().toString(Qt::ISODateWithMs))
+                             : QVariant(QMetaType(QMetaType::QString)));
     if (!q.exec())
         return sqlError(q);
     auto record = exportRecord(db, id);

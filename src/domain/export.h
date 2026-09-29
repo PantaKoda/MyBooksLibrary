@@ -93,6 +93,15 @@ struct ExportOutput {
     QString sdkPlanJson;  // The plan as the SDK serialized it, when it got that far.
 };
 
+// A file as it was when looked at: enough to tell that it was replaced or
+// changed since (another size or modification time).
+struct FileIdentity {
+    qint64 size = 0;
+    QDateTime modified;  // UTC, millisecond precision.
+    bool operator==(const FileIdentity& other) const { return size == other.size && modified == other.modified; }
+    bool operator!=(const FileIdentity& other) const { return !(*this == other); }
+};
+
 // One request to write a bookmarked copy of a book, and what came of it. Its
 // job (same ID) holds the state; the record holds what was asked and written.
 struct ExportRecord {
@@ -100,6 +109,10 @@ struct ExportRecord {
     BookId book;
     QString destination;             // Absolute path, as validated when requested.
     bool replaceExisting = false;
+    // With replaceExisting: the file the user agreed to replace, as it was
+    // when they asked (nullopt: no file was there). Any other file found at
+    // the destination before the write is kept, and nothing is written.
+    std::optional<FileIdentity> confirmedFile;
     ExportPlan plan;                 // Built from the effective contents when requested.
     std::optional<RunId> tocRun;     // The analysis the contents came from...
     std::optional<TocRevisionId> tocRevision;  // ...and the edited revision, if one was active.

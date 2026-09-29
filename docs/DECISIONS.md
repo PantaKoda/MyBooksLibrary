@@ -490,4 +490,5 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - **Exports first:** they take seconds and the user is waiting. Metadata and contents jobs take minutes with OCR.
   - **Never requeued:** an export interrupted by closing or a crash is not written again by itself. After a crash the copy may or may not exist (`committed` stays unknown), and writing again could replace it or fail on it. The user decides.
   - **No Retry in the queue:** an export is asked for again from the Export dialog (part 3), where the destination and replacement are chosen again.
+  - **Replacing is bound to the confirmed file:** the user agrees to replace the file they saw. Its size and modification time are recorded with the request, or that there was none. A queued export may wait behind an analysis or until the next session, and never replaces a file that is new or changed since. Size and time rather than a SHA-256: they cost nothing on the database thread and catch a document saved over the name. A change that keeps both exactly is not detected, which is an accepted limit (review of PR #22).
 - **Verified:** See IMPLEMENTATION_PROGRESS.md, M09 part 2.

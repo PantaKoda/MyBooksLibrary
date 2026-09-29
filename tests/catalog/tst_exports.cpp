@@ -12,6 +12,7 @@
 #include <QSqlQuery>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QTimeZone>
 
 using namespace mbl::domain;
 using mbl::catalog::Library;
@@ -67,6 +68,7 @@ private slots:
     void restartDoesNotRequeueAnExport();
     void trashEndsExportsAndRestoreDoesNotResumeThem();
     void protectedFilesListEveryBook();
+    void theConfirmedFileIsRecorded();
 
 private:
     template <typename Task>
@@ -397,6 +399,31 @@ void TestExports::protectedFilesListEveryBook()
     QCOMPARE(QSet<QString>(files.value().originalPaths.cbegin(), files.value().originalPaths.cend()),
              (QSet<QString>{QStringLiteral("C:/Downloads/a.pdf"), QStringLiteral("C:/Downloads/b.pdf")}));
     Q_UNUSED(a);
+}
+
+// The file the user agreed to replace is kept with the request (and only
+// when replacing), so the worker can tell it from a later file.
+void TestExports::theConfirmedFileIsRecorded()
+{
+    const BookId book = addBook(QStringLiteral("book.pdf"));
+    publish(book, {entry(QStringLiteral("a"), 0, QStringLiteral("Intro"), 0)});
+    const BookId other = addBook(QStringLiteral("other.pdf"));
+    publish(other, {entry(QStringLiteral("a"), 0, QStringLiteral("Intro"), 0)});
+    const FileIdentity file{1234, QDateTime(QDate(2026, 9, 29), QTime(10, 11, 12, 345), QTimeZone::UTC)};
+    const QString destination = m_out.filePath(QStringLiteral("Report.pdf"));
+    auto replacing = db([book, destination, file](QSqlDatabase& d) {
+        return catalog::enqueueExport(d, book, destination, true, file);
+    });
+    QVERIFY(replacing);
+    QCOMPARE(replacing.value().confirmedFile, std::optional<FileIdentity>(file));
+    QCOMPARE(record(replacing.value().job).confirmedFile, std::optional<FileIdentity>(file));
+
+    // Not replacing: nothing to confirm, whatever is passed.
+    auto keeping = db([other, destination, file](QSqlDatabase& d) {
+        return catalog::enqueueExport(d, other, destination, false, file);
+    });
+    QVERIFY(keeping);
+    QVERIFY(!keeping.value().confirmedFile);
 }
 
 QTEST_GUILESS_MAIN(TestExports)

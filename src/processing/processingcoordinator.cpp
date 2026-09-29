@@ -7,6 +7,7 @@
 #include "storage/exportdestination.h"
 #include "storage/reportstore.h"
 
+#include <QDir>
 #include <QElapsedTimer>
 #include <QMetaObject>
 #include <QMutexLocker>
@@ -147,7 +148,9 @@ void ProcessingCoordinator::enqueueExport(const BookId& book, const QString& des
                 destination, layout, destinationRules(layout, files.value(), replaceExisting));
             if (!checked)
                 return checked.error();
-            auto record = catalog::enqueueExport(db, book, checked.value(), replaceExisting);
+            // The file the user agreed to replace, as it is now (or that none is there).
+            const auto confirmed = replaceExisting ? storage::fileIdentity(checked.value()) : std::nullopt;
+            auto record = catalog::enqueueExport(db, book, checked.value(), replaceExisting, confirmed);
             if (!record)
                 return record.error();
             auto job = catalog::job(db, record.value().job);
@@ -389,6 +392,19 @@ void ProcessingCoordinator::runExportJob(const JobRecord& job, const QString& pd
                                                                       : QStringLiteral("destination_refused"),
                      destination.error().message, {});
         return;
+    }
+    // Replacing was agreed for the file that was there when the user asked.
+    // The export may have waited (behind an analysis, or until the next
+    // session): a file that is new or changed since is never replaced.
+    if (record.value().replaceExisting) {
+        const auto now = storage::fileIdentity(destination.value());
+        if (now && now != record.value().confirmedFile) {
+            finishExport(job, JobState::Failed, QStringLiteral("output_exists"),
+                         QStringLiteral("The file %1 changed since you chose to replace it; nothing was written.")
+                             .arg(QDir::toNativeSeparators(destination.value())),
+                         {});
+            return;
+        }
     }
 
     // The SDK call, on this worker thread. It verifies the copy before it
