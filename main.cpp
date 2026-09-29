@@ -248,7 +248,14 @@ int main(int argc, char *argv[])
             }
             // --export-first: through the Export dialog's session, as a user would.
             mbl::presentation::ExportController* exporter = library.exporter();
-            if (*exportStage == 0 && library.books()->rowCount() > 0) {
+            if (*exportStage == 0 && library.books()->rowCount() == 0) {
+                // Idle with no book (the import failed, or nothing was imported):
+                // fail at once rather than wait for one.
+                *exportStage = 3;
+                *exportFailed = true;
+                QTextStream(stdout) << "export=NOT SAVED: the library has no book" << Qt::endl;
+            }
+            if (*exportStage == 0) {
                 *exportStage = 1;
                 exporter->prepare(library.books()->bookIdAt(0));
             }

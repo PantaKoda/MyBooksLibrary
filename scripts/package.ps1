@@ -15,8 +15,13 @@
        - the Visual C++ runtime DLLs, app-local (vcruntime, msvcp).
     3. licenses\: NOTICE.txt (what is shipped, under which licence), Qt's
        licence text and the SBOM of every Qt module whose files are shipped,
-       and the pdfbookmark SDK's third-party licences. A shipped Qt file whose
-       module is not known stops the script, so no notice is silently missing.
+       the pdfbookmark SDK's third-party licences, and the OCR models' licence
+       (from the SDK, or -ModelsLicenseFile while the SDK lacks it). A shipped
+       Qt or SDK file whose licence is not known, or a missing licence, stops
+       the script, so no notice is silently missing.
+       Then every shipped binary's imports (dumpbin): anything neither shipped
+       nor a known Windows component stops the script. Media Foundation, which
+       Windows "N" editions lack without the Media Feature Pack, is reported.
     4. Smoke checks on a copy outside the repository, with PATH reduced to
        Windows' own folders, no Qt variables and the real platform, each with
        a time limit: --sdk-check, --sqlite-check,
@@ -26,7 +31,7 @@
     5. build\package\MyBooksLibrary-<version>-win64.zip (unless -SkipZip).
 
 .EXAMPLE
-    pwsh scripts/package.ps1 -SdkDir C:\Dev\pdfbookmark-sdk\0.3.0
+    pwsh scripts/package.ps1 -SdkDir C:\Dev\pdfbookmark-sdk\0.3.0 -ModelsLicenseFile C:\Dev\PaddleOCR\LICENSE
 #>
 [CmdletBinding()]
 param(
@@ -36,6 +41,9 @@ param(
     [string]$QtDir = $(if ($env:QT_ROOT_DIR) { $env:QT_ROOT_DIR } else { 'C:\Qt\6.11.2\msvc2022_64' }),
     # Qt's licence text; defaults to the Licenses folder of a Qt online installation.
     [string]$QtLicenseFile = '',
+    # The PaddleOCR licence (Apache-2.0) for the OCR models in models\, used while
+    # the SDK does not ship it itself (its licenses\PaddleOCR-PP-OCR-models.txt).
+    [string]$ModelsLicenseFile = '',
     [switch]$SkipZip
 )
 
@@ -86,6 +94,45 @@ function Invoke-App([string]$App, [string[]]$Arguments, [int]$TimeoutSeconds) {
     }
     $process.WaitForExit()
     return [pscustomobject]@{ Code = $process.ExitCode; Output = "$($stdout.Result)$($stderr.Result)" }
+}
+
+# The licence files (in the SDK's share\doc\pdfbookmark\licenses) that each
+# shipped SDK component needs. A shipped SDK DLL not listed here, or a listed
+# licence that is missing, stops the script: no SDK notice goes missing either.
+$sdkNotices = [ordered]@{
+    'pdfbookmark.dll'     = @()  # The SDK itself.
+    'onnxruntime.dll'     = @('ONNX-Runtime.txt', 'ONNX-Runtime-third-party-notices.txt')
+    'opencv_world500.dll' = @('OpenCV.txt')
+    'pdfium.dll'          = @('PDFium.txt')
+    'qpdf30.dll'          = @('qpdf.txt')
+    'jpeg62.dll'          = @('libjpeg-turbo.txt')
+    'z.dll'               = @('zlib.txt')
+}
+$modelsNotice = 'PaddleOCR-PP-OCR-models.txt'  # The OCR models in models\ (PaddleOCR PP-OCR, Apache-2.0).
+
+# Imports the package may leave to Windows. Any other import of a shipped
+# binary that the package does not ship itself stops the script, so "runs on
+# a clean machine" is checked here, not only on one.
+$windowsImports = '^(api-ms-win-[\w-]+|ext-ms-win-[\w-]+|advapi32|authz|bcrypt|comdlg32|crypt32|d3d9|d3d11|d3d12|dbghelp|dnsapi|dwmapi|dwrite|dxgi|gdi32|icuuc|imm32|iphlpapi|kernel32|mpr|ncrypt|netapi32|ntdll|ole32|oleaut32|secur32|setupapi|shell32|shlwapi|uiautomationcore|user32|userenv|uxtheme|version|winhttp|winmm|ws2_32|wtsapi32)\.dll$'
+# Windows components missing from Windows "N" editions unless the Media
+# Feature Pack is installed: allowed, and reported (docs/BUILDING.md).
+$mediaFoundationImports = '^(mf|mfplat|mfreadwrite)\.dll$'
+
+# The DLLs a binary imports: 'direct' ones are needed to start, 'delay' ones
+# when first used (dumpbin /dependents, from the Visual C++ tools).
+function Get-Imports([string]$Binary) {
+    $imports = [System.Collections.Generic.List[object]]::new()
+    $section = ''
+    foreach ($line in (dumpbin /nologo /dependents $Binary)) {
+        if ($line -match 'Image has the following dependencies') { $section = 'direct'; continue }
+        if ($line -match 'Image has the following delay load dependencies') { $section = 'delay'; continue }
+        if ($line -match '^\s*Summary') { $section = '' }
+        if ($section -and $line -match '^\s+(\S+\.(dll|drv))\s*$') {
+            $imports.Add([pscustomobject]@{ Kind = $section; Name = $Matches[1].ToLowerInvariant() })
+        }
+    }
+    if ($LASTEXITCODE -ne 0) { throw "dumpbin failed on $Binary" }
+    return $imports
 }
 
 function Get-QtModule([string]$RelativePath) {
@@ -153,6 +200,25 @@ try {
         if (-not $found) { throw "The SBOM of Qt module $module was not found ($sbom)." }
         $found | Copy-Item -Destination (Join-Path $licenses 'qt')
     }
+    # Every shipped SDK component with its licences, and the OCR models'.
+    $sdkLicenses = Join-Path $licenses 'pdfbookmark'
+    if (-not (Test-Path -LiteralPath (Join-Path $sdkLicenses $modelsNotice))) {
+        if (-not $ModelsLicenseFile -or -not (Test-Path -LiteralPath $ModelsLicenseFile -PathType Leaf)) {
+            throw "The SDK ships no licence for the OCR models in models\ ($modelsNotice). Pass the PaddleOCR licence " +
+                  "(Apache-2.0, the LICENSE file of github.com/PaddlePaddle/PaddleOCR) with -ModelsLicenseFile."
+        }
+        Copy-Item -LiteralPath $ModelsLicenseFile (Join-Path $sdkLicenses $modelsNotice)
+    }
+    foreach ($dll in Get-ChildItem -Path $stage -Filter '*.dll' -File | Where-Object { $sdkDlls -contains $_.Name }) {
+        if (-not $sdkNotices.Contains($dll.Name)) {
+            throw "No licence is known for the shipped SDK file $($dll.Name); add it to `$sdkNotices."
+        }
+        foreach ($needed in $sdkNotices[$dll.Name]) {
+            if (-not (Test-Path -LiteralPath (Join-Path $sdkLicenses $needed))) {
+                throw "The licence $needed for $($dll.Name) is missing from the SDK's licences."
+            }
+        }
+    }
     $sdkVersion = Split-Path -Leaf $SdkDir
     $qtVersion = (Split-Path -Leaf (Split-Path -Parent $QtDir))
     $notice = @"
@@ -168,15 +234,42 @@ Qt $qtVersion (The Qt Company), modules: $($modules -join ', ')
   inside each shipped Qt module (for example PDFium in Qt PDF) are listed,
   with their licences, in its SBOM: licenses\qt\<module>-$qtVersion.spdx.json.
 
-pdfbookmark SDK $sdkVersion (PantaKoda/PDFMegine), with the OCR models in models\
+pdfbookmark SDK $sdkVersion (PantaKoda/PDFMegine)
   Third-party licences: licenses\pdfbookmark\ (ONNX Runtime and its notices,
   OpenCV, PDFium, qpdf, libjpeg-turbo, zlib).
 
+OCR models in models\: PaddleOCR PP-OCR models (PaddlePaddle Authors)
+  Used under the Apache License 2.0 (licenses\pdfbookmark\$modelsNotice).
+
 Microsoft Visual C++ runtime ($($crtDir.Name))
   Redistributed under the Microsoft Visual Studio license terms.
+
+Windows "N" and "KN" editions need the Media Feature Pack: the OCR library
+(OpenCV) uses Windows Media Foundation.
 "@
     Set-Content -LiteralPath (Join-Path $licenses 'NOTICE.txt') -Value $notice -Encoding utf8
     Copy-Item -LiteralPath (Join-Path $licenses 'NOTICE.txt') (Join-Path $stage 'NOTICE.txt')
+
+    Write-Host '==> Imports (what the package leaves to Windows)'
+    $shipped = @{}
+    Get-ChildItem -Path $stage -Recurse -Include '*.dll', '*.exe' | ForEach-Object { $shipped[$_.Name.ToLowerInvariant()] = $true }
+    $mediaFoundation = [System.Collections.Generic.SortedSet[string]]::new()
+    foreach ($binary in Get-ChildItem -Path $stage -Recurse -Include '*.dll', '*.exe') {
+        foreach ($import in Get-Imports $binary.FullName) {
+            if ($shipped.ContainsKey($import.Name) -or $import.Name -match $windowsImports) { continue }
+            $relative = $binary.FullName.Substring($stage.Length + 1)
+            if ($import.Name -match $mediaFoundationImports) {
+                [void]$mediaFoundation.Add("$relative -> $($import.Name)")
+            } elseif ($import.Kind -eq 'delay') {
+                Write-Host "warning: $relative loads $($import.Name) when first used; it is neither shipped nor a known Windows component"
+            } else {
+                throw "$relative needs $($import.Name), which is neither shipped nor a known Windows component."
+            }
+        }
+    }
+    foreach ($entry in $mediaFoundation) {
+        Write-Host "note: $entry (Media Foundation: Windows N editions need the Media Feature Pack)"
+    }
 
     Write-Host '==> Smoke checks outside the repository'
     $trial = Join-Path ([IO.Path]::GetTempPath()) "mbl-package-$([guid]::NewGuid().ToString('N'))"

@@ -104,8 +104,10 @@ pwsh scripts/verify.ps1 -Configuration Debug -Clean                        # SDK
 ## Windows package (`scripts/package.ps1`)
 
 ```powershell
-pwsh scripts/package.ps1 -SdkDir C:\Dev\pdfbookmark-sdk\0.3.0
+pwsh scripts/package.ps1 -SdkDir C:\Dev\pdfbookmark-sdk\0.3.0 -ModelsLicenseFile C:\Dev\PaddleOCR\LICENSE
 ```
+
+`-ModelsLicenseFile` is the PaddleOCR licence (Apache-2.0: the `LICENSE` file of github.com/PaddlePaddle/PaddleOCR) for the OCR models. SDK 0.3.0 does not ship it ([PantaKoda/PDFMegine#6](https://github.com/PantaKoda/PDFMegine/issues/6)), and the script refuses to package the models without it.
 
 It builds `appMyBooksLibrary` (Release, no tests) in `build\package-release`, then writes `build\package\MyBooksLibrary\` and `build\package\MyBooksLibrary-<version>-win64.zip`. The package holds:
 
@@ -114,7 +116,11 @@ It builds `appMyBooksLibrary` (Release, no tests) in `build\package-release`, th
 | `appMyBooksLibrary.exe`, the pdfbookmark DLLs, `models\` | The build folder, where `pdfbookmark_deploy_runtime` placed the SDK's runtime and OCR models. |
 | Qt DLLs, `platforms\`, `sqldrivers\qsqlite.dll`, `qml\` (including `QtQuick\Pdf`) | `windeployqt --release --qmldir qml`. It ships only the SQLite driver, and leaves out software OpenGL, the D3D and DXC shader compilers (Qt Quick's Direct3D 11 backend uses precompiled shaders), QML debugging plugins and translations. |
 | `vcruntime140*.dll`, `msvcp140*.dll`, … | The Visual C++ runtime, app-local, from `VCToolsRedistDir`. |
-| `NOTICE.txt`, `licenses\` | Qt's licence text (`C:\Qt\Licenses\LICENSE` by default, or `-QtLicenseFile`), the SBOM of **every Qt module whose files are shipped**, listing its third-party components (for example PDFium in Qt PDF), and the SDK's `share\doc\pdfbookmark\licenses`. A shipped Qt file whose module the script does not know stops it, so no notice goes missing silently. |
+| `NOTICE.txt`, `licenses\` | Qt's licence text (`C:\Qt\Licenses\LICENSE` by default, or `-QtLicenseFile`), the SBOM of **every Qt module whose files are shipped**, listing its third-party components (for example PDFium in Qt PDF), the SDK's `share\doc\pdfbookmark\licenses`, and the OCR models' licence. Each shipped Qt file is mapped to its module and each SDK DLL to its licence files. An unmapped file or a missing licence stops the script, so no notice goes missing silently. |
+
+It then checks **what the package leaves to Windows**. It runs `dumpbin /dependents` on every shipped binary. An import that is neither shipped nor a known Windows component stops the script (delay-loaded imports only warn), which checks "runs on a clean machine" here, not only on a clean machine.
+
+**Windows N editions:** the SDK's `opencv_world500.dll` imports Media Foundation (`mf.dll`, `mfplat.dll`, `mfreadwrite.dll`) directly. The script reports this, and `NOTICE.txt` says it: on Windows "N" and "KN" editions the app needs the **Media Feature Pack**, or it does not start. This is reported upstream as [PantaKoda/PDFMegine#7](https://github.com/PantaKoda/PDFMegine/issues/7).
 
 Then it **checks the package from a copy outside the repository**, with `PATH` reduced to Windows' own folders, no Qt variables and the real platform, each run with a time limit:
 - `--sdk-check`, `--sqlite-check` (FTS5);
