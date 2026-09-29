@@ -525,6 +525,18 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - **Not in a backup:** `derivatives/`, `cache/` and `staging/`. Nothing in them is needed, and an interrupted import in a restored library is closed as abandoned by the usual recovery.
 - **Verified:** See IMPLEMENTATION_PROGRESS.md, M10 part 1.
 
+## 2026-09-29 — M10 part 2: the Windows package
+
+- **Change:** `scripts/package.ps1` builds, stages and zips a self-contained Windows package, with notices, and checks it from a copy outside the repository. `scripts/toolchain.ps1` holds the toolchain setup shared with `verify.ps1`. The development flag `--export-first` exercises export in the packaged and verified window.
+- **Why:** AGENTS.md §10 and §12 ask for the M10 release gate: a clean packaged runtime including models, SQL and the reader, started outside the build tree, and exercising models, FTS5, embedded viewing and safe export. They also require the shipped components' licence notices, and note that Qt's deployment tools alone do not collect every SDK resource.
+- **Assumptions:**
+  - **A zip, not an installer:** a folder that runs where it is unpacked. The library lives in the user's data folder (or `--library`), never next to the executable.
+  - **Visual C++ runtime app-local:** no separate redistributable installer to run, and the SDK needs the same runtime.
+  - **Lean Qt deployment:** only the SQLite SQL driver. No software OpenGL (Mesa), and no D3D or DXC compiler: Qt Quick's Direct3D 11 backend uses precompiled shaders. Checked by running the packaged window on the real platform. No QML debugging plugins (they pulled in Qt Quick 3D) and no translations (the app has none yet).
+  - **Notices by construction:** each shipped Qt file is mapped to its Qt module, and that module's SBOM (its third-party components with their licences) is shipped with Qt's licence text. An unmapped file stops the script, so a new dependency cannot be shipped without its notice.
+  - **Smoke checks on the real platform:** the package ships no offscreen plugin, because users do not need it. The checks open real windows briefly, so running the script needs a desktop session.
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, M10 part 2.
+
 ## 2026-09-29 — M10 part 3: Back up… and Restore… in the window
 
 - **Change:** `BackupController` and `BackupDialog.qml`, opened from the toolbar's Backup menu, run part 1's backup and restore off the GUI thread.
