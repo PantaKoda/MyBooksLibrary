@@ -31,6 +31,7 @@
 //                                            or pipe stdout to see the output.
 #include "app/libraryroot.h"
 #include "infrastructure/sqlitecapabilities.h"
+#include "processing/sdk/sdkbookexporter.h"
 #include "processing/sdk/sdkinfo.h"
 #include "processing/sdk/sdkcontentsanalyzer.h"
 #include "processing/sdk/sdkmetadataextractor.h"
@@ -176,6 +177,7 @@ int main(int argc, char *argv[])
     mbl::presentation::LibraryController library;
     library.setProcessors(std::make_shared<mbl::sdk::SdkMetadataExtractor>(),
                           std::make_shared<mbl::sdk::SdkContentsAnalyzer>(), mbl::sdk::querySdkIdentity().modelsFound);
+    library.setExporter(std::make_shared<mbl::sdk::SdkBookExporter>());
     QQmlApplicationEngine engine;
     QObject::connect(
         &engine,

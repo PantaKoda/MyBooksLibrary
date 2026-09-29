@@ -15,7 +15,7 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | M06 Search/read | Merged: part 1 [PR #14](https://github.com/PantaKoda/MyBooksLibrary/pull/14) (merge `c8dc23e`); part 2 [PR #15](https://github.com/PantaKoda/MyBooksLibrary/pull/15) (merge `e964184`) | `feat/m06-presentation-search`; `feat/m06-reader-chapter-navigation` | See "M06" |
 | M07 Corrections/reruns | Merged: part 1 [PR #16](https://github.com/PantaKoda/MyBooksLibrary/pull/16) (merge `152eb8c`); part 2a [PR #17](https://github.com/PantaKoda/MyBooksLibrary/pull/17) (merge `c215319`); part 2b [PR #18](https://github.com/PantaKoda/MyBooksLibrary/pull/18) (merge `f40b99c`) | `feat/m07-presentation-metadata-corrections`; `feat/m07-a2-toc-edits`; `feat/m07-presentation-toc-editing` | See "M07" |
 | M08 Organization | Merged: part 1 [PR #19](https://github.com/PantaKoda/MyBooksLibrary/pull/19) (merge `7052536`); part 2 [PR #20](https://github.com/PantaKoda/MyBooksLibrary/pull/20) (merge `c182ec3`). Permanent deletion of trashed books remains open | `feat/m08-a2-collections-trash`; `feat/m08-presentation-organization` | See "M08" |
-| M09 Export | Part 1 Merged ([PR #21](https://github.com/PantaKoda/MyBooksLibrary/pull/21), merge `acc2b89`); part 2 AwaitingReview ([PR #22](https://github.com/PantaKoda/MyBooksLibrary/pull/22), export records and jobs) | `feat/m09-a1-export-core`; `feat/m09-a2-export-jobs` | See "M09" |
+| M09 Export | Parts 1 and 2 Merged ([PR #21](https://github.com/PantaKoda/MyBooksLibrary/pull/21), merge `acc2b89`; [PR #22](https://github.com/PantaKoda/MyBooksLibrary/pull/22), merge `f2bd6b4`); part 3 InProgress (the Export dialog) | `feat/m09-a1-export-core`; `feat/m09-a2-export-jobs`; `feat/m09-presentation-export` | See "M09" |
 | M10–M11 | NotStarted | | |
 
 ## M09 — Export
@@ -117,7 +117,40 @@ M09 is split in three:
 
 **Not in this part:** the Export dialog, the controller wiring of `SdkBookExporter`, and showing export records (part 3).
 
-**Next action:** review of [PR #22](https://github.com/PantaKoda/MyBooksLibrary/pull/22). Then M09 part 3.
+**Next action:** merged ([PR #22](https://github.com/PantaKoda/MyBooksLibrary/pull/22), merge `f2bd6b4`).
+
+### Part 3: the Export dialog (presentation)
+
+**Scope:**
+- **`ExportController`** (`src/presentation/exportcontroller.*`), owned by `LibraryController` as `exporter`:
+  - **Preview**, loaded on the database thread: the number of bookmarks, a summary, one note per entry left out or moved with its reason, a suggested name in Documents, and the book's last export. A book in Trash, one without analyzed contents, or a build without the exporter shows the reason instead.
+  - **`exportTo(path or URL)`** asks the coordinator for the copy and follows its job: Waiting, Writing, Cancelling, then Saved, NotSaved or Cancelled.
+  - **An existing file** moves to NeedsReplace, and only `confirmReplace()` replaces it.
+  - **Stale results ignored:** previews are tagged, so a newer `prepare()` wins; the result of a request made for another book is ignored.
+- **`ExportDialog.qml`** (`qml/export/`), from the inspector's **More → Save a copy with bookmarks…**:
+  - the preview and a "Save as" field with **Choose…** (a native save dialog whose own overwrite prompt is off, so replacing is always confirmed in the dialog);
+  - the progress and result, **Show folder**, **Cancel saving**, and Close, which leaves a copy being saved running.
+  - The part 2 review note is covered: it says "Waiting for the current work to finish…" while an analysis runs.
+- **Wiring:**
+  - `LibraryController::setExporter`; `main.cpp` gives it `sdk::SdkBookExporter`.
+  - `ProcessingCoordinator::exportRefused` gains `fileExists`, so a refusal because the file exists asks to replace rather than failing.
+
+**Touched paths:** `src/presentation/{exportcontroller.*,librarycontroller.*}`, `src/processing/processingcoordinator.*`, `qml/export/ExportDialog.qml`, `qml/inspector/BookInspectorPane.qml`, `Main.qml`, `main.cpp`, `CMakeLists.txt`, `tests/`, `docs/`.
+
+| Command | Result |
+| --- | --- |
+| `pwsh scripts/verify.ps1` (Release) and `-Configuration Debug` | **Passed** in both configurations: whitespace and text checks, guard tests, configure, build, **29/29 tests** (ctest), and the application smoke checks (the window loads with the new dialog). Verified on the working tree based on `f2bd6b4`. |
+| `tst_exportcontroller` (new, 5 cases, **real SDK** analysis and export, non-ASCII names) | **Preview:** bookmarks, summary ("not changed"), notes when not complete, suggested name.<br>**Saved** through the job queue, from a file URL; a new file with a different digest.<br>**Same name again:** NeedsReplace; declining keeps the file, and confirming replaces it. The next preview names the last copy.<br>**Refused with reasons:** the library folder, an empty name, a book in Trash (no export), an unknown book.<br>**The real `ExportDialog.qml`:** the suggested name arrives with the preview, the summary shows, and **Save copy** writes the file and shows "Saved as".<br>**Partial coverage** (synthetic book): the exact "Left out" and "Top level" notes. Without SDK processors, "not available". |
+| `tst_exportjobs`, `tst_inspectorpane`, `tst_librarycontroller` | Pass, with the changed `exportRefused` signal. |
+
+**UI evidence:** `docs/images/m09-export-dialog.png` (UI.md), captured by `tst_exportcontroller` with the Windows platform and an example destination.
+
+**M09 gate:**
+- **Explicit validated plan to a new PDF:** the preview, then Save, through validation (part 1) and the job (part 2).
+- **Every managed source protected:** parts 1 and 2, with refusals shown here.
+- **Partial coverage visible:** the summary and a note per entry.
+
+**Next action:** open the PR for review. After it is merged, M09 is complete. Next is M10, the Windows release.
 
 ## M08 — Organization
 

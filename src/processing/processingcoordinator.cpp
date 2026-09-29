@@ -139,28 +139,33 @@ void ProcessingCoordinator::enqueueExport(const BookId& book, const QString& des
         ExportRecord record;
         JobRecord job;
     };
+    struct Answer {
+        Result<Queued> queued;
+        bool fileExists = false;  // Refused because a file is there (not replacing).
+    };
     m_library
-        .run([book, destination, replaceExisting, layout = m_layout](QSqlDatabase& db) -> Result<Queued> {
+        .run([book, destination, replaceExisting, layout = m_layout](QSqlDatabase& db) -> Answer {
             auto files = catalog::protectedFiles(db);
             if (!files)
-                return files.error();
+                return {files.error()};
             auto checked = storage::validateExportDestination(
                 destination, layout, destinationRules(layout, files.value(), replaceExisting));
             if (!checked)
-                return checked.error();
+                return {checked.error(), checked.error().code == ErrorCode::Duplicate};
             // The file the user agreed to replace, as it is now (or that none is there).
             const auto confirmed = replaceExisting ? storage::fileIdentity(checked.value()) : std::nullopt;
             auto record = catalog::enqueueExport(db, book, checked.value(), replaceExisting, confirmed);
             if (!record)
-                return record.error();
+                return {record.error()};
             auto job = catalog::job(db, record.value().job);
             if (!job)
-                return job.error();
-            return Queued{record.value(), job.value()};
+                return {job.error()};
+            return {Queued{record.value(), job.value()}};
         })
-        .then(this, [this, book](const Result<Queued>& queued) {
+        .then(this, [this, book](const Answer& answer) {
+            const Result<Queued>& queued = answer.queued;
             if (!queued) {
-                emit exportRefused(book, queued.error().message);
+                emit exportRefused(book, queued.error().message, answer.fileExists);
                 return;
             }
             emit exportQueued(queued.value().record);

@@ -492,3 +492,15 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - **No Retry in the queue:** an export is asked for again from the Export dialog (part 3), where the destination and replacement are chosen again.
   - **Replacing is bound to the confirmed file:** the user agrees to replace the file they saw. Its size and modification time are recorded with the request, or that there was none. A queued export may wait behind an analysis or until the next session, and never replaces a file that is new or changed since. Size and time rather than a SHA-256: they cost nothing on the database thread and catch a document saved over the name. A change that keeps both exactly is not detected, which is an accepted limit (review of PR #22).
 - **Verified:** See IMPLEMENTATION_PROGRESS.md, M09 part 2.
+
+## 2026-09-29 — M09 part 3: the Export dialog
+
+- **Change:** `ExportController` and `ExportDialog.qml`, opened from the inspector's More menu. `main.cpp` wires `sdk::SdkBookExporter` into the library session. `ProcessingCoordinator::exportRefused` reports whether the refusal was only because a file exists.
+- **Why:** AGENTS.md §10 says "Export PDF" is a separate, explicit operation, and its partial and flattening choices must be made explicit. The M09 gate asks for partial coverage to be visible. The part 2 review asked the dialog to say "Waiting" while an export waits behind an analysis.
+- **Assumptions:**
+  - **Preview, then save:** the dialog shows what the copy gets before anything is written. The number of bookmarks and every entry left out or moved are listed, with reasons, rather than in a separate confirmation step.
+  - **Replacing is confirmed here:** the native save dialog's overwrite prompt is turned off (`DontConfirmOverwrite`). Replacing is then always an explicit **Replace** in this dialog, which the coordinator ties to the file that was there (part 2). The existence check stays on the database thread, never the GUI thread.
+  - **Documents by default:** the suggested folder is Documents, outside the library. The name is sanitized and free (part 1).
+  - **Closing the dialog does not cancel:** a copy being saved continues. The job queue shows it, and the next preview of the book names the last copy.
+  - **English plurals** use the app's existing "(s)" form, since no translations are installed yet (as elsewhere in the window).
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, M09 part 3.

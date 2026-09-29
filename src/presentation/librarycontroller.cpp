@@ -102,6 +102,12 @@ void LibraryController::setProcessors(std::shared_ptr<processing::MetadataExtrac
     m_ocrAvailable = ocrAvailable;
 }
 
+void LibraryController::setExporter(std::shared_ptr<processing::BookExporter> exporter)
+{
+    Q_ASSERT(m_state == State::Closed);
+    m_exporter = std::move(exporter);
+}
+
 void LibraryController::open(const QString& rootDir)
 {
     if (m_state == State::Opening || m_state == State::Ready)
@@ -164,6 +170,7 @@ void LibraryController::onOpened(std::shared_ptr<catalog::Library> library,
     m_inspector.setLibrary(m_library);
     m_search.setLibrary(m_library);
     m_reader.setLibrary(m_library);
+    m_export.setLibrary(m_library);
     setState(State::Ready);
     setStatus(recoveryText.isEmpty() ? tr("Library ready.") : recoveryText);
     refresh();
@@ -175,8 +182,10 @@ void LibraryController::startProcessing()
 {
     if (!m_extractor || m_coordinator)
         return;
-    m_coordinator = std::make_unique<processing::ProcessingCoordinator>(*m_library, m_extractor, m_analyzer);
+    m_coordinator =
+        std::make_unique<processing::ProcessingCoordinator>(*m_library, m_extractor, m_analyzer, m_exporter);
     auto* coordinator = m_coordinator.get();
+    m_export.setCoordinator(coordinator);
     connect(coordinator, &processing::ProcessingCoordinator::jobChanged, this, [this](const domain::JobRecord& job) {
         m_jobs.upsert(job);
         m_books.updateJob(job);

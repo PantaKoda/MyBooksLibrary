@@ -124,7 +124,9 @@ signals:
     void jobProgress(const mbl::domain::JobId& job, const QString& stage, int pagesAcquired);
     void enqueueFailed(const mbl::domain::BookId& book, const QString& error);
     void exportQueued(const mbl::domain::ExportRecord& record);
-    void exportRefused(const mbl::domain::BookId& book, const QString& error);
+    // `fileExists`: refused only because a file is there and replacing was
+    // not asked for, so the user can be asked to confirm.
+    void exportRefused(const mbl::domain::BookId& book, const QString& error, bool fileExists);
     // The export job ended (written, failed, cancelled or interrupted); its job
     // holds the state and reason.
     void exportFinished(const mbl::domain::ExportRecord& record);
