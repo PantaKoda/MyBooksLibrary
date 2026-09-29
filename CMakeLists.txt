@@ -41,6 +41,8 @@ qt_add_library(mbl_core STATIC
     src/domain/jobs.h
     src/domain/metadata.h
     src/domain/metadata.cpp
+    src/domain/export.h
+    src/domain/export.cpp
     src/domain/result.h
     src/domain/search.h
     src/domain/toc.h
@@ -67,6 +69,7 @@ qt_add_library(mbl_core STATIC
     src/catalog/library.cpp
     src/catalog/migrations.h
     src/catalog/migrations.cpp
+    src/processing/bookexporter.h
     src/processing/contentsanalyzer.h
     src/processing/metadataextractor.h
     src/processing/processingcoordinator.h
@@ -77,6 +80,8 @@ qt_add_library(mbl_core STATIC
     src/search/ftsquery.cpp
     src/search/searchindex.h
     src/search/searchindex.cpp
+    src/storage/exportdestination.h
+    src/storage/exportdestination.cpp
     src/storage/filecopy.h
     src/storage/filecopy.cpp
     src/storage/importservice.h
@@ -143,6 +148,8 @@ qt_add_library(mbl_sdk STATIC
     src/processing/sdk/contentsnormalize.cpp
     src/processing/sdk/sdkcontentsanalyzer.h
     src/processing/sdk/sdkcontentsanalyzer.cpp
+    src/processing/sdk/sdkbookexporter.h
+    src/processing/sdk/sdkbookexporter.cpp
 )
 target_link_libraries(mbl_sdk PUBLIC mbl_core pdfbookmark::pdfbookmark)
 

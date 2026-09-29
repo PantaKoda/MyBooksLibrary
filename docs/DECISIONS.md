@@ -461,3 +461,18 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - **Search follows a collection:** it searches the collection when one is shown, otherwise the library. Trashed books are not indexed, so the Trash view is browsed rather than searched.
   - **No confirmation for Trash:** moving a book to Trash is reversible, so it asks nothing. Deleting a collection asks, even though its books stay.
 - **Verified:** See IMPLEMENTATION_PROGRESS.md, M08 part 2.
+
+## 2026-09-29 — M09 part 1: the export core
+
+- **Change:**
+  - `buildExportPlan` turns effective contents into bookmarks, recording omissions and promotions.
+  - `validateExportDestination` and `suggestedExportPath` (A1) decide where a copy may go.
+  - `BookExporter` and `SdkBookExporter` write the copy through `pdfbookmark::apply`.
+- **Why:** AGENTS.md §10: explicit, validated plans; partial and flattening choices made explicit; never change the plan's digest or page count; a separate destination with replacement off by default; record committed output accurately. §5: A1 protects every managed source and internal path, including aliases, and keeps generated names sanitized and collision-safe. The M09 gate: every managed source stays protected, and partial coverage is visible.
+- **Assumptions:**
+  - **Built by the application:** the plan comes from the effective contents, not the SDK's own plan, so the user's edits are what gets written. The SDK's public `BookmarkPlan` and `validate_plan` support this, so no SDK capability is missing.
+  - **Only confirmed pages:** entries without a confirmed page are left out and listed, never given a guessed page. An entry under a left-out parent moves up to the nearest kept ancestor, and an uncertain level goes to the top level. The SDK plan records both as omissions and promotions.
+  - **Never inside the library:** exports go outside the library folder, where the user can find and move them. `derivatives/` stays reserved for copies the library manages itself, if any are added later.
+  - **Aliases resolved on real paths:** `std::filesystem::canonical` and `equivalent` work on the actual file system, not on strings, so case, `..`, short names and hard links to listed files cannot slip through. An existing file with other names (a hard-link count above one) is refused as well, since it may be an internal file such as the catalog; an existing name is resolved again and checked against the library folder, a library folder that cannot be resolved refuses the export, and on Windows a `:` (a stream inside another file) is refused (review of PR #21).
+  - **Uncertain levels are their own list:** an entry whose level is uncertain has no parent to be moved from, so the plan lists it in `uncertainLevels` rather than as a promotion. Promotions sent to the SDK are only real parent changes, which `validate_plan` requires; the SDK's plan JSON therefore does not carry the uncertain-level notes, and part 2 keeps the application plan's omissions, promotions and uncertain levels with the export record (review of PR #21).
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, M09 part 1.
