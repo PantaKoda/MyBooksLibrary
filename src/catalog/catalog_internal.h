@@ -53,6 +53,12 @@ domain::Result<domain::BookId> insertBook(QSqlDatabase& db, const domain::NewBoo
 // transaction. Fails with Trashed for a trashed book.
 domain::Result<domain::PublishTicket> bumpGeneration(QSqlDatabase& db, const domain::BookId& book, bool metadata);
 
+// Moves a job from one of `from` to `to` (terminal states also set
+// finished_at); fails with InvalidArgument if the job is in none of `from`.
+domain::Status transitionJob(QSqlDatabase& db, const domain::JobId& id, std::initializer_list<domain::JobState> from,
+                             domain::JobState to, const QString& outcome, const QString& error,
+                             const std::optional<domain::RunId>& run = std::nullopt);
+
 // enqueueJob() without its own transaction: returns the pending job of that
 // kind, or starts a new request generation and queues a job for it.
 domain::Result<domain::JobRecord> queueJob(QSqlDatabase& db, const domain::BookId& book, domain::JobKind kind);

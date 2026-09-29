@@ -3,6 +3,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
+#include <QTimeZone>
 
 #include <filesystem>
 #include <optional>
@@ -124,6 +125,14 @@ Result<QString> validateExportDestination(const QString& destination, const Libr
             return makeError(ErrorCode::Duplicate, tr("A file with that name already exists."));
     }
     return QDir::cleanPath(fromFs(target));
+}
+
+std::optional<FileIdentity> fileIdentity(const QString& path)
+{
+    const QFileInfo info(path);
+    if (!info.exists() || !info.isFile())
+        return std::nullopt;
+    return FileIdentity{info.size(), info.lastModified(QTimeZone::UTC)};
 }
 
 QString suggestedExportPath(const QString& title, const QString& folder)

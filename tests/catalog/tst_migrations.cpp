@@ -55,6 +55,7 @@ private slots:
     void version4CatalogGainsReadingPositions();
     void version5CatalogGainsEditedContents();
     void version6CatalogGainsCollections();
+    void version7CatalogGainsExports();
     void newerSchemaIsRefusedUnchanged();
     void failedMigrationRollsBack();
     void nonConsecutiveListIsRejected();
@@ -303,6 +304,67 @@ void TestMigrations::version6CatalogGainsCollections()
     QVERIFY(created);
     QVERIFY(library.value()->run([id](QSqlDatabase& db) { return restoreBook(db, id); }).result());
     QVERIFY(library.value()->run([c = created.value(), id](QSqlDatabase& db) { return addToCollection(db, c, {id}); }).result());
+}
+
+// A schema 7 catalog upgrades in place: the jobs table is rebuilt to accept
+// exports, with every job kept as it was (order included), and its rules
+// (one open job per book and kind, a run for a succeeded metadata job) hold.
+void TestMigrations::version7CatalogGainsExports()
+{
+    const QString book = QStringLiteral("6d5e4f3a-4b3a-4918-8776-655443322110");
+    const QString sha(64, u'1');
+    QTemporaryDir dir;
+    const QString path = dir.filePath(QLatin1StringView(Library::kCatalogFileName));
+    withConnection(path, [&](QSqlDatabase& db) {
+        QVERIFY(migrate(db, catalogMigrations().mid(0, 7)));
+        QCOMPARE(schemaVersion(db), 7);
+        QVERIFY(!tableExists(db, QStringLiteral("exports")));
+        QSqlQuery q(db);
+        QVERIFY(q.exec(QStringLiteral(
+            "INSERT INTO assets(id, sha256, byte_size, page_count, managed_path, created_at) VALUES "
+            "('a1', '%1', 10, 8, 'files/a1/source.pdf', 'x')").arg(sha)));
+        QVERIFY(q.exec(QStringLiteral("INSERT INTO books(id, asset_id, original_file_name, original_path, created_at, "
+                                      "updated_at) VALUES ('%1', 'a1', 'old.pdf', 'C:/old.pdf', 'x', 'x')")
+                           .arg(book)));
+        // Same creation time: the order they were added in decides.
+        for (const QString& row : {QStringLiteral("('00000000-0000-4000-8000-000000000001', 'metadata', 'succeeded', 'r1', 'published')"),
+                                   QStringLiteral("('00000000-0000-4000-8000-000000000002', 'metadata', 'queued', NULL, NULL)"),
+                                   QStringLiteral("('00000000-0000-4000-8000-000000000003', 'toc', 'failed', NULL, 'sdk_error')")}) {
+            QVERIFY(q.exec(QStringLiteral("INSERT INTO jobs(id, kind, state, run_id, outcome, book_id, generation, "
+                                          "source_sha256, created_at, updated_at) SELECT *, '%1', 1, '%2', "
+                                          "'2026-01-01T00:00:00.000Z', 'x' FROM (VALUES %3)")
+                               .arg(book, sha, row)));
+        }
+    });
+    auto library = Library::open(dir.path());
+    QVERIFY2(library, library ? "" : qPrintable(library.error().message));
+    QVERIFY(latestSchemaVersion() >= 8);
+    auto kept = library.value()->run([](QSqlDatabase& db) { return listJobs(db, false, -1); }).result();
+    QVERIFY(kept);
+    QCOMPARE(kept.value().size(), 3);
+    auto latest = library.value()->run([](QSqlDatabase& db) { return latestJobs(db); }).result();
+    QVERIFY(latest);
+    QStringList latestIds;
+    for (const auto& j : latest.value())
+        latestIds << j.id.toString();
+    latestIds.sort();
+    QCOMPARE(latestIds, (QStringList{QStringLiteral("00000000-0000-4000-8000-000000000002"),
+                                    QStringLiteral("00000000-0000-4000-8000-000000000003")}));  // rowid breaks the tie.
+    auto rules = library.value()->run([book, sha](QSqlDatabase& db) {
+        QSqlQuery q(db);
+        const QString insert = QStringLiteral("INSERT INTO jobs(id, book_id, kind, state, generation, source_sha256, "
+                                              "created_at, updated_at) VALUES ('%1', '%2', '%3', '%4', 0, '%5', 'x', 'x')");
+        return QList<bool>{
+            q.exec(insert.arg(QStringLiteral("e1"), book, QStringLiteral("export"), QStringLiteral("succeeded"), sha)),
+            q.exec(insert.arg(QStringLiteral("m9"), book, QStringLiteral("metadata"), QStringLiteral("succeeded"), sha)),
+            q.exec(insert.arg(QStringLiteral("m8"), book, QStringLiteral("metadata"), QStringLiteral("queued"), sha)),
+            q.exec(insert.arg(QStringLiteral("x1"), book, QStringLiteral("other"), QStringLiteral("queued"), sha)),
+            tableExists(db, QStringLiteral("exports")),
+        };
+    }).result();
+    // An export succeeds without a run; a metadata job does not; a second
+    // open metadata job and an unknown kind are refused.
+    QCOMPARE(rules, (QList<bool>{true, false, false, false, true}));
 }
 
 void TestMigrations::newerSchemaIsRefusedUnchanged()

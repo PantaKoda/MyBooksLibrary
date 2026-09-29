@@ -22,6 +22,7 @@ mbl_add_test(tst_migrations catalog/tst_migrations.cpp)
 mbl_add_test(tst_catalog catalog/tst_catalog.cpp)
 mbl_add_test(tst_tocedits catalog/tst_tocedits.cpp)
 mbl_add_test(tst_organization catalog/tst_organization.cpp)
+mbl_add_test(tst_exports catalog/tst_exports.cpp)
 mbl_add_test(tst_exportplan domain/tst_exportplan.cpp)
 mbl_add_test(tst_exportdestination storage/tst_exportdestination.cpp)
 mbl_add_test(tst_importservice storage/tst_importservice.cpp)
@@ -41,6 +42,9 @@ target_compile_definitions(tst_sdksnapshot PRIVATE MBL_FIXTURES_DIR="${CMAKE_CUR
 mbl_add_test(tst_processingcoordinator processing/tst_processingcoordinator.cpp)
 target_compile_definitions(tst_processingcoordinator PRIVATE MBL_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 
+mbl_add_test(tst_exportjobs processing/tst_exportjobs.cpp)
+target_compile_definitions(tst_exportjobs PRIVATE MBL_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+
 mbl_add_test(tst_sdkmetadataextractor processing/tst_sdkmetadataextractor.cpp)
 target_link_libraries(tst_sdkmetadataextractor PRIVATE mbl_sdk)
 pdfbookmark_deploy_runtime(tst_sdkmetadataextractor)
@@ -58,6 +62,8 @@ target_compile_definitions(tst_sdkbookexporter PRIVATE MBL_FIXTURES_DIR="${CMAKE
 
 mbl_add_test(tst_toctreemodel presentation/tst_toctreemodel.cpp)
 target_link_libraries(tst_toctreemodel PRIVATE mbl_presentation)
+mbl_add_test(tst_jobmodels presentation/tst_jobmodels.cpp)
+target_link_libraries(tst_jobmodels PRIVATE mbl_presentation)
 
 # Loads the real inspector QML (offscreen) against the presentation module.
 mbl_add_test(tst_inspectorpane presentation/tst_inspectorpane.cpp)

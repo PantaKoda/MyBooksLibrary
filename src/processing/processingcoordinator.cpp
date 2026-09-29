@@ -1,10 +1,13 @@
 #include "processing/processingcoordinator.h"
 
 #include "catalog/catalog.h"
+#include "catalog/exports.h"
 #include "catalog/jobs.h"
 #include "catalog/library.h"
+#include "storage/exportdestination.h"
 #include "storage/reportstore.h"
 
+#include <QDir>
 #include <QElapsedTimer>
 #include <QMetaObject>
 #include <QMutexLocker>
@@ -37,12 +40,38 @@ RunIdentity identityOf(const QString& sha256, const QString& sdkVersion, const Q
     return identity;
 }
 
+// A1's rules for an export destination, with every managed source and
+// imported original of the library protected under any name.
+storage::ExportDestinationRules destinationRules(const storage::LibraryLayout& layout,
+                                                 const catalog::ProtectedFiles& files, bool replaceExisting)
+{
+    storage::ExportDestinationRules rules;
+    for (const QString& managed : files.managedPaths)
+        rules.protectedFiles << layout.absolute(managed);
+    rules.protectedFiles << files.originalPaths;
+    rules.replaceExisting = replaceExisting;
+    return rules;
+}
+
+// How a failed export is recorded: a stable outcome code for the SDK's refusal.
+QString exportFailureOutcome(const QString& errorCode)
+{
+    if (errorCode == QLatin1String("OutputExists"))
+        return QStringLiteral("output_exists");
+    if (errorCode == QLatin1String("InputChanged"))
+        return QStringLiteral("source_mismatch");
+    if (errorCode == QLatin1String("InvalidPlan"))
+        return QStringLiteral("invalid_plan");
+    return QStringLiteral("export_failed");
+}
+
 } // namespace
 
 ProcessingCoordinator::ProcessingCoordinator(catalog::Library& library, std::shared_ptr<MetadataExtractor> metadata,
-                                             std::shared_ptr<ContentsAnalyzer> contents, QObject* parent)
+                                             std::shared_ptr<ContentsAnalyzer> contents,
+                                             std::shared_ptr<BookExporter> exporter, QObject* parent)
     : QObject(parent), m_library(library), m_layout(library.rootDir()), m_metadata(std::move(metadata)),
-      m_contents(std::move(contents))
+      m_contents(std::move(contents)), m_exporter(std::move(exporter))
 {
     m_pool.setMaxThreadCount(1);
     m_pool.setObjectName(QStringLiteral("mbl-processing"));
@@ -100,6 +129,42 @@ void ProcessingCoordinator::enqueue(const BookId& book, JobKind kind)
                 return;
             }
             emit jobChanged(job.value());
+            start();
+        });
+}
+
+void ProcessingCoordinator::enqueueExport(const BookId& book, const QString& destination, bool replaceExisting)
+{
+    struct Queued {
+        ExportRecord record;
+        JobRecord job;
+    };
+    m_library
+        .run([book, destination, replaceExisting, layout = m_layout](QSqlDatabase& db) -> Result<Queued> {
+            auto files = catalog::protectedFiles(db);
+            if (!files)
+                return files.error();
+            auto checked = storage::validateExportDestination(
+                destination, layout, destinationRules(layout, files.value(), replaceExisting));
+            if (!checked)
+                return checked.error();
+            // The file the user agreed to replace, as it is now (or that none is there).
+            const auto confirmed = replaceExisting ? storage::fileIdentity(checked.value()) : std::nullopt;
+            auto record = catalog::enqueueExport(db, book, checked.value(), replaceExisting, confirmed);
+            if (!record)
+                return record.error();
+            auto job = catalog::job(db, record.value().job);
+            if (!job)
+                return job.error();
+            return Queued{record.value(), job.value()};
+        })
+        .then(this, [this, book](const Result<Queued>& queued) {
+            if (!queued) {
+                emit exportRefused(book, queued.error().message);
+                return;
+            }
+            emit exportQueued(queued.value().record);
+            emit jobChanged(queued.value().job);
             start();
         });
 }
@@ -229,7 +294,9 @@ bool ProcessingCoordinator::processNext()
                 finishJob(job, JobState::Failed, QStringLiteral("book_unavailable"), details.error().message);
         } else {
             const QString pdf = m_layout.absolute(details.value().asset.managedPath);
-            if (paired)
+            if (first.kind == JobKind::Export)
+                runExportJob(first, pdf);
+            else if (paired)
                 runBookJobs(first, *paired, pdf);
             else if (first.kind == JobKind::Metadata)
                 runMetadataJob(first, pdf);
@@ -295,6 +362,103 @@ void ProcessingCoordinator::runBookJobs(const JobRecord& metadata, const JobReco
         closeMetadata(missing);
     }
     finishContents(contents, result);
+}
+
+void ProcessingCoordinator::runExportJob(const JobRecord& job, const QString& pdf)
+{
+    auto record = wait(m_library.run([id = job.id](QSqlDatabase& db) { return catalog::exportRecord(db, id); }));
+    if (!record) {
+        finishExport(job, JobState::Failed, QStringLiteral("record_unavailable"), record.error().message, {});
+        return;
+    }
+    if (!m_exporter) {
+        finishExport(job, JobState::Failed, QStringLiteral("unsupported"),
+                     QStringLiteral("Writing bookmarked copies is not available in this build."), {});
+        return;
+    }
+    // Again right before the write: the folder, or a file in it, may have
+    // changed since the request.
+    auto files = wait(m_library.run([](QSqlDatabase& db) { return catalog::protectedFiles(db); }));
+    if (!files) {
+        finishExport(job, JobState::Failed, QStringLiteral("export_failed"), files.error().message, {});
+        return;
+    }
+    const auto destination = storage::validateExportDestination(
+        record.value().destination, m_layout,
+        destinationRules(m_layout, files.value(), record.value().replaceExisting));
+    if (!destination) {
+        finishExport(job, JobState::Failed,
+                     destination.error().code == ErrorCode::Duplicate ? QStringLiteral("output_exists")
+                                                                      : QStringLiteral("destination_refused"),
+                     destination.error().message, {});
+        return;
+    }
+    // Replacing was agreed for the file that was there when the user asked.
+    // The export may have waited (behind an analysis, or until the next
+    // session): a file that is new or changed since is never replaced.
+    if (record.value().replaceExisting) {
+        const auto now = storage::fileIdentity(destination.value());
+        if (now && now != record.value().confirmedFile) {
+            finishExport(job, JobState::Failed, QStringLiteral("output_exists"),
+                         QStringLiteral("The file %1 changed since you chose to replace it; nothing was written.")
+                             .arg(QDir::toNativeSeparators(destination.value())),
+                         {});
+            return;
+        }
+    }
+
+    // The SDK call, on this worker thread. It verifies the copy before it
+    // commits, and refuses a source whose bytes differ from the plan's digest.
+    const ExportResult result = m_exporter->exportCopy(pdf, destination.value(), record.value().plan,
+                                                       record.value().replaceExisting, *m_flags->get(job.id));
+    ExportOutput output;
+    output.committed = result.committed;
+    output.outputSha256 = result.outputSha256;
+    output.outlineItems = result.outlineItems;
+    output.pageCount = result.pageCount;
+    output.structureMatches = result.structureMatches;
+    output.sourceUnchanged = result.sourceUnchanged;
+    output.sdkVersion = result.sdkVersion;
+    output.sdkPlanJson = result.planJson;
+    if (result.committed) {  // Written: a cancel or shutdown after the commit changes nothing.
+        finishExport(job, JobState::Succeeded, QStringLiteral("written"), {}, output);
+        return;
+    }
+    if (m_stop.load()) {
+        finishExport(job, JobState::Interrupted, QStringLiteral("interrupted"),
+                     QStringLiteral("The application closed before the copy was written."), output);
+        return;
+    }
+    // A cancel recorded while the SDK ran (by the user or the trash) wins over
+    // how the call ended; finishExportJob keeps a "trashed" reason.
+    const auto current = wait(m_library.run([id = job.id](QSqlDatabase& db) { return catalog::job(db, id); }));
+    if (result.status == ExportResult::Status::Cancelled || m_flags->get(job.id)->load()
+        || (current && current.value().state == JobState::CancelRequested)) {
+        finishExport(job, JobState::Cancelled, QStringLiteral("cancelled"),
+                     QStringLiteral("Cancelled; no copy was written."), output);
+        return;
+    }
+    QString error = result.error;
+    if (!result.planIssues.isEmpty())
+        error += QStringLiteral(" (%1)").arg(result.planIssues.join(QStringLiteral("; ")));
+    finishExport(job, JobState::Failed, exportFailureOutcome(result.errorCode), error, output);
+}
+
+void ProcessingCoordinator::finishExport(const JobRecord& job, JobState state, const QString& outcome,
+                                         const QString& error, const ExportOutput& output)
+{
+    auto finished = wait(m_library.run([id = job.id, state, outcome, error, output](QSqlDatabase& db) -> Result<ExportRecord> {
+        if (auto s = catalog::finishExportJob(db, id, state, outcome, error, output); !s)
+            return s.error();
+        return catalog::exportRecord(db, id);
+    }));
+    if (!finished) {
+        qWarning("Export %s could not be recorded: %s", qPrintable(job.id.toString()),
+                 qPrintable(finished.error().message));
+        return;
+    }
+    QMetaObject::invokeMethod(this, [this, record = finished.value()] { emit exportFinished(record); },
+                              Qt::QueuedConnection);
 }
 
 ContentsAnalyzer::Progress ProcessingCoordinator::progressFor(const JobRecord& metadata, const JobRecord& contents)

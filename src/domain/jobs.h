@@ -13,7 +13,10 @@
 
 namespace mbl::domain {
 
-enum class JobKind { Metadata, Toc };
+// Export: writing a bookmarked copy (what was asked and written is in its
+// ExportRecord). It has no request generation or run, and is never requeued
+// by itself: the user asks again.
+enum class JobKind { Metadata, Toc, Export };
 
 // Queued -> Running -> Succeeded | Failed | Cancelled
 // Running -> CancelRequested -> Cancelled (a job cancelled while its SDK call
@@ -29,12 +32,12 @@ struct JobRecord {
     BookId book;
     JobKind kind = JobKind::Metadata;
     JobState state = JobState::Queued;
-    qint64 generation = 0;    // Component request generation captured at enqueue.
+    qint64 generation = 0;    // Component request generation captured at enqueue (0 for exports).
     QString sourceSha256;     // Asset digest captured at enqueue.
     int attempt = 0;          // Incremented each time the job starts running.
     QString outcome;          // Stable code, e.g. "published", "superseded", "trashed", "sdk_error".
     QString error;            // Plain-language reason for Failed/Cancelled/Interrupted.
-    std::optional<RunId> run; // Published run, for Succeeded.
+    std::optional<RunId> run; // Published run, for a Succeeded metadata or contents job.
     QDateTime createdAt;
     QDateTime updatedAt;
 };

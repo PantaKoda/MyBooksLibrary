@@ -285,7 +285,71 @@ QList<Migration> buildMigrations()
         // When a trashed book was moved to Trash (UTC); NULL for active books.
         QStringLiteral("ALTER TABLE books ADD COLUMN trashed_at TEXT"),
     };
-    return {v1, v2, v3, v4, v5, v6, v7};
+
+    Migration v8;
+    v8.version = 8;
+    v8.name = QStringLiteral("export jobs and records");
+    v8.statements = {
+        // SQLite cannot change a CHECK constraint in place: the jobs table is
+        // rebuilt with the 'export' kind, which succeeds without a run. No
+        // table references jobs yet; rows keep their order (rowid breaks ties).
+        QStringLiteral(R"(CREATE TABLE jobs_v8 (
+            id TEXT PRIMARY KEY,
+            book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+            kind TEXT NOT NULL CHECK (kind IN ('metadata', 'toc', 'export')),
+            state TEXT NOT NULL CHECK (state IN ('queued', 'running', 'cancel_requested', 'succeeded', 'failed',
+                                                 'cancelled', 'interrupted')),
+            generation INTEGER NOT NULL,
+            source_sha256 TEXT NOT NULL CHECK (length(source_sha256) = 64),
+            attempt INTEGER NOT NULL DEFAULT 0,
+            outcome TEXT,
+            error TEXT,
+            run_id TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            started_at TEXT,
+            finished_at TEXT,
+            CHECK (state <> 'succeeded' OR run_id IS NOT NULL OR kind = 'export')))"),
+        QStringLiteral("INSERT INTO jobs_v8(id, book_id, kind, state, generation, source_sha256, attempt, outcome, error, "
+                       "run_id, created_at, updated_at, started_at, finished_at) SELECT id, book_id, kind, state, "
+                       "generation, source_sha256, attempt, outcome, error, run_id, created_at, updated_at, started_at, "
+                       "finished_at FROM jobs ORDER BY rowid"),
+        QStringLiteral("DROP TABLE jobs"),
+        QStringLiteral("ALTER TABLE jobs_v8 RENAME TO jobs"),
+        // At most one open job per book and kind (so one export per book at a time).
+        QStringLiteral("CREATE UNIQUE INDEX jobs_one_open ON jobs(book_id, kind) "
+                       "WHERE state IN ('queued', 'running')"),
+        QStringLiteral("CREATE INDEX jobs_by_state ON jobs(state, created_at)"),
+        // What an export job was asked to write and what it wrote. Its state,
+        // times and error are the job's. replace_size/replace_modified: the
+        // file the user agreed to replace (NULL: none was there). `committed` is NULL until the job
+        // reports (and stays NULL if the application stopped while writing).
+        // The plan is the application's (see domain::exportPlanToJson); the
+        // SDK's own plan JSON is kept as it was sent.
+        QStringLiteral(R"(CREATE TABLE exports (
+            job_id TEXT PRIMARY KEY REFERENCES jobs(id) ON DELETE CASCADE,
+            book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+            destination TEXT NOT NULL CHECK (length(destination) > 0),
+            replace_existing INTEGER NOT NULL CHECK (replace_existing IN (0, 1)),
+            replace_size INTEGER CHECK (replace_size IS NULL OR replace_size >= 0),
+            replace_modified TEXT,
+            toc_run_id TEXT,
+            toc_revision_id TEXT,
+            plan_json TEXT NOT NULL,
+            committed INTEGER CHECK (committed IS NULL OR committed IN (0, 1)),
+            output_sha256 TEXT CHECK (output_sha256 IS NULL OR length(output_sha256) = 64),
+            outline_items INTEGER,
+            output_page_count INTEGER,
+            structure_matches INTEGER CHECK (structure_matches IS NULL OR structure_matches IN (0, 1)),
+            source_unchanged INTEGER CHECK (source_unchanged IS NULL OR source_unchanged IN (0, 1)),
+            sdk_version TEXT,
+            sdk_plan_json TEXT,
+            CHECK (committed IS NOT 1 OR output_sha256 IS NOT NULL),
+            CHECK ((replace_size IS NULL) = (replace_modified IS NULL)),
+            CHECK (replace_existing = 1 OR replace_size IS NULL)))"),
+        QStringLiteral("CREATE INDEX exports_book ON exports(book_id)"),
+    };
+    return {v1, v2, v3, v4, v5, v6, v7, v8};
 }
 
 } // namespace

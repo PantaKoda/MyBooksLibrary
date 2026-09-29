@@ -36,16 +36,20 @@ QString JobListModel::stateText(const JobRecord& job)
     case JobState::Queued:
         return tr("Waiting");
     case JobState::Running:
+        if (job.kind == JobKind::Export)
+            return tr("Writing the bookmarked copy…");
         return job.kind == JobKind::Metadata ? tr("Reading the first pages…") : tr("Analyzing the contents…");
     case JobState::CancelRequested:
         return tr("Cancelling…");
     case JobState::Succeeded:
-        return tr("Done");
+        return job.kind == JobKind::Export ? tr("Copy saved") : tr("Done");
     case JobState::Failed:
         if (job.outcome == QLatin1String("source_mismatch"))
             return tr("Failed: the library copy no longer matches the imported file");
         if (job.outcome == QLatin1String("unsupported"))
             return tr("Not available yet");
+        if (job.outcome == QLatin1String("output_exists"))
+            return tr("Failed: a file with that name already exists");
         return tr("Failed");
     case JobState::Cancelled:
         if (job.outcome == QLatin1String("superseded"))
@@ -54,6 +58,8 @@ QString JobListModel::stateText(const JobRecord& job)
             return tr("Book moved to Trash");
         return tr("Cancelled");
     case JobState::Interrupted:
+        if (job.kind == JobKind::Export)  // Never requeued: the user decides.
+            return tr("Interrupted when the application closed; the copy may not have been saved");
         return tr("Interrupted when the application closed; queued again");
     }
     return {};
@@ -75,19 +81,24 @@ QVariant JobListModel::data(const QModelIndex& index, int role) const
     case BookIdRole:
         return job.book.toString();
     case KindTextRole:
+        if (job.kind == JobKind::Export)
+            return tr("Bookmarked copy");
         return job.kind == JobKind::Metadata ? tr("Title and authors") : tr("Contents");
     case StateRole:
         return toCode(job.state);
     case StateTextRole:
         return stateTextWithProgress(job);
     case DetailRole:
-        return job.state == JobState::Failed ? job.error : QString();
+        return job.state == JobState::Failed || (job.kind == JobKind::Export && job.state == JobState::Interrupted)
+                   ? job.error
+                   : QString();
     case RunningRole:
         return job.state == JobState::Running || job.state == JobState::CancelRequested;
     case CanCancelRole:
         return job.state == JobState::Queued || job.state == JobState::Running;
     case CanRetryRole:
-        return (job.state == JobState::Failed || job.state == JobState::Cancelled)
+        // An export is asked for again with its destination (the Export dialog).
+        return job.kind != JobKind::Export && (job.state == JobState::Failed || job.state == JobState::Cancelled)
                && job.outcome != QLatin1String("trashed") && job.outcome != QLatin1String("unsupported")
                && !hasNewerJob(job);
     }
@@ -225,7 +236,12 @@ QString JobListModel::summary() const
     if (running) {
         const QString title = m_titleOf ? m_titleOf(running->book) : QString();
         const bool metadata = running->kind == JobKind::Metadata;
-        if (running->state == JobState::CancelRequested)
+        if (running->kind == JobKind::Export) {
+            if (running->state == JobState::CancelRequested)
+                text = tr("Cancelling the bookmarked copy…");
+            else
+                text = title.isEmpty() ? tr("Writing a bookmarked copy…") : tr("Writing a bookmarked copy: %1").arg(title);
+        } else if (running->state == JobState::CancelRequested)
             text = metadata ? tr("Cancelling metadata extraction…") : tr("Cancelling contents analysis…");
         else if (title.isEmpty())
             text = metadata ? tr("Reading title and authors…") : tr("Analyzing contents…");

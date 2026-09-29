@@ -66,11 +66,36 @@ Overrides are read when effective metadata is computed, so corrections made whil
 
 `catalog::completeTocJob` is the same for contents: in one transaction it records the page count if it was unknown (first, so that destinations are checked against it), publishes **every parsed entry** with its evidence (`toc_entries.evidence_json`) and the run's parse completeness, search coverage, plan blockers, stop reasons and SDK plan (`toc_runs`), updates the search projection, and marks the job succeeded. The metadata component is untouched.
 
+## Export jobs
+
+An export writes a bookmarked copy of a book (M09). It is a job of kind `export` in the same queue, with the same cancel, trash and recovery paths, plus an `exports` record (CATALOG.md).
+
+1. `enqueueExport(book, destination, replaceExisting)` runs on the database thread. First A1's `validateExportDestination` checks the destination against the library folder and every book's managed source and imported original (`catalog::protectedFiles`). Then `catalog::enqueueExport` builds the plan from the effective contents and queues the job. A refusal emits `exportRefused(book, reason)` and queues nothing; otherwise `exportQueued(record)` and `jobChanged(job)`.
+2. The worker claims **exports first** (then metadata, then TOC): the user is waiting for them and they take seconds.
+3. Right before the write, the worker validates the destination **again**. The folder, or a file in it, may have changed since the request. A refusal fails the job (`output_exists` or `destination_refused`) without calling the SDK.
+   - Replacing is agreed for **the file that was there when the user asked**. The request records its size and modification time, or that no file was there. An export can wait behind an analysis, or until the next session. If the file there now is new or different, it is kept and the job fails `output_exists` ("changed since you chose to replace it"). A confirmed file that has since gone is not a problem: the copy is written as a new file.
+4. `BookExporter::exportCopy` (`sdk::SdkBookExporter`) validates the plan and writes the copy with `pdfbookmark::apply`. The SDK verifies the reopened copy before it commits, and refuses a source whose bytes differ from the plan's digest.
+5. `catalog::finishExportJob` records the result, and `exportFinished(record)` reports it:
+
+| Result | Job state / outcome |
+| --- | --- |
+| Committed | `succeeded` / `written`, **whatever came after the commit** (a cancel, `stop()`, the trash) |
+| Not committed, and `stop()` was called | `interrupted` / `interrupted`, never requeued |
+| Not committed, cancelled by the user or the trash | `cancelled` / `cancelled` (or `trashed`) |
+| Existing output (SDK `OutputExists`, or found by the second check) | `failed` / `output_exists` |
+| Source bytes differ from the plan (SDK `InputChanged`) | `failed` / `source_mismatch` |
+| Plan refused by `validate_plan` | `failed` / `invalid_plan`, with the SDK's issues |
+| Destination refused by the second check | `failed` / `destination_refused` |
+| No exporter in this build | `failed` / `unsupported` |
+| Other SDK failure | `failed` / `export_failed` |
+
+`recover()` closes an export left `running` or `cancel_requested` by a stopped process as `interrupted`, **without requeuing it**. Its record keeps `committed` NULL, since the copy may or may not have been written. The user decides whether to export again. A queued export stays queued, and its destination is checked again before it runs.
+
 ## Restart and shutdown
 
 `recover()` must run once before `start()`:
 
-- `running` jobs become `interrupted` and a replacement job is queued with a new generation (skipped for trashed or missing books);
+- `running` jobs become `interrupted` and a replacement job is queued with a new generation (skipped for trashed or missing books, and for exports; see "Export jobs");
 - `cancel_requested` jobs become `cancelled`;
 - files in `reports/` named `<run-id>.json` that no run references are removed. They come from a process that stopped between writing a report and publishing its run. Other files are left alone.
 

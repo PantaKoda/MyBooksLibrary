@@ -15,7 +15,7 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | M06 Search/read | Merged: part 1 [PR #14](https://github.com/PantaKoda/MyBooksLibrary/pull/14) (merge `c8dc23e`); part 2 [PR #15](https://github.com/PantaKoda/MyBooksLibrary/pull/15) (merge `e964184`) | `feat/m06-presentation-search`; `feat/m06-reader-chapter-navigation` | See "M06" |
 | M07 Corrections/reruns | Merged: part 1 [PR #16](https://github.com/PantaKoda/MyBooksLibrary/pull/16) (merge `152eb8c`); part 2a [PR #17](https://github.com/PantaKoda/MyBooksLibrary/pull/17) (merge `c215319`); part 2b [PR #18](https://github.com/PantaKoda/MyBooksLibrary/pull/18) (merge `f40b99c`) | `feat/m07-presentation-metadata-corrections`; `feat/m07-a2-toc-edits`; `feat/m07-presentation-toc-editing` | See "M07" |
 | M08 Organization | Merged: part 1 [PR #19](https://github.com/PantaKoda/MyBooksLibrary/pull/19) (merge `7052536`); part 2 [PR #20](https://github.com/PantaKoda/MyBooksLibrary/pull/20) (merge `c182ec3`). Permanent deletion of trashed books remains open | `feat/m08-a2-collections-trash`; `feat/m08-presentation-organization` | See "M08" |
-| M09 Export | Part 1 AwaitingReview ([PR #21](https://github.com/PantaKoda/MyBooksLibrary/pull/21), the export core: plan, destination rules, SDK exporter) | `feat/m09-a1-export-core` | See "M09" |
+| M09 Export | Part 1 Merged ([PR #21](https://github.com/PantaKoda/MyBooksLibrary/pull/21), merge `acc2b89`); part 2 AwaitingReview ([PR #22](https://github.com/PantaKoda/MyBooksLibrary/pull/22), export records and jobs) | `feat/m09-a1-export-core`; `feat/m09-a2-export-jobs` | See "M09" |
 | M10–M11 | NotStarted | | |
 
 ## M09 — Export
@@ -65,7 +65,59 @@ M09 is split in three:
 
 **Not in this part:** export records and jobs (part 2), and the window (part 3).
 
-**Next action:** review of [PR #21](https://github.com/PantaKoda/MyBooksLibrary/pull/21). Then M09 part 2.
+**Next action:** merged ([PR #21](https://github.com/PantaKoda/MyBooksLibrary/pull/21), merge `acc2b89`).
+
+### Part 2: export records and jobs (A2, A4)
+
+**Scope:**
+- **Schema 8 (A2):**
+  - `jobs` is rebuilt to accept the `export` kind, which succeeds without a run. Rows are copied in order.
+  - `exports` records each export job: its destination, whether replacing was asked for, the contents it came from, the application plan as JSON, and what was written.
+- **Catalog (`catalog/exports.*`):**
+  - `enqueueExport` builds the plan from the effective contents, with edits, and queues the job and record in one transaction. It refuses a trashed book, a book with no contents or nothing to bookmark, and a second open export of the same book.
+  - `finishExportJob`: a committed copy always closes `succeeded` / `written`.
+  - `exportRecord`, `bookExports`, and `protectedFiles`.
+  - The job queue claims exports first. Recovery closes a running export as `interrupted` and never requeues it; `committed` stays unknown. Restore does not resume exports.
+- **Coordinator (A4):**
+  - `enqueueExport(book, destination, replaceExisting)` validates the destination (A1) with every managed source and imported original protected, then queues the job. Signals: `exportQueued`, `exportRefused`, `exportFinished`.
+  - The worker validates the destination **again right before the write** (the PR #21 review note), then calls `BookExporter::exportCopy` with the job's cancel flag.
+  - A committed copy is recorded as written whatever came after the commit. `stop()` before the commit gives `interrupted`, not requeued; a user or trash cancel gives `cancelled`. SDK refusals are recorded with stable outcomes.
+- **Presentation, to stay correct with the new kind:**
+  - The book list ignores export jobs; they never change a book's metadata or contents state.
+  - The job queue names them ("Bookmarked copy", "Writing the bookmarked copy…", "Copy saved"), explains an interrupted export, and offers no Retry: an export is asked for again with a destination (part 3). `LibraryController::retryJob` ignores exports.
+  - The window does not start exports yet; the SDK exporter is wired in part 3.
+
+**Touched paths:** `src/domain/{jobs.h,codes.cpp,export.*}`, `src/catalog/{migrations.cpp,jobs.*,catalog_internal.h,exports.*}`, `src/processing/processingcoordinator.*`, `src/presentation/{booklistmodel,joblistmodel,librarycontroller}.cpp`, `CMakeLists.txt`, `tests/`, `docs/`.
+
+| Command | Result |
+| --- | --- |
+| `pwsh scripts/verify.ps1` (Release) and `-Configuration Debug` | **Passed** in both configurations: whitespace and text checks, guard tests, configure, build, **28/28 tests** (ctest), and the application smoke checks. Verified on the working tree based on `acc2b89`. |
+| `tst_exports` (new, 8 cases, A2) | **Requests:** the plan comes from the edited revision; the record keeps the run and revision, and survives a restart with its omissions and uncertain levels. Refused: no contents, nothing to bookmark, a second open export, an empty destination, a trashed book, an unknown book, and exports through `enqueueJob`.<br>**Queue:** exports are claimed before metadata and contents.<br>**Committed copies:** written even after a cancel and the trash; cannot be closed twice.<br>**Not written:** cancelled while queued reads as not committed; a failure keeps its outcome; "succeeded" without a commit is refused; a metadata job is not closed as an export.<br>**Restart:** a running export becomes `interrupted`, is not requeued and stays "not known"; a queued export stays queued.<br>**Trash:** ends exports; restore does not resume them; the `trashed` reason is kept.<br>**Protected files:** every book, trashed ones included. |
+| `tst_exportjobs` (new, 8 cases, A4 with a fake exporter) | **Written on the worker thread:** the managed source, the destination (non-ASCII), the plan from the effective contents; the record says committed with the output digest; the source is unchanged.<br>**Refused requests queue nothing:** inside the library, the managed source and the imported original (even when replacing), an existing file, `.txt`, and a book without contents.<br>**Checked again before the write:** a file that appeared after the request is kept and the job fails `output_exists` without an SDK call.<br>**A cancel after the commit** is recorded as written; **before the commit**, nothing is written.<br>**`stop()` during an export:** `interrupted`, not committed, not requeued in the next session.<br>**SDK refusals** keep their issues (`invalid_plan`); **no exporter:** `unsupported`. |
+| `tst_migrations::version7CatalogGainsExports` (new) | A schema 7 catalog upgrades: jobs are kept in order (the latest per book and kind unchanged), an export can succeed without a run, a metadata job cannot, and a second open job or an unknown kind is refused. |
+| `tst_exportplan::planSurvivesJson` (new) | The stored plan keeps nodes (page 0, parents), omissions, a promotion to the top level, uncertain levels (non-ASCII) and removals; malformed JSON is refused. |
+| `tst_jobmodels` (new) | Export jobs have their own words in the queue, no Retry, and an interrupted export explains itself. They never change the book list's processing state. |
+
+**Control runs:** with each guard removed in one build, the matching test fails:
+- `BookListModel` taking export jobs: `tst_jobmodels::exportsDoNotChangeTheBookList`;
+- a committed copy closed as cancelled: `tst_exports::aCommittedCopyIsRecordedWhateverCameAfter`;
+- no second destination check: `tst_exportjobs::theDestinationIsCheckedAgainBeforeTheWrite`;
+- exports requeued on recovery: `tst_exports::restartDoesNotRequeueAnExport`.
+
+**Review fixes (PR #22, review of `cbd2000`):**
+- **Should fix, replacing a file nobody confirmed:** a queued export with "replace" could run later, in the same session behind an analysis or in the next one, and overwrite whatever file was at the path by then.
+  - Now the request records the confirmed file's size and modification time in `exports.replace_size` and `replace_modified`, or that none was there.
+  - Before the write, a new or different file is kept, and the job fails `output_exists` without an SDK call.
+  - New `tst_exportjobs::onlyTheConfirmedFileIsReplaced`, the reviewer's scenario: the file is changed and the library restarts before the export runs. It also covers a file that appears where none was, and an unchanged confirmed file, which is replaced as agreed. New `tst_exports::theConfirmedFileIsRecorded`.
+  - **Control:** without the check, the later document is replaced (`committed` true) and the test fails.
+  - **Verification after the fix:** `pwsh scripts/verify.ps1` Release and `-Configuration Debug` both **passed**, 28/28 tests.
+- **Note for part 3:** an export asked for while an analysis runs waits for it. The dialog should say "Waiting".
+
+**Found while testing:** a helper in the new test looped over `db(...).value()` of a temporary `Result` (a use-after-free, which crashed only in Release). It is fixed in the test, and no product code has the pattern.
+
+**Not in this part:** the Export dialog, the controller wiring of `SdkBookExporter`, and showing export records (part 3).
+
+**Next action:** review of [PR #22](https://github.com/PantaKoda/MyBooksLibrary/pull/22). Then M09 part 3.
 
 ## M08 — Organization
 

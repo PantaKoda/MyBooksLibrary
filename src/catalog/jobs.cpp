@@ -80,7 +80,6 @@ Result<JobRecord> insertQueuedJob(QSqlDatabase& db, const PublishTicket& ticket,
     return job(db, id);
 }
 
-// Moves a job from one of `from` to `to` (terminal states also set finished_at).
 Status transition(QSqlDatabase& db, const JobId& id, std::initializer_list<JobState> from, JobState to,
                   const QString& outcome, const QString& error, const std::optional<RunId>& run = std::nullopt)
 {
@@ -138,8 +137,16 @@ QString compact(const QJsonArray& array)
 
 } // namespace
 
+Status detail::transitionJob(QSqlDatabase& db, const JobId& id, std::initializer_list<JobState> from, JobState to,
+                             const QString& outcome, const QString& error, const std::optional<RunId>& run)
+{
+    return transition(db, id, from, to, outcome, error, run);
+}
+
 Result<JobRecord> detail::queueJob(QSqlDatabase& db, const BookId& book, JobKind kind)
 {
+    if (kind == JobKind::Export)
+        return makeError(ErrorCode::InvalidArgument, QStringLiteral("Exports are queued with enqueueExport."));
     auto open = openJobFor(db, book, kind);
     if (!open)
         return open.error();
@@ -179,8 +186,9 @@ Result<std::optional<JobRecord>> claimNextJob(QSqlDatabase& db)
     q.addBindValue(stamp);
     if (!q.exec())
         return sqlError(q);
-    if (!q.exec(QStringLiteral("SELECT id FROM jobs WHERE state = 'queued' "
-                               "ORDER BY CASE kind WHEN 'metadata' THEN 0 ELSE 1 END, created_at, id LIMIT 1")))
+    // Exports first: the user is waiting for them and they take seconds.
+    if (!q.exec(QStringLiteral("SELECT id FROM jobs WHERE state = 'queued' ORDER BY CASE kind WHEN 'export' THEN 0 "
+                               "WHEN 'metadata' THEN 1 ELSE 2 END, created_at, id LIMIT 1")))
         return sqlError(q);
     if (!q.next()) {
         if (!tx.commit())
@@ -387,9 +395,24 @@ namespace {
 
 // Closes a job whose worker ended without a result (no transaction):
 // CancelRequested -> Cancelled; Running -> Interrupted plus a fresh queued job
-// under a new generation, unless the book is trashed or gone.
+// under a new generation, unless the book is trashed or gone. An export is
+// Interrupted either way and never requeued: whether its copy was committed
+// is not known (its record keeps committed NULL), and the user decides
+// whether to export again.
 Status closeUnfinished(QSqlDatabase& db, const JobRecord& j, JobRecovery* counts)
 {
+    if (j.kind == JobKind::Export) {
+        if (!isOpen(j.state) || j.state == JobState::Queued)
+            return Done{};
+        if (auto s = transition(db, j.id, {JobState::Running, JobState::CancelRequested}, JobState::Interrupted,
+                                QStringLiteral("interrupted"),
+                                QStringLiteral("The application closed while the copy was being written; "
+                                               "the file may or may not have been saved."));
+            !s)
+            return s;
+        ++counts->interrupted;
+        return Done{};
+    }
     if (j.state == JobState::CancelRequested) {
         if (auto s = transition(db, j.id, {JobState::CancelRequested}, JobState::Cancelled, QStringLiteral("cancelled"),
                                 QStringLiteral("Cancelled; the application closed before it stopped."));

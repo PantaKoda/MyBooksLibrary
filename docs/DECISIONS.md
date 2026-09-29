@@ -476,3 +476,19 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - **Aliases resolved on real paths:** `std::filesystem::canonical` and `equivalent` work on the actual file system, not on strings, so case, `..`, short names and hard links to listed files cannot slip through. An existing file with other names (a hard-link count above one) is refused as well, since it may be an internal file such as the catalog; an existing name is resolved again and checked against the library folder, a library folder that cannot be resolved refuses the export, and on Windows a `:` (a stream inside another file) is refused (review of PR #21).
   - **Uncertain levels are their own list:** an entry whose level is uncertain has no parent to be moved from, so the plan lists it in `uncertainLevels` rather than as a promotion. Promotions sent to the SDK are only real parent changes, which `validate_plan` requires; the SDK's plan JSON therefore does not carry the uncertain-level notes, and part 2 keeps the application plan's omissions, promotions and uncertain levels with the export record (review of PR #21).
 - **Verified:** See IMPLEMENTATION_PROGRESS.md, M09 part 1.
+
+## 2026-09-29 — M09 part 2: export records and jobs
+
+- **Change:**
+  - Schema 8 rebuilds `jobs` to accept an `export` kind and adds `exports`: what each export was asked to write, and what it wrote.
+  - `ProcessingCoordinator::enqueueExport` validates the destination, builds the plan from the effective contents, and queues the job. The worker validates again and calls the SDK exporter.
+- **Why:** AGENTS.md §8 and §10: durable jobs, one SDK operation at a time, `apply` on the worker, and committed output recorded accurately. A cancel after a successful commit must not claim that nothing was written. Export state stays separate from the book's metadata and contents. The PR #21 review asked for the destination to be checked again right before `apply`, and for the application plan's omissions, promotions and uncertain levels to be kept with the export.
+- **Assumptions:**
+  - **Exports share the job queue:** cancel, cancel-all, the trash, recovery and the job list all apply without a second mechanism. The price is a table rebuild in schema 8, because SQLite cannot change a CHECK constraint in place. Nothing referenced `jobs`, so it is a copy in one migration transaction.
+  - **One open export per book:** the existing partial unique index enforces it. A second request is refused with a plain reason rather than queued behind the first.
+  - **The plan is fixed when requested:** the worker writes what the user asked for, even if the contents are edited meanwhile. The plan is bound to the source digest, which the SDK checks.
+  - **Exports first:** they take seconds and the user is waiting. Metadata and contents jobs take minutes with OCR.
+  - **Never requeued:** an export interrupted by closing or a crash is not written again by itself. After a crash the copy may or may not exist (`committed` stays unknown), and writing again could replace it or fail on it. The user decides.
+  - **No Retry in the queue:** an export is asked for again from the Export dialog (part 3), where the destination and replacement are chosen again.
+  - **Replacing is bound to the confirmed file:** the user agrees to replace the file they saw. Its size and modification time are recorded with the request, or that there was none. A queued export may wait behind an analysis or until the next session, and never replaces a file that is new or changed since. Size and time rather than a SHA-256: they cost nothing on the database thread and catch a document saved over the name. A change that keeps both exactly is not detected, which is an accepted limit (review of PR #22).
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, M09 part 2.

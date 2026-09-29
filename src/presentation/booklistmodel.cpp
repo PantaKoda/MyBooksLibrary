@@ -187,6 +187,10 @@ void BookListModel::setBooks(QList<domain::BookSummary> books)
 
 bool BookListModel::acceptJob(const domain::JobRecord& job)
 {
+    // A book's row shows its metadata and contents processing; writing a
+    // bookmarked copy changes neither.
+    if (job.kind == domain::JobKind::Export)
+        return false;
     auto& jobs = job.kind == domain::JobKind::Metadata ? m_metadataJobs : m_contentsJobs;
     const auto current = jobs.constFind(job.book);
     if (current != jobs.cend()) {
