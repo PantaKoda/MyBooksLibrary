@@ -14,7 +14,7 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | M05 Contents | Merged: part 1 [PR #12](https://github.com/PantaKoda/MyBooksLibrary/pull/12) (merge `9feb9b3`); part 2 [PR #13](https://github.com/PantaKoda/MyBooksLibrary/pull/13) (merge `8ba9f49`) | `feat/m05-a4-contents-analysis`; `feat/m05-presentation-contents-inspector` | See "M05" |
 | M06 Search/read | Merged: part 1 [PR #14](https://github.com/PantaKoda/MyBooksLibrary/pull/14) (merge `c8dc23e`); part 2 [PR #15](https://github.com/PantaKoda/MyBooksLibrary/pull/15) (merge `e964184`) | `feat/m06-presentation-search`; `feat/m06-reader-chapter-navigation` | See "M06" |
 | M07 Corrections/reruns | Merged: part 1 [PR #16](https://github.com/PantaKoda/MyBooksLibrary/pull/16) (merge `152eb8c`); part 2a [PR #17](https://github.com/PantaKoda/MyBooksLibrary/pull/17) (merge `c215319`); part 2b [PR #18](https://github.com/PantaKoda/MyBooksLibrary/pull/18) (merge `f40b99c`) | `feat/m07-presentation-metadata-corrections`; `feat/m07-a2-toc-edits`; `feat/m07-presentation-toc-editing` | See "M07" |
-| M08 Organization | Part 1 Merged ([PR #19](https://github.com/PantaKoda/MyBooksLibrary/pull/19), merge `7052536`); part 2 (window) InProgress | `feat/m08-a2-collections-trash`; `feat/m08-presentation-organization` | See "M08" |
+| M08 Organization | Part 1 Merged ([PR #19](https://github.com/PantaKoda/MyBooksLibrary/pull/19), merge `7052536`); part 2 AwaitingReview ([PR #20](https://github.com/PantaKoda/MyBooksLibrary/pull/20), the window) | `feat/m08-a2-collections-trash`; `feat/m08-presentation-organization` | See "M08" |
 | M09–M11 | NotStarted | | |
 
 ## M08 — Organization
@@ -53,7 +53,7 @@ M08 is split in two:
 
 **Not verified by hand:** right-click and press-and-hold menus on collections, the More menu's collections submenu with the mouse, and keyboard-only use.
 
-**Next action:** hand over the PR for review. After it is merged, M08 is complete (permanent deletion remains open); next is M09, export.
+**Next action:** review of [PR #20](https://github.com/PantaKoda/MyBooksLibrary/pull/20). After it is merged, M08 is complete (permanent deletion remains open); next is M09, export.
 
 ### Part 1: collections and trash races (A2 + A3)
 
