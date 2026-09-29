@@ -1,8 +1,10 @@
 pragma ComponentBehavior: Bound
 
 // The library's views: the whole library, each collection, and Trash, with
-// their book counts. Collections are created, renamed and deleted here.
-// Everything goes through LibraryController (C++); names are plain text.
+// their book counts. Collections are created, renamed and deleted here:
+// with the mouse (right-click, press and hold) or the keyboard (Menu key or
+// Shift+F10 for the menu, F2 to rename, Delete to delete). Everything goes
+// through LibraryController (C++); names are always plain text.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -41,17 +43,44 @@ Pane {
             Layout.minimumHeight: 40
             clip: true
             model: sidebar.library.collections
+            keyNavigationEnabled: true
+            activeFocusOnTab: true
             ScrollBar.vertical: ScrollBar {}
             delegate: ItemDelegate {
                 id: collectionRow
                 required property string collectionId
                 required property string name
                 required property int bookCount
+                required property int index
+                objectName: "collectionRow_" + index
                 width: ListView.view.width
                 text: qsTr("%1 (%2)").arg(name).arg(bookCount)
+                // A user's name is never markup.
+                contentItem: Label {
+                    text: collectionRow.text
+                    textFormat: Text.PlainText
+                    elide: Text.ElideRight
+                    color: collectionRow.highlighted ? collectionRow.palette.highlightedText : collectionRow.palette.windowText
+                }
                 highlighted: sidebar.library.viewCollectionId === collectionId
                 onClicked: sidebar.library.showCollection(collectionId)
                 onPressAndHold: collectionMenu.popup()
+                Keys.onPressed: (event) => {
+                    const menuKey = event.key === Qt.Key_Menu
+                                    || (event.key === Qt.Key_F10 && (event.modifiers & Qt.ShiftModifier))
+                    if (menuKey) {
+                        collectionMenu.popup()
+                    } else if (event.key === Qt.Key_F2 && sidebar.enabledActions) {
+                        sidebar.askName(collectionRow.collectionId, collectionRow.name)
+                    } else if (event.key === Qt.Key_Delete && sidebar.enabledActions) {
+                        sidebar.askDelete(collectionRow.collectionId, collectionRow.name)
+                    } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
+                        sidebar.library.showCollection(collectionRow.collectionId)
+                    } else {
+                        return
+                    }
+                    event.accepted = true
+                }
                 TapHandler {
                     acceptedButtons: Qt.RightButton
                     onTapped: collectionMenu.popup()
@@ -69,7 +98,7 @@ Pane {
                         onTriggered: sidebar.askDelete(collectionRow.collectionId, collectionRow.name)
                     }
                 }
-                Accessible.description: qsTr("Show the books in this collection. Right-click to rename or delete it.")
+                Accessible.description: qsTr("Show the books in this collection. Right-click, or press the Menu key, to rename or delete it.")
             }
             Label {
                 anchors.fill: parent
@@ -173,8 +202,16 @@ Pane {
         anchors.centerIn: parent
         width: Math.min(420, (parent ? parent.width : 420) - 32)
         modal: true
-        title: qsTr("Delete “%1”?").arg(collectionName)
+        title: qsTr("Delete this collection?")
         contentItem: ColumnLayout {
+            Label {
+                objectName: "deleteCollectionName"
+                Layout.fillWidth: true
+                text: deleteDialog.collectionName
+                textFormat: Text.PlainText   // A user's name is never markup.
+                font.bold: true
+                elide: Text.ElideRight
+            }
             Label {
                 Layout.fillWidth: true
                 text: qsTr("The collection is removed. Its books stay in the library.")

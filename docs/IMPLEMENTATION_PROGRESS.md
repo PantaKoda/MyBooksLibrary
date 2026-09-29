@@ -51,7 +51,26 @@ M08 is split in two:
 | `tst_inspectorpane` | Still passes, with no QML warnings, after the More menu gained the collections submenu |
 | `appMyBooksLibrary --library C:\MBL-demo-Contents --inspect-first --screenshot docs/images/m08-library-sidebar.png` (Release, real SDK) | Exit 0. The sidebar shows Library (1), Collections ("No collections yet."), New collection… and Trash (0); the schema 6 demo library upgraded to 7 on open. |
 
-**Not verified by hand:** right-click and press-and-hold menus on collections, the More menu's collections submenu with the mouse, and keyboard-only use.
+**Review fixes (self-review of `1adf26c`, 9 findings):**
+1. **Selection:** when the selected book left the list (Trash, another view, out of the shown collection), the rows changed without a model reset. ListView kept the same index, so the list highlighted another book while the inspector and every action still targeted the old one. The list is now `qml/library/BookListView.qml`. It finds the selected book again after every row change, or clears the selection, and it does not drive the inspector while search results are shown.
+2. **Refresh cost:** collection rows are filtered from the books already loaded, using `catalog::collectionBookIds`, instead of recomputing every member's summary.
+3. **Lookups:** `titleOf` and `processingStateOf` use the all-books hash first, which also holds the newest values.
+4. **Notifications:** `viewChanged` is emitted only when the view or its heading changes, not on every refresh.
+5. **Messages:** refusal messages are chosen per command, so a book command never says "Enter a name for the collection".
+6. **Keyboard:** collection rows open their menu with the Menu key or Shift+F10; F2 renames, Delete asks to delete, and Enter or Space shows the collection (AGENTS.md §9).
+7. **Plain text:** collection names are plain text in the sidebar, the Add to collection items and the delete dialog.
+8. **Activity titles** are refreshed on every snapshot, including one skipped because the view changed.
+9. **Tests:** a collection row is clicked, and the Add to collection submenu is tested.
+
+| Command | Result |
+| --- | --- |
+| `tst_booklistview` (new, real QML) | After trashing the selected book, and after switching to Trash and back, the list's current row, its selected ID and the inspector agree. While search drives the inspector, the list leaves it alone. **With the old reset-only resync, it fails:** index 1 highlights another book while the selection and inspector still name the trashed one. |
+| `tst_librarysidebar` (extended) | Clicking the collection row shows it. F2 opens rename with the name filled in; Delete opens the confirmation. A name with markup stays plain text (`textFormat` PlainText) in the row and the dialog. |
+| `tst_inspectorpane::addToCollectionMenuFollowsTheCollections` (new) | The submenu lists the collections by name as they are created and deleted; choosing one asks for that collection. |
+| `tst_organization` | `collectionBookIds` returns the members; an unknown collection gives NotFound |
+| `pwsh scripts/verify.ps1` (Release) and `-Configuration Debug` | VERIFY PASSED in both; 22/22 `ctest` suites; all smoke checks |
+
+**Not verified by hand:** the right-click and press-and-hold menus on collections with a real mouse, and full keyboard-only use of the window.
 
 **Next action:** review of [PR #20](https://github.com/PantaKoda/MyBooksLibrary/pull/20). After it is merged, M08 is complete (permanent deletion remains open); next is M09, export.
 

@@ -85,7 +85,9 @@ void TestLibrarySidebar::createSwitchAndDelete()
     QTRY_COMPARE_WITH_TIMEOUT(list->property("count").toInt(), 1, 5000);
     const QString id = controller.collections()->data(controller.collections()->index(0),
                                                       mbl::presentation::CollectionListModel::CollectionIdRole).toString();
-    controller.showCollection(id);
+    QTRY_VERIFY_WITH_TIMEOUT(findItem(root, QStringLiteral("collectionRow_0")), 5000);
+    click(findItem(root, QStringLiteral("collectionRow_0")));  // The row itself.
+    QCOMPARE(controller.view(), LibraryController::View::Collection);
     QCOMPARE(controller.viewTitle(), QStringLiteral("Study"));
     click(findItem(root, QStringLiteral("trashViewItem")));
     QCOMPARE(controller.view(), LibraryController::View::Trash);
@@ -100,11 +102,34 @@ void TestLibrarySidebar::createSwitchAndDelete()
     QTRY_VERIFY_WITH_TIMEOUT(findItem(root, QStringLiteral("organizeErrorLabel"))->isVisible(), 5000);
     QCOMPARE(controller.collections()->rowCount(), 1);
 
-    // Delete, after confirming.
-    QVERIFY(QMetaObject::invokeMethod(sidebar, "askDelete", Q_ARG(QVariant, id), Q_ARG(QVariant, QStringLiteral("Study"))));
+    QMetaObject::invokeMethod(nameDialog, "close");
+    QTRY_VERIFY_WITH_TIMEOUT(!nameDialog->property("visible").toBool(), 5000);
+
+    // Keyboard: F2 renames, Delete asks to delete (no mouse needed).
+    QQuickItem* row = findItem(root, QStringLiteral("collectionRow_0"));
+    row->forceActiveFocus();
+    QTRY_VERIFY_WITH_TIMEOUT(row->hasActiveFocus(), 5000);
+    QTest::keyClick(&window, Qt::Key_F2);
+    QTRY_VERIFY_WITH_TIMEOUT(nameDialog->property("opened").toBool(), 5000);
+    QCOMPARE(findItem(root, QStringLiteral("collectionNameField"))->property("text").toString(), QStringLiteral("Study"));
+    // A name with markup stays plain text in the sidebar.
+    findItem(root, QStringLiteral("collectionNameField"))->setProperty("text", QStringLiteral("<b>Bold</b> study"));
+    click(findItem(root, QStringLiteral("collectionNameSaveButton")));
+    QTRY_COMPARE_WITH_TIMEOUT(controller.collections()->data(controller.collections()->index(0), Qt::DisplayRole).toString(),
+                              QStringLiteral("<b>Bold</b> study"), 5000);
+    row = findItem(root, QStringLiteral("collectionRow_0"));
+    auto* rowLabel = qvariant_cast<QQuickItem*>(row->property("contentItem"));
+    QVERIFY(rowLabel);
+    QCOMPARE(rowLabel->property("textFormat").toInt(), 0);  // Text.PlainText
+    QVERIFY(rowLabel->property("text").toString().startsWith(QStringLiteral("<b>Bold</b> study")));
+
     auto* deleteDialog = sidebar->findChild<QObject*>(QStringLiteral("deleteCollectionDialog"));
     QVERIFY(deleteDialog);
+    row->forceActiveFocus();
+    QTRY_VERIFY_WITH_TIMEOUT(row->hasActiveFocus(), 5000);
+    QTest::keyClick(&window, Qt::Key_Delete);
     QTRY_VERIFY_WITH_TIMEOUT(deleteDialog->property("opened").toBool(), 5000);
+    QCOMPARE(findItem(root, QStringLiteral("deleteCollectionName"))->property("text").toString(), QStringLiteral("<b>Bold</b> study"));
     click(findItem(root, QStringLiteral("confirmDeleteCollectionButton")));
     QTRY_COMPARE_WITH_TIMEOUT(controller.collections()->rowCount(), 0, 5000);
     QTRY_VERIFY_WITH_TIMEOUT(!controller.busy(), 10000);

@@ -35,6 +35,8 @@ domain::Result<QList<domain::CollectionSummary>> listCollections(QSqlDatabase& d
 // The collection's active books, in library order (as listBooks).
 domain::Result<QList<domain::BookSummary>> listCollectionBooks(QSqlDatabase& db,
                                                                const domain::CollectionId& collection);
+// The IDs of the collection's books, active and trashed (cheap: no summaries).
+domain::Result<QList<domain::BookId>> collectionBookIds(QSqlDatabase& db, const domain::CollectionId& collection);
 // The collections a book belongs to (also while it is in Trash), by name.
 domain::Result<QList<domain::CollectionSummary>> collectionsOf(QSqlDatabase& db, const domain::BookId& book);
 

@@ -95,15 +95,25 @@ Pane {
                     MenuSeparator {}
                     Menu {
                         id: addToMenu
+                        objectName: "addToCollectionMenu"
                         title: qsTr("Add to collection")
                         enabled: pane.organizeEnabled && !pane.inspector.inTrash
                                  && pane.collections !== null && pane.collections.count > 0
                         Instantiator {
                             model: pane.collections
                             delegate: MenuItem {
+                                id: collectionItem
                                 required property string collectionId
                                 required property string name
                                 text: name
+                                // A user's name is never markup.
+                                contentItem: Label {
+                                    leftPadding: collectionItem.indicator ? collectionItem.indicator.width : 0
+                                    text: collectionItem.text
+                                    textFormat: Text.PlainText
+                                    elide: Text.ElideRight
+                                    verticalAlignment: Text.AlignVCenter
+                                }
                                 onTriggered: pane.addToCollectionRequested(collectionId)
                             }
                             onObjectAdded: (index, object) => addToMenu.insertItem(index, object as MenuItem)
@@ -115,7 +125,7 @@ Pane {
                         visible: pane.currentCollectionId.length > 0
                         height: visible ? implicitHeight : 0
                         enabled: pane.organizeEnabled
-                        text: qsTr("Remove from “%1”").arg(pane.currentCollectionName)
+                        text: qsTr("Remove from this collection")
                         onTriggered: pane.removeFromCollectionRequested(pane.currentCollectionId)
                     }
                     MenuItem {

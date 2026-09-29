@@ -176,90 +176,14 @@ ApplicationWindow {
                     SplitView.fillWidth: true
                     SplitView.minimumWidth: 240
 
-                    ListView {
+                    BookListView {
                         id: bookList
                         anchors.fill: parent
-                        leftMargin: 8
-                        topMargin: 8
+                        library: window.library
+                        inspectFirst: window.inspectFirst
                         visible: !window.library.search.active
-                        clip: true
-                        focus: true
-                        spacing: 2
-                        model: window.library.books
-                        keyNavigationEnabled: true
-                        currentIndex: -1
-                        ScrollBar.vertical: ScrollBar {}
-
-                        delegate: ItemDelegate {
-                            id: row
-                            required property int index
-                            required property string bookId
-                            required property string title
-                            required property bool titleFromFileName
-                            required property string contributors
-                            required property string processingState
-
-                            width: ListView.view.width
-                            highlighted: ListView.isCurrentItem
-                            onClicked: bookList.currentIndex = index
-                            onDoubleClicked: window.library.reader.openBook(row.bookId)
-
-                            contentItem: ColumnLayout {
-                                spacing: 2
-                                Label {
-                                    Layout.fillWidth: true
-                                    text: row.title
-                                    textFormat: Text.PlainText   // Extracted text is never markup.
-                                    color: row.highlighted ? row.palette.highlightedText : row.palette.windowText
-                                    font.bold: true
-                                    elide: Text.ElideRight
-                                }
-                                Label {
-                                    Layout.fillWidth: true
-                                    textFormat: Text.PlainText
-                                    text: row.titleFromFileName
-                                          ? qsTr("From the file name · %1").arg(row.processingState)
-                                          : (row.contributors.length > 0 ? row.contributors + " · " + row.processingState
-                                                                         : row.processingState)
-                                    color: row.highlighted ? row.palette.highlightedText : row.palette.windowText
-                                    opacity: row.highlighted ? 0.9 : 0.7
-                                    elide: Text.ElideRight
-                                }
-                            }
-                        }
-
-                        // Keep the selection on the same book when the list refreshes;
-                        // the inspector shows the selected book.
-                        property string selectedBookId: ""
-                        onCurrentIndexChanged: {
-                            selectedBookId = model ? model.bookIdAt(currentIndex) : ""
-                            window.library.inspector.select(selectedBookId)
-                        }
-                        onCountChanged: {
-                            if (window.inspectFirst && count > 0 && currentIndex < 0)
-                                currentIndex = 0
-                        }
-                        Connections {
-                            target: window.library.books
-                            function onModelReset() {
-                                bookList.currentIndex = window.library.books.rowOfBook(bookList.selectedBookId)
-                            }
-                        }
-
-                        Label {
-                            anchors.centerIn: parent
-                            width: parent.width * 0.7
-                            horizontalAlignment: Text.AlignHCenter
-                            wrapMode: Text.WordWrap
-                            visible: bookList.count === 0
-                            opacity: 0.7
-                            text: window.library.opening ? qsTr("Opening the library…")
-                                  : window.library.failed ? qsTr("The library could not be opened.")
-                                  : window.library.view === LibraryController.Trash ? qsTr("Trash is empty.")
-                                  : window.library.view === LibraryController.Collection
-                                    ? qsTr("No books in this collection yet. Select a book and use More → Add to collection.")
-                                  : qsTr("No books yet. Choose “Import PDFs…” or drop PDF files here.")
-                        }
+                        drivesInspector: !window.library.search.active
+                        onOpenRequested: (bookId) => window.library.reader.openBook(bookId)
                     }
 
                     SearchResultsView {

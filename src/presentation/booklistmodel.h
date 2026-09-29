@@ -65,6 +65,7 @@ private:
     void emitStateChanged(const domain::BookId& id);
 
     QString stateOf(const domain::BookSummary& book) const;
+    const domain::BookSummary* find(const domain::BookId& id) const;
 
     QList<domain::BookSummary> m_books;               // The rows: the current view.
     QHash<domain::BookId, domain::BookSummary> m_known;  // Lookups: every known book.

@@ -160,6 +160,7 @@ qt_add_qml_module(appMyBooksLibrary
         qml/inspector/BookInspectorPane.qml
         qml/inspector/MetadataFieldEditor.qml
         qml/library/LibrarySidebar.qml
+        qml/library/BookListView.qml
         qml/search/SearchResultsView.qml
         qml/reader/ReaderPane.qml
 )

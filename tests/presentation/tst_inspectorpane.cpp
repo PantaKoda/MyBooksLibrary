@@ -4,6 +4,7 @@
 #include "catalog/catalog.h"
 #include "catalog/library.h"
 #include "presentation/bookinspector.h"
+#include "presentation/collectionlistmodel.h"
 #include "presentation/librarycontroller.h"
 
 #include <QGuiApplication>
@@ -107,6 +108,7 @@ private slots:
     void entryDetailsFollowTheSelectedBook();
     void correctionDialogSavesAndSurvivesRefreshes();
     void contentsEditingInThePane();
+    void addToCollectionMenuFollowsTheCollections();
 };
 
 void TestInspectorPane::entryDetailsFollowTheSelectedBook()
@@ -377,6 +379,57 @@ void TestInspectorPane::contentsEditingInThePane()
     QCOMPARE(inspector->contents()->entryCount(), 1);
     QCOMPARE(inspector->contents()->data(inspector->contents()->index(0, 0), Qt::DisplayRole).toString(),
              QStringLiteral("Alpha chapter"));
+}
+
+// The More menu's "Add to collection" submenu lists the library's
+// collections as they change, and a choice asks for that collection.
+void TestInspectorPane::addToCollectionMenuFollowsTheCollections()
+{
+    QTemporaryDir dir;
+    BookId a;
+    {
+        auto library = mbl::catalog::Library::open(dir.path());
+        QVERIFY(library);
+        a = bookWithOneEntry(*library.value(), 1, QStringLiteral("Alpha chapter"));
+    }
+    LibraryController controller;
+    controller.open(dir.path());
+    QTRY_VERIFY_WITH_TIMEOUT(controller.ready() && !controller.busy(), 10000);
+
+    QQmlEngine engine;
+    QQmlComponent component(&engine, QUrl::fromLocalFile(QStringLiteral(MBL_SOURCE_DIR "/qml/inspector/BookInspectorPane.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    QQuickWindow window;
+    window.resize(640, 640);
+    std::unique_ptr<QObject> object(component.createWithInitialProperties(
+        {{QStringLiteral("inspector"), QVariant::fromValue<QObject*>(controller.inspector())},
+         {QStringLiteral("collections"), QVariant::fromValue<QObject*>(controller.collections())}}));
+    auto* pane = qobject_cast<QQuickItem*>(object.get());
+    QVERIFY2(pane, qPrintable(component.errorString()));
+    pane->setParentItem(window.contentItem());
+    pane->setSize(QSizeF(640, 640));
+    window.show();
+    controller.inspector()->select(a.toString());
+
+    auto* menu = pane->findChild<QObject*>(QStringLiteral("addToCollectionMenu"));
+    QVERIFY(menu);
+    QCOMPARE(menu->property("count").toInt(), 0);
+    controller.createCollection(QStringLiteral("Study"));
+    controller.createCollection(QStringLiteral("Work"));
+    QTRY_COMPARE_WITH_TIMEOUT(menu->property("count").toInt(), 2, 5000);
+
+    QSignalSpy requested(pane, SIGNAL(addToCollectionRequested(QString)));
+    QQuickItem* first = nullptr;
+    QVERIFY(QMetaObject::invokeMethod(menu, "itemAt", Q_RETURN_ARG(QQuickItem*, first), Q_ARG(int, 0)));
+    QVERIFY(first);
+    QCOMPARE(first->property("text").toString(), QStringLiteral("Study"));  // By name.
+    QVERIFY(QMetaObject::invokeMethod(first, "triggered"));
+    QCOMPARE(requested.size(), 1);
+    QCOMPARE(requested.first().first().toString(),
+             controller.collections()->data(controller.collections()->index(0),
+                                            mbl::presentation::CollectionListModel::CollectionIdRole).toString());
+    controller.deleteCollection(requested.first().first().toString());
+    QTRY_COMPARE_WITH_TIMEOUT(menu->property("count").toInt(), 1, 5000);
 }
 
 int main(int argc, char* argv[])

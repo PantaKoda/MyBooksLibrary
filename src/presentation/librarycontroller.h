@@ -222,12 +222,16 @@ private:
     void runRefresh();
     void setView(View view, const domain::CollectionId& collection = {});
     void setOrganizeError(const QString& error);
-    // Runs a catalog change on the database thread; then refreshes, or reports the refusal.
-    void organize(std::function<domain::Status(QSqlDatabase&)> change, std::function<void()> after = {});
+    // Runs a catalog change on the database thread; then refreshes, or reports
+    // the refusal (in the command's words when `describe` knows the error).
+    void organize(std::function<domain::Status(QSqlDatabase&)> change,
+                  std::function<QString(const domain::Error&)> describe, std::function<void()> after = {});
+    void updateViewTitle();  // Emits viewChanged only when the heading changed.
 
     BookListModel m_books;
     CollectionListModel m_collections;
     View m_view = View::Library;
+    QString m_shownViewTitle;
     domain::CollectionId m_viewCollection;
     int m_libraryCount = 0;
     int m_trashCount = 0;

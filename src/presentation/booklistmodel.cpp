@@ -244,24 +244,29 @@ void BookListModel::setKnownBooks(const QList<domain::BookSummary>& books)
         m_known.insert(book.id, book);
 }
 
-QString BookListModel::processingStateOf(const domain::BookId& id) const
+// Lookups use every known book (one hash lookup, and the newest values);
+// the rows only when setKnownBooks was never called.
+const domain::BookSummary* BookListModel::find(const domain::BookId& id) const
 {
+    if (const auto known = m_known.constFind(id); known != m_known.cend())
+        return &known.value();
     for (const domain::BookSummary& book : m_books) {
         if (book.id == id)
-            return stateOf(book);
+            return &book;
     }
-    const auto known = m_known.constFind(id);
-    return known == m_known.cend() ? QString() : stateOf(known.value());
+    return nullptr;
+}
+
+QString BookListModel::processingStateOf(const domain::BookId& id) const
+{
+    const domain::BookSummary* book = find(id);
+    return book ? stateOf(*book) : QString();
 }
 
 QString BookListModel::titleOf(const domain::BookId& id) const
 {
-    for (const domain::BookSummary& book : m_books) {
-        if (book.id == id)
-            return book.displayTitle;
-    }
-    const auto known = m_known.constFind(id);
-    return known == m_known.cend() ? QString() : known.value().displayTitle;
+    const domain::BookSummary* book = find(id);
+    return book ? book->displayTitle : QString();
 }
 
 int BookListModel::rowOfBook(const QString& bookId) const
