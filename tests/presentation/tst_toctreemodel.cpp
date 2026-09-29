@@ -105,8 +105,17 @@ void TestTocTreeModel::pageTextsUsePhysicalPages()
     missing.destinationState = DestinationState::Unresolved;
     missing.destinationPage.reset();
     missing.sourceTocPage = 1;
+    TocEntry three = entry("d", 3, "Glossary");
+    three.destinationState = DestinationState::Ambiguous;
+    three.destinationPage.reset();
+    three.evidence.alternativePages = {4, 9, 11};
+    TocEntry many = entry("e", 4, "Problems");  // A page count that disagrees all through the book.
+    many.destinationState = DestinationState::Ambiguous;
+    many.destinationPage.reset();
+    for (int p = 20; p < 32; ++p)
+        many.evidence.alternativePages << p;
     TocTreeModel m;
-    m.setEntries({first, ambiguous, missing});
+    m.setEntries({first, ambiguous, missing, three, many});
 
     QCOMPARE(m.data(m.index(0, 0), TocTreeModel::PageTextRole).toString(), QStringLiteral("Page 1"));
     QCOMPARE(m.data(m.index(0, 0), TocTreeModel::PageRole).toInt(), 1);
@@ -116,6 +125,17 @@ void TestTocTreeModel::pageTextsUsePhysicalPages()
     QCOMPARE(m.data(m.index(2, 0), TocTreeModel::PageTextRole).toString(), QStringLiteral("Page not found"));
     QCOMPARE(m.data(m.index(2, 0), TocTreeModel::PageRole).toInt(), -1);
     QCOMPARE(m.data(m.index(2, 0), TocTreeModel::SourcePageRole).toInt(), 2);  // Where to look instead.
+
+    // A few possible pages are listed; many are counted, so the row keeps its
+    // title, and listed in the details.
+    QCOMPARE(m.data(m.index(3, 0), TocTreeModel::PageTextRole).toString(), QStringLiteral("Page 5 or 10 or 12?"));
+    QVERIFY(!m.data(m.index(3, 0), TocTreeModel::DetailRole).toString().contains(QStringLiteral("Possible pages")));
+    QCOMPARE(m.data(m.index(4, 0), TocTreeModel::PageTextRole).toString(),
+             QStringLiteral("Page uncertain (12 possible)"));
+    QCOMPARE(m.data(m.index(4, 0), TocTreeModel::PageRole).toInt(), -1);
+    QVERIFY(m.data(m.index(4, 0), TocTreeModel::DetailRole)
+                .toString()
+                .contains(QStringLiteral("Possible pages: 21, 22, 23, 24, 25, 26, 27, 28, 29, 30 and 2 more")));
 }
 
 void TestTocTreeModel::detailsExplainInPlainLanguage()

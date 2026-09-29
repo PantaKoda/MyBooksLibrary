@@ -19,6 +19,15 @@ QString tr(const char* text)
     return QCoreApplication::translate("TocTreeModel", text);
 }
 
+QString trn(const char* text, int n)
+{
+    return QCoreApplication::translate("TocTreeModel", text, nullptr, n);
+}
+
+// Possible pages of an ambiguous entry listed by number; with more, only how
+// many. A long list would fill the row and hide the title.
+constexpr qsizetype kListedAlternatives = 3;
+
 // Stored index to the internal id of a QModelIndex (entry + 1; 0 is unused).
 quintptr idOf(int entry)
 {
@@ -146,11 +155,15 @@ QString TocTreeModel::pageText(const TocEntry& e)
     case DestinationState::Resolved:
         return e.destinationPage ? tr("Page %1").arg(*e.destinationPage + 1) : tr("Page not found");
     case DestinationState::Ambiguous: {
+        const QList<int>& alternatives = e.evidence.alternativePages;
+        if (alternatives.isEmpty())
+            return tr("Page uncertain");
+        if (alternatives.size() > kListedAlternatives)
+            return trn("Page uncertain (%n possible)", int(alternatives.size()));
         QStringList pages;
-        for (int p : e.evidence.alternativePages)
+        for (int p : alternatives)
             pages << QString::number(p + 1);
-        return pages.isEmpty() ? tr("Page uncertain")
-                               : tr("Page %1?").arg(pages.join(QStringLiteral(" %1 ").arg(tr("or"))));
+        return tr("Page %1?").arg(pages.join(QStringLiteral(" %1 ").arg(tr("or"))));
     }
     case DestinationState::Unresolved:
         return tr("Page not found");
@@ -257,6 +270,17 @@ QVariant TocTreeModel::data(const QModelIndex& index, int role) const
                 const QString how = methodText(*e.evidence.destinationMethod);
                 if (!how.isEmpty())
                     lines << tr("Page %1, %2").arg(*e.destinationPage + 1).arg(how);
+            }
+            const QList<int>& alternatives = e.evidence.alternativePages;
+            if (e.destinationState == DestinationState::Ambiguous && alternatives.size() > kListedAlternatives) {
+                constexpr qsizetype shown = 10;
+                QStringList pages;
+                for (qsizetype i = 0; i < alternatives.size() && i < shown; ++i)
+                    pages << QString::number(alternatives.at(i) + 1);
+                QString line = tr("Possible pages: %1").arg(pages.join(QStringLiteral(", ")));
+                if (alternatives.size() > shown)
+                    line += u' ' + trn("and %n more", int(alternatives.size() - shown));
+                lines << line;
             }
             for (const QString& r : e.evidence.destinationReasons)
                 lines << r;
