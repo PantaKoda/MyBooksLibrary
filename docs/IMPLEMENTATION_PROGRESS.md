@@ -15,7 +15,7 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | M06 Search/read | Merged: part 1 [PR #14](https://github.com/PantaKoda/MyBooksLibrary/pull/14) (merge `c8dc23e`); part 2 [PR #15](https://github.com/PantaKoda/MyBooksLibrary/pull/15) (merge `e964184`) | `feat/m06-presentation-search`; `feat/m06-reader-chapter-navigation` | See "M06" |
 | M07 Corrections/reruns | Merged: part 1 [PR #16](https://github.com/PantaKoda/MyBooksLibrary/pull/16) (merge `152eb8c`); part 2a [PR #17](https://github.com/PantaKoda/MyBooksLibrary/pull/17) (merge `c215319`); part 2b [PR #18](https://github.com/PantaKoda/MyBooksLibrary/pull/18) (merge `f40b99c`) | `feat/m07-presentation-metadata-corrections`; `feat/m07-a2-toc-edits`; `feat/m07-presentation-toc-editing` | See "M07" |
 | M08 Organization | Merged: part 1 [PR #19](https://github.com/PantaKoda/MyBooksLibrary/pull/19) (merge `7052536`); part 2 [PR #20](https://github.com/PantaKoda/MyBooksLibrary/pull/20) (merge `c182ec3`). Permanent deletion of trashed books remains open | `feat/m08-a2-collections-trash`; `feat/m08-presentation-organization` | See "M08" |
-| M09 Export | Parts 1 and 2 Merged ([PR #21](https://github.com/PantaKoda/MyBooksLibrary/pull/21), merge `acc2b89`; [PR #22](https://github.com/PantaKoda/MyBooksLibrary/pull/22), merge `f2bd6b4`); part 3 InProgress (the Export dialog) | `feat/m09-a1-export-core`; `feat/m09-a2-export-jobs`; `feat/m09-presentation-export` | See "M09" |
+| M09 Export | Parts 1 and 2 Merged ([PR #21](https://github.com/PantaKoda/MyBooksLibrary/pull/21), merge `acc2b89`; [PR #22](https://github.com/PantaKoda/MyBooksLibrary/pull/22), merge `f2bd6b4`); part 3 AwaitingReview ([PR #23](https://github.com/PantaKoda/MyBooksLibrary/pull/23), the Export dialog) | `feat/m09-a1-export-core`; `feat/m09-a2-export-jobs`; `feat/m09-presentation-export` | See "M09" |
 | M10–M11 | NotStarted | | |
 
 ## M09 — Export
@@ -150,7 +150,7 @@ M09 is split in three:
 - **Every managed source protected:** parts 1 and 2, with refusals shown here.
 - **Partial coverage visible:** the summary and a note per entry.
 
-**Next action:** open the PR for review. After it is merged, M09 is complete. Next is M10, the Windows release.
+**Next action:** review of [PR #23](https://github.com/PantaKoda/MyBooksLibrary/pull/23). After it is merged, M09 is complete. Next is M10, the Windows release.
 
 ## M08 — Organization
 
