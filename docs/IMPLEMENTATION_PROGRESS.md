@@ -115,7 +115,9 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 - Books analyzed with 0.1.0 keep their result until **Analyze contents again** (USER_GUIDE.md, "Questions and problems").
 - Many other books in the folder place few or no entries for other reasons (e.g. *The Linux Programming Interface*, 0 of 971). The labels do not show a break there; not investigated here.
 
-**Verification:** see the PR.
+**UI evidence:** `docs/images/m05-page-labels-before.png` (the v0.1.0 package) and `m05-page-labels-after.png` (this branch), both of `dropped-pages-book.pdf`: `appMyBooksLibrary --library C:\MBL-demo-PageLabels --import tests\fixtures\dropped-pages-book.pdf --inspect-first --screenshot <png>`. Before: "5 contents entries, 0 with a confirmed page". After: "every page confirmed", pages 4, 11, 13, 18 and 25.
+
+**Verification:** `pwsh scripts/verify.ps1 -SdkDir <sdk>` (Release) **passed** at `ce28fd6`: 181 text files, 31/31 tests, smoke checks. `-Configuration Debug` **passed** at the same commit: 31/31 tests, smoke checks. Only documentation and these images changed after it.
 
 ## Releases on GitHub
 
