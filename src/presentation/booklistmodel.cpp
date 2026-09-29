@@ -1,6 +1,7 @@
 #include "presentation/booklistmodel.h"
 
 #include <QCoreApplication>
+#include <QLocale>
 #include <QSet>
 #include <QStringList>
 
@@ -112,12 +113,8 @@ QVariant BookListModel::data(const QModelIndex& index, int role) const
             names << c.name;
         return names.join(QStringLiteral(", "));
     }
-    case ProcessingStateRole: {
-        const auto metadata = m_metadataJobs.constFind(book.id);
-        const auto contents = m_contentsJobs.constFind(book.id);
-        return stateText(book, metadata == m_metadataJobs.cend() ? nullptr : &metadata.value(),
-                         contents == m_contentsJobs.cend() ? nullptr : &contents.value());
-    }
+    case ProcessingStateRole:
+        return stateOf(book);
     }
     return {};
 }
@@ -227,22 +224,49 @@ void BookListModel::emitStateChanged(const domain::BookId& id)
     }
 }
 
+QString BookListModel::stateOf(const domain::BookSummary& book) const
+{
+    if (book.lifecycle == domain::Lifecycle::Trashed) {
+        return book.trashedAt.isValid()
+                   ? tr("In Trash since %1").arg(QLocale().toString(book.trashedAt.toLocalTime().date(), QLocale::ShortFormat))
+                   : tr("In Trash");
+    }
+    const auto metadata = m_metadataJobs.constFind(book.id);
+    const auto contents = m_contentsJobs.constFind(book.id);
+    return stateText(book, metadata == m_metadataJobs.cend() ? nullptr : &metadata.value(),
+                     contents == m_contentsJobs.cend() ? nullptr : &contents.value());
+}
+
+void BookListModel::setKnownBooks(const QList<domain::BookSummary>& books)
+{
+    m_known.clear();
+    for (const domain::BookSummary& book : books)
+        m_known.insert(book.id, book);
+}
+
+// Lookups use every known book (one hash lookup, and the newest values);
+// the rows only when setKnownBooks was never called.
+const domain::BookSummary* BookListModel::find(const domain::BookId& id) const
+{
+    if (const auto known = m_known.constFind(id); known != m_known.cend())
+        return &known.value();
+    for (const domain::BookSummary& book : m_books) {
+        if (book.id == id)
+            return &book;
+    }
+    return nullptr;
+}
+
 QString BookListModel::processingStateOf(const domain::BookId& id) const
 {
-    for (qsizetype row = 0; row < m_books.size(); ++row) {
-        if (m_books.at(row).id == id)
-            return data(index(int(row)), ProcessingStateRole).toString();
-    }
-    return {};
+    const domain::BookSummary* book = find(id);
+    return book ? stateOf(*book) : QString();
 }
 
 QString BookListModel::titleOf(const domain::BookId& id) const
 {
-    for (const domain::BookSummary& book : m_books) {
-        if (book.id == id)
-            return book.displayTitle;
-    }
-    return {};
+    const domain::BookSummary* book = find(id);
+    return book ? book->displayTitle : QString();
 }
 
 int BookListModel::rowOfBook(const QString& bookId) const

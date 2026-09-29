@@ -95,9 +95,13 @@ ApplicationWindow {
             spacing: 8
 
             Label {
-                text: qsTr("Library")
+                objectName: "viewTitleLabel"
+                text: window.library.viewTitle
+                textFormat: Text.PlainText
                 font.bold: true
                 font.pixelSize: 16
+                elide: Text.ElideRight
+                Layout.maximumWidth: 220
             }
             Label {
                 Layout.preferredWidth: 160
@@ -155,96 +159,31 @@ ApplicationWindow {
                     }
                 }
 
-                // Book list, and the selected book's inspector beside it.
+                // The views (library, collections, Trash), the book list, and
+                // the selected book's inspector beside it.
                 SplitView {
                     anchors.fill: parent
                     orientation: Qt.Horizontal
+
+                LibrarySidebar {
+                    library: window.library
+                    enabledActions: window.library.ready && !window.closeRequested
+                    SplitView.preferredWidth: 190
+                    SplitView.minimumWidth: 140
+                }
 
                 Item {
                     SplitView.fillWidth: true
                     SplitView.minimumWidth: 240
 
-                    ListView {
+                    BookListView {
                         id: bookList
                         anchors.fill: parent
-                        leftMargin: 8
-                        topMargin: 8
+                        library: window.library
+                        inspectFirst: window.inspectFirst
                         visible: !window.library.search.active
-                        clip: true
-                        focus: true
-                        spacing: 2
-                        model: window.library.books
-                        keyNavigationEnabled: true
-                        currentIndex: -1
-                        ScrollBar.vertical: ScrollBar {}
-
-                        delegate: ItemDelegate {
-                            id: row
-                            required property int index
-                            required property string bookId
-                            required property string title
-                            required property bool titleFromFileName
-                            required property string contributors
-                            required property string processingState
-
-                            width: ListView.view.width
-                            highlighted: ListView.isCurrentItem
-                            onClicked: bookList.currentIndex = index
-                            onDoubleClicked: window.library.reader.openBook(row.bookId)
-
-                            contentItem: ColumnLayout {
-                                spacing: 2
-                                Label {
-                                    Layout.fillWidth: true
-                                    text: row.title
-                                    textFormat: Text.PlainText   // Extracted text is never markup.
-                                    color: row.highlighted ? row.palette.highlightedText : row.palette.windowText
-                                    font.bold: true
-                                    elide: Text.ElideRight
-                                }
-                                Label {
-                                    Layout.fillWidth: true
-                                    textFormat: Text.PlainText
-                                    text: row.titleFromFileName
-                                          ? qsTr("From the file name · %1").arg(row.processingState)
-                                          : (row.contributors.length > 0 ? row.contributors + " · " + row.processingState
-                                                                         : row.processingState)
-                                    color: row.highlighted ? row.palette.highlightedText : row.palette.windowText
-                                    opacity: row.highlighted ? 0.9 : 0.7
-                                    elide: Text.ElideRight
-                                }
-                            }
-                        }
-
-                        // Keep the selection on the same book when the list refreshes;
-                        // the inspector shows the selected book.
-                        property string selectedBookId: ""
-                        onCurrentIndexChanged: {
-                            selectedBookId = model ? model.bookIdAt(currentIndex) : ""
-                            window.library.inspector.select(selectedBookId)
-                        }
-                        onCountChanged: {
-                            if (window.inspectFirst && count > 0 && currentIndex < 0)
-                                currentIndex = 0
-                        }
-                        Connections {
-                            target: window.library.books
-                            function onModelReset() {
-                                bookList.currentIndex = window.library.books.rowOfBook(bookList.selectedBookId)
-                            }
-                        }
-
-                        Label {
-                            anchors.centerIn: parent
-                            width: parent.width * 0.7
-                            horizontalAlignment: Text.AlignHCenter
-                            wrapMode: Text.WordWrap
-                            visible: bookList.count === 0
-                            opacity: 0.7
-                            text: window.library.opening ? qsTr("Opening the library…")
-                                  : window.library.failed ? qsTr("The library could not be opened.")
-                                  : qsTr("No books yet. Choose “Import PDFs…” or drop PDF files here.")
-                        }
+                        drivesInspector: !window.library.search.active
+                        onOpenRequested: (bookId) => window.library.reader.openBook(bookId)
                     }
 
                     SearchResultsView {
@@ -267,6 +206,14 @@ ApplicationWindow {
                     onRerunMetadataRequested: window.library.rerunMetadata(window.library.inspector.bookId)
                     onRerunContentsRequested: window.library.rerunContents(window.library.inspector.bookId)
                     rerunEnabled: window.library.processingAvailable && !window.closeRequested
+                    collections: window.library.collections
+                    currentCollectionId: window.library.viewCollectionId
+                    currentCollectionName: window.library.view === LibraryController.Collection ? window.library.viewTitle : ""
+                    organizeEnabled: window.library.ready && !window.closeRequested
+                    onAddToCollectionRequested: (collectionId) => window.library.addToCollection(collectionId, window.library.inspector.bookId)
+                    onRemoveFromCollectionRequested: (collectionId) => window.library.removeFromCollection(collectionId, window.library.inspector.bookId)
+                    onMoveToTrashRequested: window.library.moveToTrash(window.library.inspector.bookId)
+                    onRestoreRequested: window.library.restoreFromTrash(window.library.inspector.bookId)
                     selectFirstEntry: window.inspectFirst
                     visible: window.library.inspector.hasBook
                     SplitView.preferredWidth: Math.max(320, window.width * 0.55)
@@ -478,6 +425,13 @@ ApplicationWindow {
                     elide: Text.ElideRight
                     opacity: 0.8
                 }
+            }
+            Button {
+                objectName: "restoreDuplicatesButton"
+                visible: window.library.trashedDuplicateCount > 0
+                text: qsTr("Restore %n book(s) from Trash", "", window.library.trashedDuplicateCount)
+                onClicked: window.library.restoreTrashedDuplicates()
+                Accessible.description: qsTr("The imported files are already in the library, in Trash: bring those books back")
             }
             Button {
                 id: moreProblemsButton

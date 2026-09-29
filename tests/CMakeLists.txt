@@ -57,6 +57,17 @@ mbl_add_test(tst_inspectorpane presentation/tst_inspectorpane.cpp)
 target_link_libraries(tst_inspectorpane PRIVATE mbl_presentation mbl_presentationplugin Qt6::Quick)
 target_compile_definitions(tst_inspectorpane PRIVATE MBL_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 
+# Loads the real book list QML (offscreen) with a controller on imported fixtures.
+mbl_add_test(tst_booklistview presentation/tst_booklistview.cpp)
+target_link_libraries(tst_booklistview PRIVATE mbl_presentation mbl_presentationplugin Qt6::Quick)
+target_compile_definitions(tst_booklistview PRIVATE MBL_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
+                                                   MBL_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+
+# Loads the real library sidebar QML (offscreen) against the presentation module.
+mbl_add_test(tst_librarysidebar presentation/tst_librarysidebar.cpp)
+target_link_libraries(tst_librarysidebar PRIVATE mbl_presentation mbl_presentationplugin Qt6::Quick)
+target_compile_definitions(tst_librarysidebar PRIVATE MBL_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+
 mbl_add_test(tst_searchcontroller presentation/tst_searchcontroller.cpp)
 target_link_libraries(tst_searchcontroller PRIVATE mbl_presentation)
 

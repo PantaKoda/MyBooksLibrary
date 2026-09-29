@@ -1,6 +1,7 @@
 #include "presentation/librarycontroller.h"
 
 #include "catalog/catalog.h"
+#include "catalog/collections.h"
 #include "catalog/jobs.h"
 #include "catalog/library.h"
 #include "processing/processingcoordinator.h"
@@ -13,6 +14,7 @@
 #include <QFuture>
 #include <QMetaObject>
 #include <QMutexLocker>
+#include <QSet>
 
 namespace mbl::presentation {
 
@@ -23,6 +25,7 @@ struct LibraryController::FileResult {
     QString path;
     Outcome outcome = Outcome::Failed;
     QString error;
+    std::optional<domain::BookId> book;  // The registered or existing book.
 };
 
 namespace {
@@ -245,6 +248,225 @@ void LibraryController::rerunContents(const QString& bookId)
         m_coordinator->enqueueContents(book);
 }
 
+void LibraryController::showLibrary()
+{
+    setView(View::Library);
+}
+
+void LibraryController::showCollection(const QString& collectionId)
+{
+    const domain::CollectionId id = domain::CollectionId::fromString(collectionId);
+    if (!id.isNull())
+        setView(View::Collection, id);
+}
+
+void LibraryController::showTrash()
+{
+    setView(View::Trash);
+}
+
+void LibraryController::setView(View view, const domain::CollectionId& collection)
+{
+    const domain::CollectionId shown = view == View::Collection ? collection : domain::CollectionId();
+    if (view == m_view && shown == m_viewCollection)
+        return;
+    m_view = view;
+    m_viewCollection = shown;
+    // Search follows a collection; elsewhere it covers the library.
+    m_search.setCollection(view == View::Collection ? std::optional<domain::CollectionId>(shown) : std::nullopt);
+    m_shownViewTitle = viewTitle();
+    emit viewChanged();
+    refresh();
+}
+
+void LibraryController::updateViewTitle()
+{
+    const QString title = viewTitle();
+    if (title == m_shownViewTitle)
+        return;
+    m_shownViewTitle = title;
+    emit viewChanged();
+}
+
+QString LibraryController::viewTitle() const
+{
+    switch (m_view) {
+    case View::Library: return tr("Library");
+    case View::Trash: return tr("Trash");
+    case View::Collection: {
+        const QString name = m_collections.nameOf(m_viewCollection);
+        return name.isEmpty() ? tr("Collection") : name;
+    }
+    }
+    return {};
+}
+
+void LibraryController::setOrganizeError(const QString& error)
+{
+    if (m_organizeError == error)
+        return;
+    m_organizeError = error;
+    emit organizeErrorChanged();
+}
+
+void LibraryController::dismissOrganizeError()
+{
+    setOrganizeError({});
+}
+
+namespace {
+
+// Messages for the refusals collection commands can meet; other errors are
+// reported with their own text.
+QString collectionRefusal(const domain::Error& error)
+{
+    switch (error.code) {
+    case domain::ErrorCode::Duplicate:
+        return QCoreApplication::translate("LibraryController", "A collection with that name already exists.");
+    case domain::ErrorCode::InvalidArgument:
+        return QCoreApplication::translate("LibraryController", "Enter a name for the collection.");
+    case domain::ErrorCode::Trashed:
+        return QCoreApplication::translate("LibraryController",
+                                           "A book in Trash cannot be added to a collection. Restore it first.");
+    case domain::ErrorCode::NotFound:
+        return QCoreApplication::translate("LibraryController", "That book or collection is no longer in the library.");
+    default:
+        return {};
+    }
+}
+
+QString bookRefusal(const domain::Error& error)
+{
+    if (error.code == domain::ErrorCode::NotFound)
+        return QCoreApplication::translate("LibraryController", "That book is no longer in the library.");
+    return {};
+}
+
+} // namespace
+
+void LibraryController::organize(std::function<domain::Status(QSqlDatabase&)> change,
+                                 std::function<QString(const domain::Error&)> describe, std::function<void()> after)
+{
+    if (!m_library || m_closing)
+        return;
+    setOrganizeError({});
+    m_library->run(std::move(change)).then(this, [this, describe, after](const domain::Status& done) {
+        if (!done) {
+            const QString known = describe ? describe(done.error()) : QString();
+            setOrganizeError(known.isEmpty() ? tr("The change was not saved: %1").arg(done.error().message) : known);
+            refresh();
+            return;
+        }
+        if (after)
+            after();
+        refresh();
+        emit organized();
+    });
+}
+
+void LibraryController::createCollection(const QString& name)
+{
+    organize(
+        [name](QSqlDatabase& db) -> domain::Status {
+            auto created = catalog::createCollection(db, name);
+            if (!created)
+                return created.error();
+            return domain::Done{};
+        },
+        collectionRefusal);
+}
+
+void LibraryController::renameCollection(const QString& collectionId, const QString& name)
+{
+    const auto id = domain::CollectionId::fromString(collectionId);
+    organize([id, name](QSqlDatabase& db) { return catalog::renameCollection(db, id, name); }, collectionRefusal);
+}
+
+void LibraryController::deleteCollection(const QString& collectionId)
+{
+    const auto id = domain::CollectionId::fromString(collectionId);
+    organize([id](QSqlDatabase& db) { return catalog::deleteCollection(db, id); }, collectionRefusal,
+             [this, id] {
+                 if (m_view == View::Collection && m_viewCollection == id)
+                     setView(View::Library);
+             });
+}
+
+void LibraryController::addToCollection(const QString& collectionId, const QString& bookId)
+{
+    const auto id = domain::CollectionId::fromString(collectionId);
+    const auto book = domain::BookId::fromString(bookId);
+    organize([id, book](QSqlDatabase& db) { return catalog::addToCollection(db, id, {book}); }, collectionRefusal);
+}
+
+void LibraryController::removeFromCollection(const QString& collectionId, const QString& bookId)
+{
+    const auto id = domain::CollectionId::fromString(collectionId);
+    const auto book = domain::BookId::fromString(bookId);
+    organize([id, book](QSqlDatabase& db) { return catalog::removeFromCollection(db, id, {book}); },
+             collectionRefusal);
+}
+
+void LibraryController::moveToTrash(const QString& bookId)
+{
+    const auto book = domain::BookId::fromString(bookId);
+    // The catalog ends the book's jobs; a running SDK call is also told to
+    // stop now, instead of finishing a result that would be refused.
+    auto stopping = std::make_shared<QList<domain::JobId>>();
+    organize(
+        [book, stopping](QSqlDatabase& db) -> domain::Status {
+            if (auto trashed = catalog::trashBook(db, book); !trashed)
+                return trashed;
+            auto open = catalog::listJobs(db, true, -1);
+            if (!open)
+                return open.error();
+            for (const domain::JobRecord& job : open.value()) {
+                if (job.book == book && job.state == domain::JobState::CancelRequested)
+                    *stopping << job.id;
+            }
+            return domain::Done{};
+        },
+        bookRefusal,
+        [this, stopping] {
+            for (const domain::JobId& job : *stopping) {
+                if (m_coordinator)
+                    m_coordinator->cancelJob(job);
+            }
+        });
+}
+
+void LibraryController::restoreFromTrash(const QString& bookId)
+{
+    const auto book = domain::BookId::fromString(bookId);
+    organize([book](QSqlDatabase& db) { return catalog::restoreBook(db, book); }, bookRefusal,
+             [this, book] {
+                 m_trashedDuplicates.removeAll(book);
+                 emit trashedDuplicatesChanged();
+                 startJobs();  // Resumed work runs now, not at the next launch.
+             });
+}
+
+void LibraryController::restoreTrashedDuplicates()
+{
+    const QList<domain::BookId> books = m_trashedDuplicates;
+    if (books.isEmpty())
+        return;
+    organize(
+        [books](QSqlDatabase& db) -> domain::Status {
+            for (const domain::BookId& book : books) {
+                if (auto restored = catalog::restoreBook(db, book); !restored)
+                    return restored;
+            }
+            return domain::Done{};
+        },
+        bookRefusal,
+        [this] {
+            m_trashedDuplicates.clear();
+            emit trashedDuplicatesChanged();
+            startJobs();
+        });
+}
+
 void LibraryController::cancelAllJobs()
 {
     if (m_coordinator)
@@ -281,24 +503,78 @@ void LibraryController::refresh()
 void LibraryController::runRefresh()
 {
     struct Snapshot {
+        View view = View::Library;
+        domain::CollectionId collection;
         domain::Result<QList<domain::BookSummary>> books;
+        domain::Result<QList<domain::BookSummary>> trashed;
+        std::optional<domain::Result<QList<domain::BookId>>> collectionMembers;
+        domain::Result<QList<domain::CollectionSummary>> collections;
         domain::Result<QList<domain::JobRecord>> latest;
         domain::Result<QList<domain::JobRecord>> recent;
         domain::Result<QList<domain::JobRecord>> open;
     };
     m_library
-        ->run([](QSqlDatabase& db) {
+        ->run([view = m_view, collection = m_viewCollection](QSqlDatabase& db) {
             // Recent jobs for the activity list, plus every open job however
             // old, so waiting counts and per-job Cancel are complete.
-            return Snapshot{catalog::listBooks(db, domain::Lifecycle::Active), catalog::latestJobs(db),
-                            catalog::listJobs(db, false, 100), catalog::listJobs(db, true, -1)};
+            Snapshot s{view,
+                       collection,
+                       catalog::listBooks(db, domain::Lifecycle::Active),
+                       catalog::listBooks(db, domain::Lifecycle::Trashed),
+                       std::nullopt,
+                       catalog::listCollections(db),
+                       catalog::latestJobs(db),
+                       catalog::listJobs(db, false, 100),
+                       catalog::listJobs(db, true, -1)};
+            if (view == View::Collection)
+                s.collectionMembers = catalog::collectionBookIds(db, collection);
+            return s;
         })
         .then(this, [this](const Snapshot& snapshot) {
-            if (snapshot.books) {
-                m_books.setBooks(snapshot.books.value());
-                m_jobs.titlesChanged();
+            if (snapshot.collections)
+                m_collections.setCollections(snapshot.collections.value());
+            if (snapshot.books && snapshot.trashed) {
+                // Lookups (activity, search) know every book; the rows are the view.
+                m_books.setKnownBooks(snapshot.books.value() + snapshot.trashed.value());
+                m_jobs.titlesChanged();  // Titles may have changed, whatever the rows show.
+                const int library = int(snapshot.books.value().size());
+                const int trash = int(snapshot.trashed.value().size());
+                if (library != m_libraryCount || trash != m_trashCount) {
+                    m_libraryCount = library;
+                    m_trashCount = trash;
+                    emit countsChanged();
+                }
+            }
+            const bool sameView = snapshot.view == m_view && snapshot.collection == m_viewCollection;
+            if (!sameView) {
+                m_refreshAgain = true;  // The view changed meanwhile: load it next.
+            } else if (snapshot.view == View::Collection && snapshot.collectionMembers
+                       && !*snapshot.collectionMembers
+                       && snapshot.collectionMembers->error().code == domain::ErrorCode::NotFound) {
+                setView(View::Library);  // The collection was deleted.
             } else {
-                setStatus(tr("The book list could not be loaded: %1").arg(snapshot.books.error().message));
+                const domain::Result<QList<domain::BookSummary>>& source =
+                    snapshot.view == View::Trash ? snapshot.trashed : snapshot.books;
+                const bool membersLoaded = snapshot.view != View::Collection || (snapshot.collectionMembers
+                                                                                 && *snapshot.collectionMembers);
+                if (source && membersLoaded) {
+                    QList<domain::BookSummary> list = source.value();
+                    if (snapshot.view == View::Collection) {
+                        // The library's books in the collection, in library order.
+                        const QList<domain::BookId>& ids = snapshot.collectionMembers->value();
+                        const QSet<domain::BookId> members(ids.cbegin(), ids.cend());
+                        list.removeIf([&members](const domain::BookSummary& b) { return !members.contains(b.id); });
+                    } else if (snapshot.view == View::Trash) {  // Most recently trashed first.
+                        std::stable_sort(list.begin(), list.end(), [](const auto& a, const auto& b) {
+                            return a.trashedAt > b.trashedAt;
+                        });
+                    }
+                    m_books.setBooks(list);
+                } else {
+                    const QString error = !source ? source.error().message : snapshot.collectionMembers->error().message;
+                    setStatus(tr("The book list could not be loaded: %1").arg(error));
+                }
+                updateViewTitle();  // A renamed collection.
             }
             // jobChanged may already have delivered a newer state than this
             // snapshot; both models merge and keep the newer one (updatedAt).
@@ -336,6 +612,10 @@ void LibraryController::importFiles(const QStringList& localPaths)
 {
     if (localPaths.isEmpty() || m_state == State::Failed || m_state == State::Closed)
         return;
+    if (!importing() && !m_trashedDuplicates.isEmpty()) {  // A fresh batch: forget the last one's.
+        m_trashedDuplicates.clear();
+        emit trashedDuplicatesChanged();
+    }
     if (!importing() && !m_problems.isEmpty()) {  // A fresh batch starts.
         m_problems.clear();
         emit problemsChanged();
@@ -401,7 +681,7 @@ void LibraryController::startBatch()
                 QMetaObject::invokeMethod(this, [this, done, total] { onFileProgress(done, total); },
                                           Qt::QueuedConnection);
             });
-            FileResult result{path, r.outcome, r.error};
+            FileResult result{path, r.outcome, r.error, r.book};
             QMetaObject::invokeMethod(this, [this, result] { onFileFinished(result); }, Qt::QueuedConnection);
         }
         QMetaObject::invokeMethod(this, [this] { onBatchFinished(); }, Qt::QueuedConnection);
@@ -438,6 +718,10 @@ void LibraryController::onFileFinished(const FileResult& result)
     case Outcome::DuplicateInTrash:
         ++m_batch.duplicatesInTrash;
         m_problems << tr("%1 is already in the library, in Trash.").arg(name);
+        if (result.book && !m_trashedDuplicates.contains(*result.book)) {
+            m_trashedDuplicates << *result.book;
+            emit trashedDuplicatesChanged();
+        }
         break;
     case Outcome::Cancelled:
         ++m_batch.cancelled;

@@ -103,6 +103,8 @@ qt_add_library(mbl_presentation STATIC
     src/presentation/bookinspector.cpp
     src/presentation/booklistmodel.h
     src/presentation/booklistmodel.cpp
+    src/presentation/collectionlistmodel.h
+    src/presentation/collectionlistmodel.cpp
     src/presentation/joblistmodel.h
     src/presentation/joblistmodel.cpp
     src/presentation/toctreemodel.h
@@ -157,6 +159,8 @@ qt_add_qml_module(appMyBooksLibrary
         qml/reader/ReaderCheckView.qml
         qml/inspector/BookInspectorPane.qml
         qml/inspector/MetadataFieldEditor.qml
+        qml/library/LibrarySidebar.qml
+        qml/library/BookListView.qml
         qml/search/SearchResultsView.qml
         qml/reader/ReaderPane.qml
 )

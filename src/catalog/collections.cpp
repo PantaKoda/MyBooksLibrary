@@ -241,6 +241,21 @@ Result<QList<BookSummary>> listCollectionBooks(QSqlDatabase& db, const Collectio
     return books;
 }
 
+Result<QList<BookId>> collectionBookIds(QSqlDatabase& db, const CollectionId& collection)
+{
+    if (auto s = requireCollection(db, collection); !s)
+        return s.error();
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral("SELECT book_id FROM collection_books WHERE collection_id = ?"));
+    q.addBindValue(collection.toString());
+    if (!q.exec())
+        return sqlError(q);
+    QList<BookId> ids;
+    while (q.next())
+        ids << BookId::fromString(q.value(0).toString());
+    return ids;
+}
+
 Result<QList<CollectionSummary>> collectionsOf(QSqlDatabase& db, const BookId& book)
 {
     return summaries(db, book);

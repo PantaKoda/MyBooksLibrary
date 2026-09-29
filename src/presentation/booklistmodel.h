@@ -1,6 +1,8 @@
 // Presentation: the book list shown in the library view. GUI-thread owned;
 // filled with copied BookSummary values delivered from the database thread.
 // Rows are not identifiers: views keep selection by book ID (rowOfBook).
+// The rows are the current view (the library, a collection or Trash); title
+// and state lookups for other views (activity, search) use every known book.
 #pragma once
 
 #include "domain/book.h"
@@ -39,6 +41,9 @@ public:
     // position and current item. A row whose revision changed gets
     // dataChanged. Must be called on the model's thread.
     void setBooks(QList<domain::BookSummary> books);
+    // Every book the lookups below should know, in any view (active and
+    // trashed). Rows are unchanged.
+    void setKnownBooks(const QList<domain::BookSummary>& books);
 
     // The latest metadata and contents jobs of each book, shown in the
     // processing state.
@@ -47,8 +52,8 @@ public:
     void setLatestJobs(const QList<domain::JobRecord>& jobs);
     void updateJob(const domain::JobRecord& job);
 
-    QString titleOf(const domain::BookId& id) const;  // Empty when absent.
-    QString processingStateOf(const domain::BookId& id) const;  // Empty when absent.
+    QString titleOf(const domain::BookId& id) const;  // Empty when unknown.
+    QString processingStateOf(const domain::BookId& id) const;  // Empty when unknown.
     Q_INVOKABLE int rowOfBook(const QString& bookId) const;  // -1 when absent.
     Q_INVOKABLE QString bookIdAt(int row) const;
 
@@ -59,7 +64,11 @@ private:
     bool acceptJob(const domain::JobRecord& job);  // True if it became the book's shown job.
     void emitStateChanged(const domain::BookId& id);
 
-    QList<domain::BookSummary> m_books;
+    QString stateOf(const domain::BookSummary& book) const;
+    const domain::BookSummary* find(const domain::BookId& id) const;
+
+    QList<domain::BookSummary> m_books;               // The rows: the current view.
+    QHash<domain::BookId, domain::BookSummary> m_known;  // Lookups: every known book.
     QHash<domain::BookId, domain::JobRecord> m_metadataJobs;
     QHash<domain::BookId, domain::JobRecord> m_contentsJobs;
 };

@@ -7,6 +7,7 @@
 #include "catalog/tocedits.h"
 #include "presentation/bookinspector.h"
 #include "presentation/booklistmodel.h"
+#include "presentation/collectionlistmodel.h"
 #include "presentation/joblistmodel.h"
 #include "presentation/librarycontroller.h"
 #include "presentation/searchcontroller.h"
@@ -215,6 +216,9 @@ private slots:
     void correctionsSurviveARerun();
     void inspectorFollowsEditedContents();
     void contentsEditsFromTheInspector();
+    void collectionsAndViews();
+    void trashStopsTheRunningJobAndRestoreResumesIt();
+    void aDuplicateInTrashCanBeRestored();
 
 private:
     void openAndWait(LibraryController& c, const QString& root)
@@ -1292,6 +1296,139 @@ void TestLibraryController::contentsEditsFromTheInspector()
     QVERIFY(!inspector.contentsEdited());
     QCOMPARE(tree->entryCount(), 2);
     QCOMPARE(role(QStringLiteral("f2"), TocTreeModel::TitleRole).toString(), QStringLiteral("Networking basics"));
+}
+
+// Collections and the list's views: the library, one collection, Trash.
+// Search follows a collection; the activity list still knows every title.
+void TestLibraryController::collectionsAndViews()
+{
+    QTemporaryDir dir;
+    auto fake = std::make_shared<FakeExtractor>();
+    LibraryController c;
+    c.setProcessors(fake, std::make_shared<FakeAnalyzer>(fake), true);
+    openAndWait(c, dir.path());
+    c.importFiles({fixture("title-page.pdf"), fixture("contents-book.pdf")});
+    QTRY_COMPARE_WITH_TIMEOUT(c.libraryCount(), 2, 20000);
+    QTRY_VERIFY_WITH_TIMEOUT(!c.busy(), 20000);
+    const QString first = c.books()->bookIdAt(0);
+    QSignalSpy organized(&c, &LibraryController::organized);
+    QCOMPARE(c.view(), LibraryController::View::Library);
+    QCOMPARE(c.viewTitle(), QStringLiteral("Library"));
+
+    c.createCollection(QStringLiteral(" Study "));
+    QTRY_COMPARE_WITH_TIMEOUT(organized.size(), 1, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(c.collections()->rowCount(), 1, 5000);
+    const QString study = c.collections()->data(c.collections()->index(0), mbl::presentation::CollectionListModel::CollectionIdRole).toString();
+    c.createCollection(QStringLiteral("study"));
+    QTRY_COMPARE_WITH_TIMEOUT(c.organizeError(), QStringLiteral("A collection with that name already exists."), 5000);
+    c.dismissOrganizeError();
+
+    c.addToCollection(study, first);
+    QTRY_COMPARE_WITH_TIMEOUT(c.collections()->data(c.collections()->index(0), mbl::presentation::CollectionListModel::BookCountRole).toInt(), 1, 5000);
+    c.showCollection(study);
+    QCOMPARE(c.view(), LibraryController::View::Collection);
+    QCOMPARE(c.viewTitle(), QStringLiteral("Study"));
+    QTRY_COMPARE_WITH_TIMEOUT(c.books()->rowCount(), 1, 5000);
+    QCOMPARE(c.books()->bookIdAt(0), first);
+
+    // Search follows the collection (both books have the same fake title).
+    SearchController* search = c.search();
+    search->setText(QStringLiteral("extracted"));
+    search->refresh();
+    QTRY_COMPARE_WITH_TIMEOUT(search->results()->rowCount(), 1, 5000);
+    c.showLibrary();
+    QTRY_COMPARE_WITH_TIMEOUT(search->results()->rowCount(), 2, 5000);
+    search->clear();
+
+    // Trash: gone from the library and the collection, listed in Trash.
+    c.moveToTrash(first);
+    QTRY_COMPARE_WITH_TIMEOUT(c.trashCount(), 1, 5000);
+    QCOMPARE(c.libraryCount(), 1);
+    QTRY_COMPARE_WITH_TIMEOUT(c.books()->rowCount(), 1, 5000);
+    QVERIFY(c.books()->bookIdAt(0) != first);
+    QVERIFY(!c.books()->titleOf(mbl::domain::BookId::fromString(first)).isEmpty());  // Activity still knows it.
+    c.showCollection(study);
+    QTRY_COMPARE_WITH_TIMEOUT(c.books()->rowCount(), 0, 5000);
+    c.showTrash();
+    QTRY_COMPARE_WITH_TIMEOUT(c.books()->rowCount(), 1, 5000);
+    QCOMPARE(c.books()->bookIdAt(0), first);
+    QVERIFY(c.books()->data(c.books()->index(0), BookListModel::ProcessingStateRole).toString().startsWith(QStringLiteral("In Trash")));
+    c.addToCollection(study, first);
+    QTRY_COMPARE_WITH_TIMEOUT(c.organizeError(), QStringLiteral("A book in Trash cannot be added to a collection. Restore it first."), 5000);
+
+    // Restore: back in the library and its collection.
+    c.restoreFromTrash(first);
+    QTRY_COMPARE_WITH_TIMEOUT(c.trashCount(), 0, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(c.books()->rowCount(), 0, 5000);  // Trash view, now empty.
+    c.showCollection(study);
+    QTRY_COMPARE_WITH_TIMEOUT(c.books()->rowCount(), 1, 5000);
+
+    // Rename shows in the heading; deleting the shown collection returns to the library.
+    c.renameCollection(study, QStringLiteral("Reading list"));
+    QTRY_COMPARE_WITH_TIMEOUT(c.viewTitle(), QStringLiteral("Reading list"), 5000);
+    c.deleteCollection(study);
+    QTRY_COMPARE_WITH_TIMEOUT(c.view(), LibraryController::View::Library, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(c.collections()->rowCount(), 0, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(c.books()->rowCount(), 2, 5000);  // The books stay.
+    QTRY_VERIFY_WITH_TIMEOUT(!c.busy(), 10000);
+}
+
+// Moving a book to Trash while its extraction runs stops the SDK call at
+// once (not after it finishes); restoring resumes it, and it publishes.
+void TestLibraryController::trashStopsTheRunningJobAndRestoreResumesIt()
+{
+    QTemporaryDir dir;
+    auto fake = std::make_shared<FakeExtractor>();
+    fake->block = true;  // Runs until cancelled.
+    LibraryController c;
+    c.setProcessors(fake, std::make_shared<FakeAnalyzer>(fake), true);
+    openAndWait(c, dir.path());
+    c.importFiles({fixture("title-page.pdf")});
+    QTRY_VERIFY_WITH_TIMEOUT(fake->started.load(), 20000);
+    QTRY_COMPARE_WITH_TIMEOUT(c.books()->rowCount(), 1, 5000);
+    const QString book = c.books()->bookIdAt(0);
+
+    c.moveToTrash(book);
+    // The blocked call returns only because its cancel flag was raised.
+    QTRY_VERIFY_WITH_TIMEOUT(!c.busy(), 10000);
+    QTRY_COMPARE_WITH_TIMEOUT(c.trashCount(), 1, 5000);
+    const int row = rowOfKind(c.jobs(), QStringLiteral("Title and authors"));
+    QVERIFY(row >= 0);
+    QTRY_COMPARE_WITH_TIMEOUT(jobData(c.jobs(), row, JobListModel::StateTextRole).toString(),
+                              QStringLiteral("Book moved to Trash"), 5000);
+    QVERIFY(!jobData(c.jobs(), row, JobListModel::BookTitleRole).toString().isEmpty());  // Title still known.
+
+    fake->block = false;
+    fake->started = false;
+    c.restoreFromTrash(book);
+    QTRY_VERIFY_WITH_TIMEOUT(fake->started.load(), 10000);  // Resumed without a restart.
+    QTRY_COMPARE_WITH_TIMEOUT(titles(c.books()), QStringList{QStringLiteral("Extracted Title")}, 20000);
+    QTRY_VERIFY_WITH_TIMEOUT(!c.busy(), 10000);
+}
+
+// Importing a file whose book is in Trash offers to restore it.
+void TestLibraryController::aDuplicateInTrashCanBeRestored()
+{
+    QTemporaryDir dir;
+    auto fake = std::make_shared<FakeExtractor>();
+    LibraryController c;
+    c.setProcessors(fake, std::make_shared<FakeAnalyzer>(fake), true);
+    openAndWait(c, dir.path());
+    c.importFiles({fixture("title-page.pdf")});
+    QTRY_COMPARE_WITH_TIMEOUT(c.libraryCount(), 1, 20000);
+    QTRY_VERIFY_WITH_TIMEOUT(!c.busy(), 20000);
+    c.moveToTrash(c.books()->bookIdAt(0));
+    QTRY_COMPARE_WITH_TIMEOUT(c.trashCount(), 1, 5000);
+
+    c.importFiles({fixture("title-page.pdf")});
+    QTRY_COMPARE_WITH_TIMEOUT(c.trashedDuplicateCount(), 1, 20000);
+    QTRY_VERIFY_WITH_TIMEOUT(!c.busy(), 10000);
+    QCOMPARE(c.libraryCount(), 0);
+    c.restoreTrashedDuplicates();
+    QTRY_COMPARE_WITH_TIMEOUT(c.trashCount(), 0, 5000);
+    QCOMPARE(c.libraryCount(), 1);
+    QCOMPARE(c.trashedDuplicateCount(), 0);
+    QTRY_VERIFY_WITH_TIMEOUT(!c.busy(), 10000);
 }
 
 QTEST_GUILESS_MAIN(TestLibraryController)

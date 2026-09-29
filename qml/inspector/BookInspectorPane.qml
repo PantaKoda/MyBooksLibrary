@@ -23,6 +23,16 @@ Pane {
     signal rerunMetadataRequested()
     signal rerunContentsRequested()
     property bool rerunEnabled: true
+    // Organization: the library's collections, the collection the list shows
+    // (empty: none), and requests for the shown book.
+    property CollectionListModel collections: null
+    property string currentCollectionId: ""
+    property string currentCollectionName: ""
+    property bool organizeEnabled: true
+    signal addToCollectionRequested(string collectionId)
+    signal removeFromCollectionRequested(string collectionId)
+    signal moveToTrashRequested()
+    signal restoreRequested()
     // Development (--inspect-first): make the first entry current when shown.
     property bool selectFirstEntry: false
     // The entry to make current again once the tree is rebuilt after an edit.
@@ -43,6 +53,20 @@ Pane {
                 font.pixelSize: 16
                 wrapMode: Text.Wrap
             }
+            Label {
+                objectName: "inTrashLabel"
+                visible: pane.inspector.inTrash
+                text: qsTr("In Trash")
+                font.italic: true
+            }
+            Button {
+                objectName: "restoreBookButton"
+                visible: pane.inspector.inTrash
+                enabled: pane.organizeEnabled
+                text: qsTr("Restore")
+                onClicked: pane.restoreRequested()
+                Accessible.description: qsTr("Bring the book back from Trash")
+            }
             Button {
                 text: qsTr("Read")
                 visible: pane.inspector.hasBook && pane.inspector.error.length === 0
@@ -60,13 +84,55 @@ Pane {
                     y: moreButton.height
                     MenuItem {
                         text: qsTr("Read title and authors again")
-                        enabled: pane.rerunEnabled
+                        enabled: pane.rerunEnabled && !pane.inspector.inTrash
                         onTriggered: pane.rerunMetadataRequested()
                     }
                     MenuItem {
                         text: qsTr("Analyze contents again")
-                        enabled: pane.rerunEnabled
+                        enabled: pane.rerunEnabled && !pane.inspector.inTrash
                         onTriggered: pane.rerunContentsRequested()
+                    }
+                    MenuSeparator {}
+                    Menu {
+                        id: addToMenu
+                        objectName: "addToCollectionMenu"
+                        title: qsTr("Add to collection")
+                        enabled: pane.organizeEnabled && !pane.inspector.inTrash
+                                 && pane.collections !== null && pane.collections.count > 0
+                        Instantiator {
+                            model: pane.collections
+                            delegate: MenuItem {
+                                id: collectionItem
+                                required property string collectionId
+                                required property string name
+                                text: name
+                                // A user's name is never markup.
+                                contentItem: Label {
+                                    leftPadding: collectionItem.indicator ? collectionItem.indicator.width : 0
+                                    text: collectionItem.text
+                                    textFormat: Text.PlainText
+                                    elide: Text.ElideRight
+                                    verticalAlignment: Text.AlignVCenter
+                                }
+                                onTriggered: pane.addToCollectionRequested(collectionId)
+                            }
+                            onObjectAdded: (index, object) => addToMenu.insertItem(index, object as MenuItem)
+                            onObjectRemoved: (index, object) => addToMenu.removeItem(object as MenuItem)
+                        }
+                    }
+                    MenuItem {
+                        objectName: "removeFromCollectionItem"
+                        visible: pane.currentCollectionId.length > 0
+                        height: visible ? implicitHeight : 0
+                        enabled: pane.organizeEnabled
+                        text: qsTr("Remove from this collection")
+                        onTriggered: pane.removeFromCollectionRequested(pane.currentCollectionId)
+                    }
+                    MenuItem {
+                        objectName: "moveToTrashItem"
+                        enabled: pane.organizeEnabled && !pane.inspector.inTrash
+                        text: qsTr("Move to Trash")
+                        onTriggered: pane.moveToTrashRequested()
                     }
                 }
             }

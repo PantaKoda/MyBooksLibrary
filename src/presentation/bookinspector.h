@@ -46,6 +46,7 @@ class BookInspector : public QObject {
     Q_PROPERTY(bool loading READ loading NOTIFY loadingChanged)
     Q_PROPERTY(QString title READ title NOTIFY detailsChanged)
     Q_PROPERTY(QString fileText READ fileText NOTIFY detailsChanged)
+    Q_PROPERTY(bool inTrash READ inTrash NOTIFY detailsChanged)  // The shown book is in Trash.
     // One map per field: field (code), kind ("text", "year" or "contributors"),
     // label, value, mode ("auto", "value" or "cleared"), sourceText,
     // documentValue (what the document gives, when not shown), editText or
@@ -115,6 +116,7 @@ public:
     bool loading() const { return m_loading; }
     QString title() const { return m_title; }
     QString fileText() const { return m_fileText; }
+    bool inTrash() const { return m_inTrash; }
     QVariantList metadataFields() const { return m_metadataFields; }
     QString contentsSummary() const { return m_contentsSummary; }
     QStringList contentsNotes() const { return m_contentsNotes; }
@@ -168,6 +170,7 @@ private:
 
     QString m_title;
     QString m_fileText;
+    bool m_inTrash = false;
     QVariantList m_metadataFields;
     QString m_contentsSummary;
     QStringList m_contentsNotes;

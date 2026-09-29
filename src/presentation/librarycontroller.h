@@ -4,22 +4,30 @@
 // keeps the GUI-owned book and job lists current. QML only calls its
 // commands and reads its properties; no SQL, file or SDK work happens in QML
 // or on the GUI thread.
+//
+// Organization (M08): the book list shows a view (the library, one
+// collection, or Trash); collections are created, renamed and deleted here;
+// books are added to and removed from collections, moved to Trash (its
+// running SDK call is stopped early) and restored (resumed work starts).
 #pragma once
 
 #include "presentation/bookinspector.h"
 #include "presentation/booklistmodel.h"
+#include "presentation/collectionlistmodel.h"
 #include "presentation/joblistmodel.h"
 #include "presentation/searchcontroller.h"
 #include "reader/readercontroller.h"
 
 #include <QMutex>
 #include <QQmlEngine>
+#include <QSqlDatabase>
 #include <QObject>
 #include <QStringList>
 #include <QThreadPool>
 #include <QUrl>
 
 #include <atomic>
+#include <functional>
 #include <memory>
 
 namespace mbl::catalog {
@@ -60,9 +68,21 @@ class LibraryController : public QObject {
     Q_PROPERTY(bool processingAvailable READ processingAvailable CONSTANT)
     Q_PROPERTY(bool ocrAvailable READ ocrAvailable CONSTANT)
     Q_PROPERTY(bool closing READ closing NOTIFY closingChanged)
+    Q_PROPERTY(mbl::presentation::CollectionListModel* collections READ collections CONSTANT)
+    // What the book list shows, and its heading.
+    Q_PROPERTY(View view READ view NOTIFY viewChanged)
+    Q_PROPERTY(QString viewCollectionId READ viewCollectionId NOTIFY viewChanged)
+    Q_PROPERTY(QString viewTitle READ viewTitle NOTIFY viewChanged)
+    Q_PROPERTY(int libraryCount READ libraryCount NOTIFY countsChanged)
+    Q_PROPERTY(int trashCount READ trashCount NOTIFY countsChanged)
+    // Books of the last import batch that were already in the library, in Trash.
+    Q_PROPERTY(int trashedDuplicateCount READ trashedDuplicateCount NOTIFY trashedDuplicatesChanged)
+    Q_PROPERTY(QString organizeError READ organizeError NOTIFY organizeErrorChanged)
 
 public:
     enum class State { Closed, Opening, Ready, Failed };
+    enum class View { Library, Collection, Trash };
+    Q_ENUM(View)
 
     struct BatchSummary {
         int imported = 0;
@@ -117,6 +137,24 @@ public:
     // for !busy.
     Q_INVOKABLE void prepareToClose();
 
+    // Views of the book list.
+    Q_INVOKABLE void showLibrary();
+    Q_INVOKABLE void showCollection(const QString& collectionId);
+    Q_INVOKABLE void showTrash();
+    // Collections. Refusals (an empty or duplicate name, a book in Trash)
+    // are reported in organizeError.
+    Q_INVOKABLE void createCollection(const QString& name);
+    Q_INVOKABLE void renameCollection(const QString& collectionId, const QString& name);
+    Q_INVOKABLE void deleteCollection(const QString& collectionId);  // The books stay.
+    Q_INVOKABLE void addToCollection(const QString& collectionId, const QString& bookId);
+    Q_INVOKABLE void removeFromCollection(const QString& collectionId, const QString& bookId);
+    // Trash: reversible. Moving a book there stops its processing; restoring
+    // it resumes the work the trash stopped.
+    Q_INVOKABLE void moveToTrash(const QString& bookId);
+    Q_INVOKABLE void restoreFromTrash(const QString& bookId);
+    Q_INVOKABLE void restoreTrashedDuplicates();
+    Q_INVOKABLE void dismissOrganizeError();
+
     State state() const { return m_state; }
     bool opening() const { return m_state == State::Opening; }
     bool ready() const { return m_state == State::Ready; }
@@ -141,6 +179,14 @@ public:
     bool processingAvailable() const { return m_extractor != nullptr; }
     bool ocrAvailable() const { return m_ocrAvailable; }
     bool closing() const { return m_closing; }
+    CollectionListModel* collections() { return &m_collections; }
+    View view() const { return m_view; }
+    QString viewCollectionId() const { return m_view == View::Collection ? m_viewCollection.toString() : QString(); }
+    QString viewTitle() const;
+    int libraryCount() const { return m_libraryCount; }
+    int trashCount() const { return m_trashCount; }
+    int trashedDuplicateCount() const { return int(m_trashedDuplicates.size()); }
+    QString organizeError() const { return m_organizeError; }
     BatchSummary lastBatch() const { return m_lastBatch; }
 
 signals:
@@ -152,6 +198,11 @@ signals:
     void importsFinished();  // A batch ended; lastBatch() holds its counts.
     void booksRefreshed();
     void closingChanged();
+    void viewChanged();
+    void countsChanged();
+    void trashedDuplicatesChanged();
+    void organizeErrorChanged();
+    void organized();  // An organization change was saved (the list then refreshes).
 
 private:
     struct FileResult;
@@ -169,8 +220,23 @@ private:
     void startProcessing();  // Creates the coordinator, recovers jobs, then starts it.
     void startJobs();        // Starts the worker once recovery has run.
     void runRefresh();
+    void setView(View view, const domain::CollectionId& collection = {});
+    void setOrganizeError(const QString& error);
+    // Runs a catalog change on the database thread; then refreshes, or reports
+    // the refusal (in the command's words when `describe` knows the error).
+    void organize(std::function<domain::Status(QSqlDatabase&)> change,
+                  std::function<QString(const domain::Error&)> describe, std::function<void()> after = {});
+    void updateViewTitle();  // Emits viewChanged only when the heading changed.
 
     BookListModel m_books;
+    CollectionListModel m_collections;
+    View m_view = View::Library;
+    QString m_shownViewTitle;
+    domain::CollectionId m_viewCollection;
+    int m_libraryCount = 0;
+    int m_trashCount = 0;
+    QList<domain::BookId> m_trashedDuplicates;
+    QString m_organizeError;
     JobListModel m_jobs;
     BookInspector m_inspector;
     SearchController m_search;

@@ -16,6 +16,9 @@
 | `SearchResultsView.qml` | `qml/search/` | Results: book, how it matched, its processing state, and chapter hits with the physical page, or "Page not found" and where it is listed. Choosing a result shows the book in the inspector. |
 | `ReaderController` | `src/reader/readercontroller.*` | The reading session: the open book, the document, the requested and shown pages (physical indices), and the saved reading position. It owns document lifetime; see READER.md, "The embedded reader". |
 | `ReaderPane.qml` | `qml/reader/` | The reader: "Library" (back), title, previous and next page, an editable page number "of *n*", and the PDF. |
+| `CollectionListModel` | `src/presentation/collectionlistmodel.*` | The collections for the sidebar, by name, with active book counts. Roles: `collectionId`, `name`, `bookCount`. Unchanged rows keep their state across refreshes. |
+| `LibrarySidebar.qml` | `qml/library/` | The views: **Library (*n*)**, each collection (*n*), and **Trash (*n*)**; **New collection…**, and Rename… / Delete… on a collection (right-click, press and hold, the Menu key or Shift+F10; F2 renames, Delete asks to delete). Names are plain text. Refusals (a duplicate name) are shown under it. |
+| `BookListView.qml` | `qml/library/` | The book list of the current view. The selection is kept by book ID across every row change (not only resets), so the list and the inspector always show the same book, or none. |
 | `Main.qml` | repository root | The list-first window. QML only reads properties and calls `importUrls`, `cancelImports`, `refresh`, `cancelJob`, `retryJob`, `cancelAllJobs` and `prepareToClose`. There is no SQL, file or SDK work in QML. |
 
 `mbl_presentation` is a static QML module (`MyBooksLibrary.Presentation`), so `Main.qml` uses typed `LibraryController`/`BookListModel` and `qmllint` checks its member accesses. Both types are uncreatable from QML.
@@ -63,6 +66,14 @@
     Each save is a new version of the contents, and the edited entry stays selected. The entry says what you changed ("Changed by you: title, page"), and a page you set replaces the analysis's reasons.
   - **Edited contents** show a banner: "You edited these contents (version *n*). Search uses your version." with **Discard my edits…** (after confirming, the analysis is shown again).
   - **When a newer analysis finds different contents,** the edits stay shown and searched, and the banner offers **Keep my edits** or **Use the new analysis**. Nothing is reconciled automatically. The book list says "(edited; a new analysis to review)".
+- **Organizing (M08):**
+  - The sidebar switches the book list between the library, one collection and Trash, and the toolbar heading names the view.
+  - Search covers the shown collection, or the whole library otherwise.
+  - The inspector's **More** menu has **Add to collection ▸**, **Remove from "*collection*"** (in a collection view) and **Move to Trash**.
+  - A book in Trash shows "In Trash" and **Restore**, and its list row says "In Trash since *date*".
+  - **Moving a book to Trash** stops its running extraction at once and hides it from the library, its collections and search. **Restoring** it resumes the work the trash stopped, right away.
+  - **Importing a file whose book is in Trash** offers **Restore *n* book(s) from Trash** under the import summary.
+  - Collections never copy files. Deleting a collection, after confirming, keeps its books.
 - **Reading:** the reader replaces the library view while a book is open, and "Library" returns.
   - A book opens where it was last read: double-click it in the list, or use **Read** in the inspector.
   - A chapter opens at its physical page ("Open chapter" in the inspector; "Open" on a search hit).
@@ -72,7 +83,7 @@
 
 ## Not yet
 
-Comparing a newer analysis with the edited contents entry by entry, browsing earlier versions of the contents, restoring a duplicate from Trash (M08), and keyboard shortcuts beyond list navigation.
+Comparing a newer analysis with the edited contents entry by entry, browsing earlier versions of the contents, emptying Trash (permanent deletion), selecting several books at once, and keyboard shortcuts beyond list navigation.
 
 ## Screenshots (Release build, `--screenshot`, library at `C:\MBL-demo\Library`)
 
@@ -99,6 +110,10 @@ The inspector's Contents tab after importing `contents-book.pdf` (Release, real 
 The Contents tab with an entry selected: its reasons, Open chapter and Show contents page, and the edit actions. Indent and Outdent are unavailable for the first top-level entry (Release, real SDK, `--inspect-first`, library at `C:\MBL-demo-Contents`):
 
 ![Contents editing](images/m07-contents-editing.png)
+
+The window with the sidebar (Release, real SDK, `--inspect-first`, library at `C:\MBL-demo-Contents`):
+
+![Library sidebar](images/m08-library-sidebar.png)
 
 Searching "tcp/ip" after importing the three test PDFs: a contents-only match, with its physical page (Release, real SDK, `--search tcp/ip --inspect-first`):
 

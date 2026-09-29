@@ -318,6 +318,7 @@ void BookInspector::apply(const Loaded& result)
 
     m_error.clear();
     m_title = d.summary.displayTitle;
+    m_inTrash = d.summary.lifecycle == Lifecycle::Trashed;
     m_fileText = d.asset.pageCount ? tr("%1 · %2 pages").arg(d.originalFileName).arg(*d.asset.pageCount)
                                    : d.originalFileName;
 
@@ -751,6 +752,7 @@ void BookInspector::clear()
 {
     m_title.clear();
     m_fileText.clear();
+    m_inTrash = false;
     m_metadataFields.clear();
     m_contentsSummary.clear();
     m_contentsNotes.clear();

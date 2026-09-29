@@ -447,3 +447,17 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - **Collection names are unique regardless of ASCII case** (SQLite `NOCASE`). Non-ASCII names differing only in case are allowed; this is documented, not hidden.
   - **Searching a collection filters after matching**, so the ranking tiers stay as SEARCH.md describes.
 - **Verified:** See IMPLEMENTATION_PROGRESS.md, M08 part 1.
+
+## 2026-09-29 — M08 part 2: organizing in the window
+
+- **Change:**
+  - The book list shows a view: the library, a collection or Trash. A sidebar switches views and manages collections.
+  - The inspector's More menu adds a book to a collection, removes it from the shown collection, or moves it to Trash; a trashed book offers Restore.
+  - Importing a file already in Trash offers to restore that book.
+- **Why:** AGENTS.md §9 (library and collection navigation), §5 (offer restoration for a duplicate already in Trash), §6 (reversible Trash), and the M08 gate. From the PR #19 review: a trashed book's running SDK call must stop early, and restored work must start without a restart.
+- **Assumptions:**
+  - **Actions on the shown book:** book actions apply to the book in the inspector, so they work the same from the list and from search results. Selecting several books at once is not supported yet.
+  - **Lookups know every book:** rows show the view, but titles and states are looked up over every book (active and trashed), so the Activity list and search results stay labelled in any view.
+  - **Search follows a collection:** it searches the collection when one is shown, otherwise the library. Trashed books are not indexed, so the Trash view is browsed rather than searched.
+  - **No confirmation for Trash:** moving a book to Trash is reversible, so it asks nothing. Deleting a collection asks, even though its books stay.
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, M08 part 2.

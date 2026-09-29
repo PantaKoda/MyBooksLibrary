@@ -140,6 +140,13 @@ void TestOrganization::collectionsAreMembershipOnly()
     QCOMPARE(titles, (QStringList{QStringLiteral("Algorithms"), QStringLiteral("Networks")}));
     auto ofB = db([&](QSqlDatabase& d) { return catalog::collectionsOf(d, b); }).value();
     QCOMPARE(ofB.size(), 2);
+    auto ids = db([&](QSqlDatabase& d) { return catalog::collectionBookIds(d, work.value()); }).value();
+    std::sort(ids.begin(), ids.end());
+    QList<BookId> expected{b, c};
+    std::sort(expected.begin(), expected.end());
+    QCOMPARE(ids, expected);
+    QCOMPARE(db([](QSqlDatabase& d) { return catalog::collectionBookIds(d, CollectionId::create()); }).error().code,
+             ErrorCode::NotFound);
     // No file or book was copied.
     QCOMPARE(count(QStringLiteral("SELECT COUNT(*) FROM assets")), assets);
     QCOMPARE(count(QStringLiteral("SELECT COUNT(*) FROM books")), 3);

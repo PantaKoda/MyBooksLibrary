@@ -128,6 +128,11 @@ int main(int argc, char* argv[])
 {
     if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM"))
         qputenv("QT_QPA_PLATFORM", "offscreen");
+    // The native Windows style asks the Windows theme API for each control,
+    // which fails without a real window and floods the log; Qt Test fails a
+    // run at 2,000 warnings. The Basic style needs no platform theme.
+    if (qEnvironmentVariableIsEmpty("QT_QUICK_CONTROLS_STYLE"))
+        qputenv("QT_QUICK_CONTROLS_STYLE", "Basic");
     QGuiApplication app(argc, argv);
     TestSearchResultsView test;
     return QTest::qExec(&test, argc, argv);
