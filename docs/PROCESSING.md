@@ -146,3 +146,21 @@ Missing models are not a failure. The extraction completes, and scanned title pa
 - marks an entry "in the export plan" when the plan (draft or ready) has a node for it, and stores the plan as `plan_to_json`.
 
 The raw `analysis_report_json` is stored as the run's immutable report.
+
+### Numbering sections from the PDF's page labels
+
+By default the SDK maps printed page numbers with **one** decimal numbering section after the TOC, so it assumes one offset between printed and physical pages. Many publishers' PDFs leave out the blank pages of the printed book. Their printed numbers then skip ahead at chapter ends (by one more each time), the pages disagree about the offset, and the SDK leaves the entries `ambiguous` ("Conflicting observed offset"). Such PDFs usually have page labels that record every skip.
+
+`sdk::SdkContentsAnalyzer` handles this with the SDK's public options (`src/processing/sdk/pagelabels.h`):
+
+1. If the analysis left entries without a page, it reads the page labels with Qt PDF (`QPdfDocument::pageLabel`) on the worker, between SDK calls.
+2. It divides them into **runs**: consecutive pages whose labels count up by one in one style (decimal, roman, or a prefix such as `A-1`).
+   - It stops if no style has more than one run. A PDF without labels (Qt PDF then gives the physical numbers) is one run.
+3. Each run becomes a numbering section (`AnalysisOptions::sections`). With several sections of one style, an entry fits all of them, so each entry whose printed page lies in exactly one run is associated with it (`entry_sections`).
+   - It stops if no entry without a page has such a run.
+4. It runs `pdfbookmark::analyze` again with these options. The SDK still needs agreeing printed numbers inside each section and confirms each page from its content. The labels only divide the pages into sections (`viewer_labels_match_printed` stays false).
+5. The second report is kept only if it has the same parsed entries (ID, title, printed page) and **gives more of them a page**. Otherwise the first is kept.
+
+The run's options JSON records `"page_label_sections"`: `"used"`, `"not_better"` or `"failed"` (an SDK error); the key is absent when no second analysis ran. A kept second report has `"sections_supplied": true` in its own options. The second analysis reports progress counting on from the pages the first one read. Cancelling it cancels the analysis: a user cancel ends the job `cancelled`, and `stop()` requeues it.
+
+The second analysis reads its pages again, so it costs about as much as the first; with OCR, it is bounded by the same finite limits. On the owner's *Computational Physics* (Springer, 640 pages; the offset between physical and printed pages falls from 21 to 6 over 20 label runs), the first analysis gave 0 of 378 entries a page and the second 351.

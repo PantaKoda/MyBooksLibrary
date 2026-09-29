@@ -15,6 +15,8 @@ The QtQuick.Pdf import lives in the registered QML file `qml/reader/ReaderCheckV
 
 The two copies have separate global state, so neither library's initialisation or internal locking covers the other. Qt's image plugin `imageformats/qpdf.dll` and the SDK's `qpdf30.dll` differ in name and location and do not collide.
 
+Qt PDF is also used off the GUI thread. The processing worker opens its own `QPdfDocument` to read a book's page labels between two SDK calls, never during one (PROCESSING.md, "Numbering sections from the PDF's page labels"). Qt PDF serializes its PDFium calls, so this may overlap with the reader's rendering.
+
 ## `appMyBooksLibrary --reader-check`
 
 ```
