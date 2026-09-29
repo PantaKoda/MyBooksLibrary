@@ -6,6 +6,7 @@
 #include <QCoreApplication>
 #include <QDate>
 #include <QDir>
+#include <QFileInfo>
 #include <QLocale>
 #include <QMetaObject>
 #include <QProcess>
@@ -31,9 +32,17 @@ QString documents()
     return folder.isEmpty() ? QDir::homePath() : folder;
 }
 
-QString restoredName()
+// "MyBooksLibrary restored <date>" in `parent`, or "... (2)", "... (3)" when
+// that folder is taken (a second restore the same day): a restore needs a new
+// or empty folder.
+QString restoredFolderIn(const QString& parent)
 {
-    return QStringLiteral("MyBooksLibrary restored %1").arg(QDate::currentDate().toString(Qt::ISODate));
+    const QString base = QStringLiteral("MyBooksLibrary restored %1").arg(QDate::currentDate().toString(Qt::ISODate));
+    const QDir dir(parent);
+    QString candidate = dir.filePath(base);
+    for (int n = 2; QFileInfo::exists(candidate); ++n)
+        candidate = dir.filePath(QStringLiteral("%1 (%2)").arg(base).arg(n));
+    return QDir::toNativeSeparators(candidate);
 }
 
 } // namespace
@@ -73,7 +82,7 @@ QString BackupController::localPath(const QUrl& url) const
 
 QString BackupController::restoreFolderIn(const QUrl& parent) const
 {
-    return QDir::toNativeSeparators(QDir(parent.toLocalFile()).filePath(restoredName()));
+    return restoredFolderIn(parent.toLocalFile());
 }
 
 QUrl BackupController::resultFolderUrl() const
@@ -88,7 +97,7 @@ QString BackupController::suggestedBackupFolder() const
 
 QString BackupController::suggestedRestoreFolder() const
 {
-    return QDir::toNativeSeparators(QDir(documents()).filePath(restoredName()));
+    return restoredFolderIn(documents());
 }
 
 void BackupController::start(Operation operation, const QString& text)

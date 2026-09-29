@@ -86,6 +86,12 @@ Independent of part 2 (packaging, [PR #25](https://github.com/PantaKoda/MyBooksL
 | `pwsh scripts/verify.ps1` (Release) and `-Configuration Debug` | **Passed** in both configurations: guard tests, whitespace and text checks, configure, build, **31/31 tests** (ctest), and the smoke checks. Verified on the working tree based on `0c682c3`. |
 | `tst_backupcontroller` (new, 4 cases, real library) | **Off the GUI thread:** running and busy while it works, then "Backed up 1 book (…) to …" with progress, a folder URL accepted, and only the backup in the folder. The restore says "Restored 1 book …" and the new library has its catalog. After reset, nothing is left to open.<br>**Refusals, in words:** backup inside the library folder; restore under the open library's `staging/` (not created); a folder that is not a backup.<br>**Closing:** `prepareToClose()` during a backup waits until it has stopped, and nothing partial is left.<br>**The real `BackupDialog.qml`:** Documents suggested; **Back up** writes the backup and shows "Backed up". The restore mode suggests a new folder, is disabled until a backup is chosen, restores, and shows **Open restored library**. |
 
+**Review fixes ([PR #26](https://github.com/PantaKoda/MyBooksLibrary/pull/26), review of `87aadf2`):**
+- **Dismissed while a job ran:** Escape or a click outside closed the dialog during a backup or restore. Reopening it with the other menu item then showed that job under the other mode's fields. Now `closePolicy` is `NoAutoClose` while a job runs, and both menu items show the running job's mode with its fields as they were.
+- **A second restore the same day:** it was refused because the suggested "MyBooksLibrary restored *date*" folder already existed and was not empty. The suggestion is now the first free name ("… (2)", …), as for backups.
+- **Tests:** `tst_backupcontroller` checks the close policy and the reopened mode while a backup runs, and restores twice the same day into the suggested folders. With each fix undone, its test fails.
+- **Verification after the fixes:** `pwsh scripts/verify.ps1` Release and `-Configuration Debug` both **passed**, 31/31 tests.
+
 **UI evidence:** `docs/images/m10-backup-dialog.png` (UI.md).
 
 **M10 gate** (after parts 1–3 are merged):

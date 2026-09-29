@@ -20,13 +20,23 @@ Dialog {
     property bool enabledForUse: true  // False while the window closes.
     property bool restoring: false     // Restore mode; otherwise back up.
 
+    // While a backup or restore runs, the dialog shows that one, whichever
+    // menu item opened it, and its fields are left as they were.
+    function showRunning() {
+        dialog.restoring = dialog.backup.operation === BackupController.Restore
+        dialog.open()
+    }
     function openForBackup() {
+        if (dialog.backup.running)
+            return dialog.showRunning()
         dialog.restoring = false
         dialog.backup.reset()
         backupFolderField.text = dialog.backup.suggestedBackupFolder
         dialog.open()
     }
     function openForRestore() {
+        if (dialog.backup.running)
+            return dialog.showRunning()
         dialog.restoring = true
         dialog.backup.reset()
         restoreFromField.text = ""
@@ -39,6 +49,8 @@ Dialog {
     width: Math.min(620, (parent ? parent.width : 620) - 32)
     height: Math.min(implicitHeight, (parent ? parent.height : 600) - 32)
     modal: true
+    // Like Close: not dismissed while its job runs (Cancel stops it first).
+    closePolicy: dialog.backup.running ? Popup.NoAutoClose : (Popup.CloseOnEscape | Popup.CloseOnPressOutside)
     title: dialog.restoring ? qsTr("Restore a backup") : qsTr("Back up the library")
 
     contentItem: ColumnLayout {

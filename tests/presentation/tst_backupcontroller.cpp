@@ -134,7 +134,18 @@ void TestBackupController::backsUpAndRestoresOffTheGuiThread()
     QCOMPARE(b->operation(), BackupController::Operation::None);
     QVERIFY(b->statusText().isEmpty());
     QVERIFY(!b->openRestoredLibrary());  // Nothing restored to open.
-    QVERIFY(b->restoreFolderIn(QUrl::fromLocalFile(m_out)).contains(QStringLiteral("MyBooksLibrary restored ")));
+    // Restored twice the same day into the suggested folder: the second
+    // suggestion is a free name, and that restore succeeds too.
+    const QUrl parent = QUrl::fromLocalFile(m_dir->path());
+    const QString first = b->restoreFolderIn(parent);
+    QVERIFY(QFileInfo(first).fileName().startsWith(QStringLiteral("MyBooksLibrary restored ")));
+    QVERIFY(runToEnd([&] { b->restore(backup, first); }));
+    QVERIFY2(b->succeeded(), qPrintable(b->statusText()));
+    const QString second = b->restoreFolderIn(parent);
+    QCOMPARE(second, first + QStringLiteral(" (2)"));
+    QVERIFY(runToEnd([&] { b->restore(backup, second); }));
+    QVERIFY2(b->succeeded(), qPrintable(b->statusText()));
+    QVERIFY(QFileInfo(b->suggestedRestoreFolder()).fileName().startsWith(QStringLiteral("MyBooksLibrary restored ")));
 }
 
 void TestBackupController::refusalsAreExplained()
@@ -201,8 +212,18 @@ void TestBackupController::theDialogBacksUpAndRestores()
     folder->setProperty("text", m_out);
     QQuickItem* start = findItem(content, QStringLiteral("startBackupButton"));
     QVERIFY(start && start->isVisible() && start->isEnabled());
+    const int dismissable = dialog->property("closePolicy").toInt();
+    QVERIFY(dismissable != 0);  // Escape or a click outside closes it while idle.
     QVERIFY(QMetaObject::invokeMethod(start, "clicked"));
+    // While the backup runs: not dismissed like that, and the other menu item
+    // shows this backup, with its folder as typed, not an empty restore form.
+    QVERIFY(m_controller->backup()->running());
+    QCOMPARE(dialog->property("closePolicy").toInt(), 0);  // Popup.NoAutoClose.
+    QVERIFY(QMetaObject::invokeMethod(dialog.get(), "openForRestore"));
+    QVERIFY(!dialog->property("restoring").toBool());
+    QCOMPARE(folder->property("text").toString(), m_out);
     QTRY_VERIFY_WITH_TIMEOUT(m_controller->backup()->succeeded(), 60000);
+    QCOMPARE(dialog->property("closePolicy").toInt(), dismissable);
     QQuickItem* status = findItem(content, QStringLiteral("backupStatus"));
     QVERIFY(status && status->property("text").toString().startsWith(QStringLiteral("Backed up")));
     QVERIFY(!start->isVisible());  // Done: Show folder and Close remain.
