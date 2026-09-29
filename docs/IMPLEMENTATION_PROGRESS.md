@@ -70,6 +70,10 @@ M08 is split in two:
 | `tst_organization` | `collectionBookIds` returns the members; an unknown collection gives NotFound |
 | `pwsh scripts/verify.ps1` (Release) and `-Configuration Debug` | VERIFY PASSED in both; 22/22 `ctest` suites; all smoke checks |
 
+**CI failure on `e8b91b3`** ([run 36528739974](https://github.com/PantaKoda/MyBooksLibrary/actions/runs/36528739974)): `tst_inspectorpane::correctionDialogSavesAndSurvivesRefreshes` failed with "Maximum amount of warnings exceeded".
+- **Cause:** the native Windows controls style calls the Windows theme API for every control, and offscreen that fails with an "OpenThemeData() failed" warning each time. Each run was close to Qt Test's 2,000-warning limit, and the slower CI run went over.
+- **Fix:** the QML tests (`tst_inspectorpane`, `tst_searchresultsview`, `tst_librarysidebar`, `tst_booklistview`, `tst_readerpane`) now use the Basic style unless `QT_QUICK_CONTROLS_STYLE` is set. They log at most a few warnings: the missing font directory, and in `tst_readerpane` the existing "Cannot open:" when a document source is cleared. `tst_inspectorpane` went from 17.8 s on CI to 2.2 s locally. The application still uses the native style.
+
 **Not verified by hand:** the right-click and press-and-hold menus on collections with a real mouse, and full keyboard-only use of the window.
 
 **Next action:** review of [PR #20](https://github.com/PantaKoda/MyBooksLibrary/pull/20). After it is merged, M08 is complete (permanent deletion remains open); next is M09, export.
