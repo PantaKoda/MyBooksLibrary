@@ -58,7 +58,10 @@ class BookInspector : public QObject {
     Q_PROPERTY(bool saving READ saving NOTIFY savingChanged)
     Q_PROPERTY(QString correctionError READ correctionError NOTIFY correctionErrorChanged)
     Q_PROPERTY(QString contentsSummary READ contentsSummary NOTIFY detailsChanged)
-    Q_PROPERTY(QStringList contentsNotes READ contentsNotes NOTIFY detailsChanged)
+    Q_PROPERTY(QStringList contentsNotes READ contentsNotes NOTIFY detailsChanged)  // Short counts.
+    // The analysis's detailed reasons (one per problem, often one per entry
+    // without a page): shown on request, so the tree keeps its room.
+    Q_PROPERTY(QStringList contentsReasons READ contentsReasons NOTIFY detailsChanged)
     Q_PROPERTY(mbl::presentation::TocTreeModel* contents READ contents CONSTANT)
     Q_PROPERTY(QString error READ error NOTIFY detailsChanged)
     Q_PROPERTY(bool contentsEdited READ contentsEdited NOTIFY detailsChanged)
@@ -120,6 +123,7 @@ public:
     QVariantList metadataFields() const { return m_metadataFields; }
     QString contentsSummary() const { return m_contentsSummary; }
     QStringList contentsNotes() const { return m_contentsNotes; }
+    QStringList contentsReasons() const { return m_contentsReasons; }
     TocTreeModel* contents() { return &m_contents; }
     QString error() const { return m_error; }
     QVariantList contributorRoles() const;
@@ -174,6 +178,7 @@ private:
     QVariantList m_metadataFields;
     QString m_contentsSummary;
     QStringList m_contentsNotes;
+    QStringList m_contentsReasons;
     QString m_error;
     int m_saving = 0;  // Corrections and contents edits in flight.
     QString m_correctionError;

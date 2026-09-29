@@ -295,6 +295,52 @@ Pane {
                     wrapMode: Text.Wrap
                     opacity: 0.7
                 }
+                // The analysis's reasons, on request, in a popup over the pane: a
+                // long list (one line per entry without a page) never moves the
+                // contents tree, whatever the window's size.
+                Button {
+                    id: reasonsButton
+                    objectName: "contentsReasonsButton"
+                    visible: pane.inspector.contentsReasons.length > 0
+                    flat: true
+                    text: qsTr("Why? (%1)").arg(pane.inspector.contentsReasons.length)
+                    onClicked: reasonsPopup.opened ? reasonsPopup.close() : reasonsPopup.open()
+                    Accessible.description: qsTr("Show what the analysis reported about these contents")
+                    Connections {
+                        target: pane.inspector
+                        function onBookChanged() { reasonsPopup.close() }
+                    }
+                    Popup {
+                        id: reasonsPopup
+                        objectName: "contentsReasonsPopup"
+                        y: reasonsButton.height
+                        width: Math.min(560, pane.width - 24)
+                        height: Math.min(reasonsColumn.implicitHeight + topPadding + bottomPadding, pane.height * 0.6)
+                        padding: 10
+                        contentItem: ScrollView {
+                            objectName: "contentsReasons"
+                            contentWidth: availableWidth
+                            clip: true
+                            ColumnLayout {
+                                id: reasonsColumn
+                                width: parent ? parent.width : implicitWidth
+                                spacing: 6
+                                Label {
+                                    Layout.fillWidth: true
+                                    // The analysis's own words; edits made since are not reflected.
+                                    text: qsTr("What the analysis reported:")
+                                    font.bold: true
+                                }
+                                Label {
+                                    Layout.fillWidth: true
+                                    text: pane.inspector.contentsReasons.join("\n")
+                                    textFormat: Text.PlainText
+                                    wrapMode: Text.Wrap
+                                }
+                            }
+                        }
+                    }
+                }
 
                 // Edited contents: which version is shown, and the user's choices.
                 Frame {
