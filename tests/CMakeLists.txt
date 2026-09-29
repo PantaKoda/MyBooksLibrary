@@ -67,6 +67,12 @@ target_link_libraries(tst_toctreemodel PRIVATE mbl_presentation)
 mbl_add_test(tst_jobmodels presentation/tst_jobmodels.cpp)
 target_link_libraries(tst_jobmodels PRIVATE mbl_presentation)
 
+# Back up… and Restore…: the session on a real library, and the real BackupDialog.qml (offscreen).
+mbl_add_test(tst_backupcontroller presentation/tst_backupcontroller.cpp)
+target_link_libraries(tst_backupcontroller PRIVATE mbl_presentation mbl_presentationplugin Qt6::Quick)
+target_compile_definitions(tst_backupcontroller PRIVATE MBL_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
+                                                        MBL_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+
 # The Export dialog's session end to end with the real SDK, and the real
 # ExportDialog.qml (offscreen).
 mbl_add_test(tst_exportcontroller presentation/tst_exportcontroller.cpp)

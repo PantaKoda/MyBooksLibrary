@@ -11,6 +11,7 @@
 // running SDK call is stopped early) and restored (resumed work starts).
 #pragma once
 
+#include "presentation/backupcontroller.h"
 #include "presentation/bookinspector.h"
 #include "presentation/booklistmodel.h"
 #include "presentation/collectionlistmodel.h"
@@ -73,6 +74,8 @@ class LibraryController : public QObject {
     Q_PROPERTY(mbl::presentation::CollectionListModel* collections READ collections CONSTANT)
     // The Export dialog's session (M09).
     Q_PROPERTY(mbl::presentation::ExportController* exporter READ exporter CONSTANT)
+    // Back up… and Restore… (M10).
+    Q_PROPERTY(mbl::presentation::BackupController* backup READ backup CONSTANT)
     // What the book list shows, and its heading.
     Q_PROPERTY(View view READ view NOTIFY viewChanged)
     Q_PROPERTY(QString viewCollectionId READ viewCollectionId NOTIFY viewChanged)
@@ -168,7 +171,7 @@ public:
     bool failed() const { return m_state == State::Failed; }
     bool busy() const
     {
-        return opening() || importing() || m_refreshInFlight || m_recoveringJobs || m_processingBusy;
+        return opening() || importing() || m_refreshInFlight || m_recoveringJobs || m_processingBusy || m_backupBusy;
     }
     bool importing() const { return m_importTotal > 0; }
     int importTotal() const { return m_importTotal; }
@@ -188,6 +191,7 @@ public:
     bool closing() const { return m_closing; }
     CollectionListModel* collections() { return &m_collections; }
     ExportController* exporter() { return &m_export; }
+    BackupController* backup() { return &m_backup; }
     View view() const { return m_view; }
     QString viewCollectionId() const { return m_view == View::Collection ? m_viewCollection.toString() : QString(); }
     QString viewTitle() const;
@@ -253,6 +257,8 @@ private:
     std::shared_ptr<processing::ContentsAnalyzer> m_analyzer;
     std::shared_ptr<processing::BookExporter> m_exporter;
     ExportController m_export;
+    BackupController m_backup;
+    bool m_backupBusy = false;  // A backup or restore runs; closing waits for it.
     std::unique_ptr<processing::ProcessingCoordinator> m_coordinator;  // Destroyed before m_library.
     bool m_ocrAvailable = false;
     bool m_recoveringJobs = false;

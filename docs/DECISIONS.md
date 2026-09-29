@@ -524,3 +524,13 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - **The manifest is untrusted on restore:** its paths must stay under `files/` or `reports/`, and every digest is checked twice (verify, then the copy).
   - **Not in a backup:** `derivatives/`, `cache/` and `staging/`. Nothing in them is needed, and an interrupted import in a restored library is closed as abandoned by the usual recovery.
 - **Verified:** See IMPLEMENTATION_PROGRESS.md, M10 part 1.
+
+## 2026-09-29 — M10 part 3: Back up… and Restore… in the window
+
+- **Change:** `BackupController` and `BackupDialog.qml`, opened from the toolbar's Backup menu, run part 1's backup and restore off the GUI thread.
+- **Why:** AGENTS.md §10 asks for a recoverable backup and restore workflow before release, and §8 for a GUI that stays responsive with a closing state that waits for running work.
+- **Assumptions:**
+  - **Restore opens a new window:** a restored library is started with `--library` in a new process, not swapped into the running session. Switching libraries in place would mean closing and reopening every session object (catalog, coordinator, reader), which is more risk than the feature needs. The two libraries have separate locks.
+  - **Closing cancels a backup:** a backup or restore counts as busy, so the window's normal closing flow cancels it and waits. Part 1 guarantees that a cancelled backup or restore leaves nothing half-made.
+  - **Documents by default:** the suggested backup folder is Documents, and a restore goes into a new dated folder there. Both are outside the library.
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, M10 part 3.

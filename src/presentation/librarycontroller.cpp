@@ -51,6 +51,8 @@ LibraryController::LibraryController(QObject* parent) : QObject(parent)
     m_search.results()->setStateLookup([this](const domain::BookId& id) { return m_books.processingStateOf(id); });
     // A correction changes the book's row and what search finds.
     connect(&m_inspector, &BookInspector::corrected, this, [this] { refresh(); });
+    connect(&m_backup, &BackupController::stateChanged, this,
+            [this] { setBusyFlags([this] { m_backupBusy = m_backup.running(); }); });
 }
 
 LibraryController::~LibraryController()
@@ -61,6 +63,7 @@ LibraryController::~LibraryController()
         m_queue.clear();
     }
     m_coordinator.reset();  // Stops and waits; the window already waited for !busy.
+    m_backup.stop();        // Its worker holds the library too.
     m_pool.waitForDone();
     m_importer.reset();
     m_library.reset();  // Closes the catalog and releases the lock.
@@ -171,6 +174,7 @@ void LibraryController::onOpened(std::shared_ptr<catalog::Library> library,
     m_search.setLibrary(m_library);
     m_reader.setLibrary(m_library);
     m_export.setLibrary(m_library);
+    m_backup.setLibrary(m_library);
     setState(State::Ready);
     setStatus(recoveryText.isEmpty() ? tr("Library ready.") : recoveryText);
     refresh();
@@ -490,6 +494,7 @@ void LibraryController::prepareToClose()
     }
     m_reader.flushPosition();  // Where the open book was being read.
     cancelImports();
+    m_backup.cancel();  // Leaves nothing half-made; the window waits for it to stop.
     if (m_coordinator)
         m_coordinator->stop();  // Not a cancel: queued jobs resume next time.
 }
