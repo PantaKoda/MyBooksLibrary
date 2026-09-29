@@ -252,6 +252,8 @@ Windows "N" and "KN" editions need the Media Feature Pack: the OCR library
 "@
     Set-Content -LiteralPath (Join-Path $licenses 'NOTICE.txt') -Value $notice -Encoding utf8
     Copy-Item -LiteralPath (Join-Path $licenses 'NOTICE.txt') (Join-Path $stage 'NOTICE.txt')
+    # The user guide, next to the app.
+    Copy-Item -LiteralPath (Join-Path $repo 'docs\USER_GUIDE.md') (Join-Path $stage 'USER_GUIDE.md')
 
     Write-Host '==> Imports (what the package leaves to Windows)'
     $shipped = @{}

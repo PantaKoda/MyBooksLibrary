@@ -116,6 +116,7 @@ It builds `appMyBooksLibrary` (Release, no tests) in `build\package-release`, th
 | `appMyBooksLibrary.exe`, the pdfbookmark DLLs, `models\` | The build folder, where `pdfbookmark_deploy_runtime` placed the SDK's runtime and OCR models. |
 | Qt DLLs, `platforms\`, `sqldrivers\qsqlite.dll`, `qml\` (including `QtQuick\Pdf`) | `windeployqt --release --qmldir qml`. It ships only the SQLite driver, and leaves out software OpenGL, the D3D and DXC shader compilers (Qt Quick's Direct3D 11 backend uses precompiled shaders), QML debugging plugins and translations. |
 | `vcruntime140*.dll`, `msvcp140*.dll`, … | The Visual C++ runtime, app-local, from `VCToolsRedistDir`. |
+| `USER_GUIDE.md` | `docs/USER_GUIDE.md`: what every feature does, for users, and the limitations. |
 | `NOTICE.txt`, `licenses\` | Qt's licence text (`C:\Qt\Licenses\LICENSE` by default, or `-QtLicenseFile`), the SBOM of **every Qt module whose files are shipped**, listing its third-party components (for example PDFium in Qt PDF), the SDK's `share\doc\pdfbookmark\licenses`, and the OCR models' licence. Each shipped Qt file is mapped to its module and each SDK DLL to its licence files. An unmapped file or a missing licence stops the script, so no notice goes missing silently. |
 
 It then checks **what the package leaves to Windows**. It runs `dumpbin /dependents` on every shipped binary. An import that is neither shipped nor a known Windows component stops the script (delay-loaded imports only warn), which checks "runs on a clean machine" here, not only on a clean machine.
