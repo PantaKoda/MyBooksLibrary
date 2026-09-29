@@ -7,6 +7,7 @@
 #include "presentation/collectionlistmodel.h"
 #include "presentation/librarycontroller.h"
 
+#include <QFont>
 #include <QGuiApplication>
 #include <QItemSelectionModel>
 #include <QPointer>
@@ -257,6 +258,18 @@ void TestInspectorPane::correctionDialogSavesAndSurvivesRefreshes()
     QVERIFY(windowRect.contains(sceneRect(findItem(root, QStringLiteral("addPersonButton")))));
     QVERIFY(findItem(root, QStringLiteral("contributorRows")));
     QTRY_VERIFY_WITH_TIMEOUT(sceneRect(findItem(root, QStringLiteral("contributorRows"))).contains(sceneRect(findItem(root, last))), 5000);
+    // The layout settles after Add (as it does late on a slow machine: the CI
+    // failure on PR #25): the rows' visible height changes, and the new row
+    // stays in view.
+    QQuickItem* editor = findItem(root, QStringLiteral("contributorRows"))->parentItem()->parentItem();
+    QVERIFY(editor && editor->setProperty("maximumRowsHeight", 150));
+    QTRY_VERIFY_WITH_TIMEOUT(sceneRect(findItem(root, QStringLiteral("contributorRows"))).height() < 200, 5000);
+    QTRY_VERIFY2_WITH_TIMEOUT(
+        sceneRect(findItem(root, QStringLiteral("contributorRows"))).contains(sceneRect(findItem(root, last))),
+        qPrintable(QStringLiteral("rows %1, last row %2")
+                       .arg(QDebug::toString(sceneRect(findItem(root, QStringLiteral("contributorRows")))),
+                            QDebug::toString(sceneRect(findItem(root, last))))),
+        5000);
     QVERIFY(findItem(root, last)->hasActiveFocus());
     findItem(root, last)->setProperty("text", QStringLiteral("Last Person"));
     click(findItem(root, QStringLiteral("correctionSaveButton")));
