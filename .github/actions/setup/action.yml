@@ -1,0 +1,58 @@
+# Shared by .github/workflows/ci.yml and release.yml: installs Qt (with Qt PDF)
+# and the pdfbookmark SDK, pinned here once so the two workflows cannot drift.
+# Sets QT_ROOT_DIR (by install-qt-action) and PDFBOOKMARK_SDK for later steps.
+name: Set up Qt and the pdfbookmark SDK
+description: Qt with Qt PDF and the pdfbookmark SDK, pinned and checked
+runs:
+  using: composite
+  steps:
+    - name: Pinned versions
+      shell: pwsh
+      run: |
+        # aqtinstall from a pinned commit of its main branch: the latest release
+        # (3.3.0) cannot read Qt 6.11's per-architecture repository layout; support
+        # landed in "Support Qt 6.11+ for Windows X64 (#1000)" and is unreleased.
+        # Replace with a released version (>= 3.4.0) once available.
+        # The pdfbookmark SDK is a public release of PantaKoda/PDFMegine, downloaded
+        # at run time and checked against its digest; nothing is committed.
+        @(
+          'QT_VERSION=6.11.2'
+          'QT_ARCH=win64_msvc2022_64'
+          'AQT_SOURCE=git+https://github.com/miurahr/aqtinstall.git@076e1659807d0b362a3ed684d54c2e9c775eb9c7'
+          'PDFBOOKMARK_SDK_VERSION=0.3.0'
+          'PDFBOOKMARK_SDK_SHA256=998508d45f28ef36ea1d4ae27840814e81df95fbea1e6f3b5895669aa957e744'
+        ) | Add-Content -Path $env:GITHUB_ENV -Encoding utf8
+
+    - name: Install Qt with Qt PDF
+      uses: jurplel/install-qt-action@a9c63c7c123f3069cff414e7e482d95dfa9d8125  # v4.4.1
+      with:
+        version: ${{ env.QT_VERSION }}
+        host: windows
+        target: desktop
+        arch: ${{ env.QT_ARCH }}
+        modules: qtpdf
+        aqtsource: ${{ env.AQT_SOURCE }}
+        cache: true
+
+    - name: Cache pdfbookmark SDK
+      id: sdk-cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+      with:
+        path: .deps/pdfbookmark-sdk
+        key: pdfbookmark-sdk-${{ env.PDFBOOKMARK_SDK_VERSION }}-${{ env.PDFBOOKMARK_SDK_SHA256 }}
+
+    - name: Download pdfbookmark SDK
+      if: steps.sdk-cache.outputs.cache-hit != 'true'
+      shell: pwsh
+      run: |
+        $v = $env:PDFBOOKMARK_SDK_VERSION
+        $zip = Join-Path $env:RUNNER_TEMP "pdfbookmark-sdk-$v-win64.zip"
+        Invoke-WebRequest -Uri "https://github.com/PantaKoda/PDFMegine/releases/download/v$v/pdfbookmark-sdk-$v-win64.zip" -OutFile $zip
+        $actual = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLowerInvariant()
+        if ($actual -ne $env:PDFBOOKMARK_SDK_SHA256) { throw "SDK digest mismatch: $actual" }
+        Expand-Archive -Path $zip -DestinationPath .deps/pdfbookmark-sdk-extract
+        Move-Item ".deps/pdfbookmark-sdk-extract/pdfbookmark-$v-win64" .deps/pdfbookmark-sdk
+
+    - name: SDK location
+      shell: pwsh
+      run: Add-Content -Path $env:GITHUB_ENV -Value "PDFBOOKMARK_SDK=$env:GITHUB_WORKSPACE/.deps/pdfbookmark-sdk" -Encoding utf8

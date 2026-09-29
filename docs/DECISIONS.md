@@ -546,3 +546,16 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - **Closing cancels a backup:** a backup or restore counts as busy, so the window's normal closing flow cancels it and waits. Part 1 guarantees that a cancelled backup or restore leaves nothing half-made.
   - **Documents by default:** the suggested backup folder is Documents, and a restore goes into a new dated folder there. Both are outside the library.
 - **Verified:** See IMPLEMENTATION_PROGRESS.md, M10 part 3.
+
+## 2026-09-29 — Releases on GitHub
+
+- **Change:** a tag-driven release workflow (`release.yml`) publishes the verified and checked Windows package. Qt and SDK setup is shared in `.github/actions/setup`, CI also packages every PR, and pinned licence texts live in `third_party/licenses/`.
+- **Why:** the owner wants a Releases page with the Windows binary, every change through a PR and CI, and changes grouped into releases.
+- **Assumptions:**
+  - **Tag-driven:** a release is a deliberate act, a `vX.Y.Z` tag on `main` after a release PR (version and notes). It is not an automatic consequence of each merge, so merged PRs are grouped. The workflow refuses a tag that is off `main`, that does not match the version, or that has no notes.
+  - **The same checks as local:** the release runs `verify.ps1` and `package.ps1`, and nothing is published unless both pass.
+  - **`gh` with the job's token:** it is preinstalled on the runner, so no third-party release action is added. Only the release job gets `contents: write`; CI stays read-only.
+  - **Packaging on every PR:** it adds about 5 minutes per CI run, and catches packaging breakage in the PR that causes it.
+  - **Pinned licence texts in the repository:** they are small, reviewable, and the same on every machine. The package script no longer depends on a Qt online installer's `Licenses` folder.
+  - **Unsigned zip:** there is no code-signing certificate. SmartScreen may warn, and the notes say so.
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, "Releases on GitHub".

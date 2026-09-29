@@ -358,4 +358,8 @@ GitHub reviews run under the connected account's identity. If that account also 
 
 Once merged, fetch and fast-forward the local base, record the merged PR in progress, and start the next assigned step from the updated base. Do not build dependent work on an unreviewed branch unless the owner explicitly chooses a stacked-PR workflow. Keep independent preparatory work separate while review is pending; do not use it to evade the review gate.
 
+### Releases
+
+Every change, including fixes from the owner's own testing, goes through its own PR as above. Merged PRs are **grouped into releases**; do not release after every PR. A release is a version bump and release notes in one PR (see `docs/RELEASING.md`), then a `vX.Y.Z` tag on `main`. The tag makes `.github/workflows/release.yml` verify, package and publish the Windows zip on the Releases page. Pushing a release tag publishes to users: do it only with the owner's explicit go for that version.
+
 If branch protection or required-check settings would improve enforcement, propose the concrete settings to the owner; do not change access, protection rules, secrets or automation credentials as an incidental implementation step.

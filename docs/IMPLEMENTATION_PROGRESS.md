@@ -19,6 +19,21 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | M10 Windows release | Merged: part 1 [PR #24](https://github.com/PantaKoda/MyBooksLibrary/pull/24) (merge `0c682c3`); part 2 [PR #25](https://github.com/PantaKoda/MyBooksLibrary/pull/25) (merge `54ed8fc`); part 3 [PR #26](https://github.com/PantaKoda/MyBooksLibrary/pull/26). The owner's manual check of the package on a machine without Qt or Visual Studio remains | `feat/m10-a1-backup-restore`; `feat/m10-packaging`; `feat/m10-presentation-backup` | See "M10" |
 | M11 | NotStarted | | |
 
+## Releases on GitHub
+
+**Asked by the owner (2026-09-29):** a Releases page to download the Windows app, with every change going through a PR and CI, and changes grouped into releases.
+
+**Scope** (branch `ci/m10-release-workflow`):
+- **`.github/workflows/release.yml`:** a pushed `vX.Y.Z` tag checks that the tag is on `main`, matches `CMakeLists.txt`'s version, and has notes in `docs/releases/`. It then runs `verify.ps1` and `package.ps1`, and publishes the release with `MyBooksLibrary-X.Y.Z-win64.zip`, its `.sha256`, and the notes followed by the merged PRs. It uses `gh` with the job's token and `contents: write`; there is no new action.
+- **`.github/actions/setup`:** Qt and the SDK, pinned once, and used by CI and the release, so they cannot drift.
+- **CI also packages on every PR** (`package.ps1 -SkipZip`), so a change that breaks packaging fails its PR, not a release.
+- **`third_party/licenses/`:** pinned copies of Qt's licence text and PaddleOCR's Apache-2.0 licence, the defaults for `package.ps1`. CI's Qt has no `Licenses` folder, and the SDK lacks the models' licence (PDFMegine#6).
+- **Release notes and process:** version **0.1.0** in `CMakeLists.txt`, with its notes in `docs/releases/v0.1.0.md`. `docs/RELEASING.md` describes the process, and AGENTS.md §13 has a short "Releases" rule.
+
+**Verification:** Locally: `pwsh scripts/package.ps1 -SdkDir <sdk>` with the pinned licences (no other options) **passed**, and wrote `MyBooksLibrary-0.1.0-win64.zip`. `pwsh scripts/verify.ps1` **passed** (170 text files, 31/31 tests). The workflows are exercised by this PR's CI (the setup action and the package step). `release.yml` runs only on a tag, so it is first exercised by the first release.
+
+**Next action:** review of the PR. After it and the contents-tree fix ([PR #27](https://github.com/PantaKoda/MyBooksLibrary/pull/27)) are merged, the owner decides on tagging `v0.1.0`.
+
 ## M10 — Windows release
 
 M10 is split in three:
