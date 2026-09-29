@@ -72,13 +72,18 @@ A backup is a folder "MyBooksLibrary backup *yyyy-MM-dd HHmmss*" in a folder the
 - The files are then copied on the caller's worker thread. A source whose bytes changed stops the backup.
 - Everything is written into a hidden `.<name>-<id>.partial` folder, **verified** (every digest, and the catalog's `integrity_check` and schema version), and renamed into place. A cancelled or failed backup removes its partial folder, so an incomplete backup never looks like one.
 
-**Verifying** (`verifyBackup`): the manifest's format, and paths that stay under `files/` or `reports/`, so a crafted manifest cannot name a file elsewhere. Then every file's size and digest, and the catalog.
+**Verifying** (`verifyBackup`):
+- The manifest's format, and paths that stay under `files/` or `reports/`, so a crafted manifest cannot name a file elsewhere.
+- Every file's size and digest.
+- The catalog's `integrity_check` and schema version.
+- That the backup holds **everything the catalog needs**: each source it references, with the digest it records, and each report, unless the manifest lists it as missing. The manifest alone is not trusted to be complete.
 
 **Restoring** (`restoreBackup`):
-- Only into a **new or empty** folder, never the library in use and never inside the backup.
+- Only into a **new or empty** folder. Never inside the backup, and never inside or around a library in use (`librariesInUse`), however the path is written: its start-up recovery removes unknown staging folders, and its managed folders must not mix with another library's.
 - The backup is verified first, and nothing is written if it fails.
 - The files are copied into a hidden `.<name>-<id>.restoring` folder, each digest checked again, and the folder is moved into place.
 - It is then opened as a library, which takes the lock and migrates an older catalog, and checked with `integrity_check`.
+- Exports that were waiting in the backup are closed as not written: `cancelled`, outcome `restored` (`catalog::closeExportsAfterRestore`). A restore can happen much later or on another machine, so a copy is never written again without the user asking. Running ones become `interrupted` at recovery, never requeued. Metadata and contents jobs stay queued, since they are the library's own work.
 - A cancelled or failed restore leaves the target as it was.
 
 ## Tests (`tests/storage/tst_importservice.cpp`)

@@ -5,6 +5,8 @@
 // tampering, cancelling and wrong targets leave nothing half-made.
 #include "catalog/catalog.h"
 #include "catalog/collections.h"
+#include "catalog/exports.h"
+#include "catalog/jobs.h"
 #include "catalog/library.h"
 #include "search/searchindex.h"
 #include "storage/backup.h"
@@ -14,6 +16,7 @@
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSqlQuery>
@@ -51,6 +54,9 @@ private slots:
     void damageAndTamperingAreRefused();
     void cancelledAndRefusedLeaveNothing();
     void missingReportsAreReportedNotFatal();
+    void neverRestoredInsideTheLibraryInUse();
+    void waitingExportsAreClosedByARestore();
+    void aBackupMissingANeededFileIsRefused();
 
 private:
     template <typename Task>
@@ -180,7 +186,7 @@ void TestBackup::backupAndRestoreKeepTheLibrary()
 
     // Restored as a new library, while the original stays open and unchanged.
     const QString restored = m_dir->filePath(QStringLiteral("Restored library"));
-    auto restoredInfo = storage::restoreBackup(info.folder, restored);
+    auto restoredInfo = storage::restoreBackup(info.folder, restored, {m_root});
     QVERIFY2(restoredInfo, restoredInfo ? "" : qPrintable(restoredInfo.error().message));
     QCOMPARE(QDir::cleanPath(restoredInfo.value().libraryFolder), QDir::cleanPath(restored));
     QCOMPARE(restoredInfo.value().schemaVersion, m_library->schemaVersion());
@@ -217,7 +223,7 @@ void TestBackup::theLatestChangesAreInTheBackup()
     auto backup = storage::createBackup(*m_library, m_backups);
     QVERIFY(backup);
     const QString restored = m_dir->filePath(QStringLiteral("Restored"));
-    QVERIFY(storage::restoreBackup(backup.value().folder, restored));
+    QVERIFY(storage::restoreBackup(backup.value().folder, restored, {m_root}));
     auto reopened = Library::open(restored);
     QVERIFY(reopened);
     auto details = reopened.value()->run([book = m_book](QSqlDatabase& d) { return catalog::bookDetails(d, book); }).result();
@@ -262,7 +268,7 @@ void TestBackup::damageAndTamperingAreRefused()
     }
     QVERIFY(!storage::verifyBackup(backup.value().folder));
     const QString target = m_dir->filePath(QStringLiteral("Not restored"));
-    auto refused = storage::restoreBackup(backup.value().folder, target);
+    auto refused = storage::restoreBackup(backup.value().folder, target, {m_root});
     QVERIFY(!refused);
     QVERIFY2(refused.error().message.contains(m_report), qPrintable(refused.error().message));  // Names the changed file.
 
@@ -272,7 +278,7 @@ void TestBackup::damageAndTamperingAreRefused()
         QVERIFY(f.open(QIODevice::WriteOnly));
         f.write("{\"kind\":\"tast\"}");
     }
-    auto sameSize = storage::restoreBackup(backup.value().folder, target);
+    auto sameSize = storage::restoreBackup(backup.value().folder, target, {m_root});
     QVERIFY(!sameSize);
     QVERIFY2(sameSize.error().message.contains(QStringLiteral("changed since it was saved")),
              qPrintable(sameSize.error().message));
@@ -290,7 +296,7 @@ void TestBackup::damageAndTamperingAreRefused()
     QVERIFY(manifest.open(QIODevice::WriteOnly | QIODevice::Truncate));
     manifest.write(json);
     manifest.close();
-    auto escaping = storage::restoreBackup(clean.value().folder, target);
+    auto escaping = storage::restoreBackup(clean.value().folder, target, {m_root});
     QVERIFY(!escaping);
     QVERIFY(escaping.error().message.contains(QStringLiteral("invalid file")));
     QVERIFY(!QFileInfo::exists(target));
@@ -320,23 +326,23 @@ void TestBackup::cancelledAndRefusedLeaveNothing()
     QVERIFY(backup);
     // Where a library may be restored: never into a non-empty folder (the
     // library in use included), nor inside the backup.
-    auto intoLibrary = storage::restoreBackup(backup.value().folder, m_root);
+    auto intoLibrary = storage::restoreBackup(backup.value().folder, m_root, {m_root});
     QVERIFY(!intoLibrary);
     QVERIFY(intoLibrary.error().message.contains(QStringLiteral("not empty")));
-    QVERIFY(!storage::restoreBackup(backup.value().folder, QDir(backup.value().folder).filePath(QStringLiteral("x"))));
-    QVERIFY(!storage::restoreBackup(backup.value().folder, QStringLiteral("relative")));
+    QVERIFY(!storage::restoreBackup(backup.value().folder, QDir(backup.value().folder).filePath(QStringLiteral("x")), {m_root}));
+    QVERIFY(!storage::restoreBackup(backup.value().folder, QStringLiteral("relative"), {m_root}));
     // An empty folder is fine.
     const QString empty = m_dir->filePath(QStringLiteral("Empty"));
     QVERIFY(QDir().mkpath(empty));
     std::atomic_bool stop{false};
-    auto cancelledRestore = storage::restoreBackup(backup.value().folder, empty, &stop, [&](int done, int) {
+    auto cancelledRestore = storage::restoreBackup(backup.value().folder, empty, {m_root}, &stop, [&](int done, int) {
         if (done >= 1)
             stop = true;
     });
     QVERIFY(!cancelledRestore);
     QVERIFY(QFileInfo(empty).isDir() && entriesOf(empty).isEmpty());  // As it was.
     QCOMPARE(entriesOf(m_dir->path()).filter(QStringLiteral(".restoring")), QStringList{});
-    QVERIFY(storage::restoreBackup(backup.value().folder, empty));
+    QVERIFY(storage::restoreBackup(backup.value().folder, empty, {m_root}));
 }
 
 void TestBackup::missingReportsAreReportedNotFatal()
@@ -349,6 +355,101 @@ void TestBackup::missingReportsAreReportedNotFatal()
     auto verified = storage::verifyBackup(backup.value().folder);
     QVERIFY(verified);
     QCOMPARE(verified.value().missingReports, QStringList{m_report});
+}
+
+// Restoring inside the open library would mix a second library into its
+// folders, and its start-up recovery removes unknown staging folders: refused
+// before anything is written.
+void TestBackup::neverRestoredInsideTheLibraryInUse()
+{
+    auto backup = storage::createBackup(*m_library, m_backups);
+    QVERIFY(backup);
+    for (const QString& inside : {QStringLiteral("restored"), QStringLiteral("files/restored"),
+                                  QStringLiteral("staging/restored"), QStringLiteral("reports/restored")}) {
+        const QString target = QDir(m_root).filePath(inside);
+        auto refused = storage::restoreBackup(backup.value().folder, target, {m_root});
+        QVERIFY2(!refused, qPrintable(inside));
+        QVERIFY(refused.error().message.contains(QStringLiteral("library in use")));
+        QVERIFY(!QFileInfo::exists(target));
+    }
+    // Another spelling of the same folder is the same folder.
+    const QString spelled = QDir(m_root).filePath(QStringLiteral("files/../restored"));
+    QVERIFY(!storage::restoreBackup(backup.value().folder, spelled, {m_root}));
+    QVERIFY(!QFileInfo::exists(QDir(m_root).filePath(QStringLiteral("restored"))));
+}
+
+// An export waiting when the backup was made is not written by the restored
+// library on its own: it is closed as not written, and the user asks again.
+void TestBackup::waitingExportsAreClosedByARestore()
+{
+    const QString destination = m_dir->filePath(QStringLiteral("Exports/Book (bookmarked).pdf"));
+    QVERIFY(QDir().mkpath(QFileInfo(destination).absolutePath()));
+    auto queued = db([book = m_book, destination](QSqlDatabase& d) -> Result<ExportRecord> {
+        QSqlQuery q(d);
+        if (!q.exec(QStringLiteral("UPDATE assets SET page_count = 27")))  // Known after an analysis.
+            return makeError(ErrorCode::Database, QStringLiteral("setup"));
+        return catalog::enqueueExport(d, book, destination, false);
+    });
+    QVERIFY2(queued, queued ? "" : qPrintable(queued.error().message));
+    auto backup = storage::createBackup(*m_library, m_backups);
+    QVERIFY(backup);
+
+    const QString restored = m_dir->filePath(QStringLiteral("Restored"));
+    auto info = storage::restoreBackup(backup.value().folder, restored, {m_root});
+    QVERIFY2(info, info ? "" : qPrintable(info.error().message));
+    QCOMPARE(info.value().exportsClosed, 1);
+    auto reopened = Library::open(restored);
+    QVERIFY(reopened);
+    Library& copy = *reopened.value();
+    QVERIFY(copy.run([](QSqlDatabase& d) { return catalog::recoverJobs(d); }).result());  // As at start-up.
+    auto open = copy.run([](QSqlDatabase& d) { return catalog::listJobs(d, true, -1); }).result();
+    QVERIFY(open);
+    for (const JobRecord& j : open.value())
+        QVERIFY(j.kind != JobKind::Export);
+    auto job = copy.run([id = queued.value().job](QSqlDatabase& d) { return catalog::job(d, id); }).result();
+    QVERIFY(job);
+    QCOMPARE(job.value().state, JobState::Cancelled);
+    QCOMPARE(job.value().outcome, QStringLiteral("restored"));
+    auto record = copy.run([id = queued.value().job](QSqlDatabase& d) { return catalog::exportRecord(d, id); }).result();
+    QVERIFY(record);
+    QCOMPARE(record.value().committed, std::optional<bool>(false));
+    // The library in use keeps its own request.
+    auto original = db([id = queued.value().job](QSqlDatabase& d) { return catalog::job(d, id); });
+    QCOMPARE(original.value().state, JobState::Queued);
+    QVERIFY(!QFileInfo::exists(destination));
+}
+
+// "Verified" means everything needed to restore is there: a source the
+// catalog needs, left out of the backup and of its manifest, is caught.
+void TestBackup::aBackupMissingANeededFileIsRefused()
+{
+    auto backup = storage::createBackup(*m_library, m_backups);
+    QVERIFY(backup);
+    auto details = db([book = m_book](QSqlDatabase& d) { return catalog::bookDetails(d, book); });
+    QVERIFY(details);
+    const QString managed = details.value().asset.managedPath;
+    QVERIFY(QFile::remove(QDir(backup.value().folder).filePath(managed)));
+    const QString manifestPath = QDir(backup.value().folder).filePath(QStringLiteral("backup.json"));
+    QFile manifest(manifestPath);
+    QVERIFY(manifest.open(QIODevice::ReadOnly));
+    QJsonObject root = QJsonDocument::fromJson(manifest.readAll()).object();
+    manifest.close();
+    QJsonArray files;
+    for (const QJsonValue& v : root.value(QStringLiteral("files")).toArray()) {
+        if (v.toObject().value(QStringLiteral("path")).toString() != managed)
+            files.append(v);
+    }
+    root.insert(QStringLiteral("files"), files);
+    QVERIFY(manifest.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    manifest.write(QJsonDocument(root).toJson());
+    manifest.close();
+
+    auto verified = storage::verifyBackup(backup.value().folder);
+    QVERIFY(!verified);
+    QVERIFY2(verified.error().message.contains(managed), qPrintable(verified.error().message));
+    const QString target = m_dir->filePath(QStringLiteral("Incomplete"));
+    QVERIFY(!storage::restoreBackup(backup.value().folder, target, {m_root}));
+    QVERIFY(!QFileInfo::exists(target));
 }
 
 QTEST_GUILESS_MAIN(TestBackup)

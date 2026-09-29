@@ -57,21 +57,28 @@ using BackupProgress = std::function<void(int done, int total)>;
 domain::Result<BackupInfo> createBackup(catalog::Library& library, const QString& parentFolder,
                                         const std::atomic_bool* cancel = nullptr, const BackupProgress& progress = {});
 
-// Reads the manifest and checks every file's size and digest and the
-// catalog's integrity. Fails with InvalidArgument and the first problem.
+// Reads the manifest and checks every file's size and digest, the catalog's
+// integrity, and that the backup holds every file the catalog needs (each
+// source with the digest the catalog records; each report, or it is listed
+// as missing). Fails with InvalidArgument and the first problem.
 domain::Result<BackupInfo> verifyBackup(const QString& backupFolder, const std::atomic_bool* cancel = nullptr);
 
 struct RestoreInfo {
     QString libraryFolder;   // The restored library (absolute).
     BackupInfo backup;
     int schemaVersion = 0;   // After opening (an older catalog is migrated).
+    int exportsClosed = 0;   // Waiting exports closed as not written.
 };
 
 // Restores the backup as a new library at `targetFolder`, which must not
-// exist or be an empty folder, and must not be inside the backup. The backup
-// is verified first; nothing is written if it fails. On failure or cancel the
-// target is left as it was.
+// exist or be an empty folder, must not be inside the backup, and must be
+// neither inside nor around any of `librariesInUse` (the root of each open
+// library: its start-up recovery could remove, or mix in, what is restored
+// there). The backup is verified first; nothing is written if it fails. On
+// failure or cancel the target is left as it was. Exports that were waiting
+// in the backup are closed as not written (catalog::closeExportsAfterRestore).
 domain::Result<RestoreInfo> restoreBackup(const QString& backupFolder, const QString& targetFolder,
-                                          const std::atomic_bool* cancel = nullptr, const BackupProgress& progress = {});
+                                          const QStringList& librariesInUse, const std::atomic_bool* cancel = nullptr,
+                                          const BackupProgress& progress = {});
 
 } // namespace mbl::storage

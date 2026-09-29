@@ -518,7 +518,9 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - **Verified before named:** an incomplete or damaged backup never looks like a backup.
     - A source whose bytes changed stops the backup rather than preserve damage.
     - A missing report is listed but not fatal: reports are diagnostic evidence, and one lost file must not make every backup fail.
-  - **Restore makes a new library:** never over the library in use, so a mistaken restore cannot lose current work. Opening a different library is the application's choice (part 3).
+  - **Restore makes a new library:** never over, inside or around a library in use, so a mistaken restore cannot lose current work or be removed by that library's recovery (review of PR #24). Opening a different library is the application's choice (part 3).
+  - **Waiting exports are closed by a restore** as not written (`restored`). A restore may happen much later or on another machine, and part 2's rule is that a copy is written only when the user asks (review of PR #24). The library's own metadata and contents jobs stay queued.
+  - **Verified means complete:** verification checks the backup against what its catalog needs, not only against the manifest's list (review of PR #24).
   - **The manifest is untrusted on restore:** its paths must stay under `files/` or `reports/`, and every digest is checked twice (verify, then the copy).
   - **Not in a backup:** `derivatives/`, `cache/` and `staging/`. Nothing in them is needed, and an interrupted import in a restored library is closed as abandoned by the usual recovery.
 - **Verified:** See IMPLEMENTATION_PROGRESS.md, M10 part 1.

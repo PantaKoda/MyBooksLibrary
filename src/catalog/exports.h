@@ -44,6 +44,13 @@ domain::Result<domain::ExportRecord> enqueueExport(QSqlDatabase& db, const domai
 domain::Status finishExportJob(QSqlDatabase& db, const domain::JobId& job, domain::JobState state,
                                const QString& outcome, const QString& error, const domain::ExportOutput& output);
 
+// A library restored from a backup: exports that were still waiting are
+// closed as not written (Cancelled, outcome "restored"), so a copy is never
+// written again, perhaps on another machine, without the user asking. Those
+// that were running are left to recovery (Interrupted, never requeued).
+// Returns how many were closed.
+domain::Result<int> closeExportsAfterRestore(QSqlDatabase& db);
+
 domain::Result<domain::ExportRecord> exportRecord(QSqlDatabase& db, const domain::JobId& job);
 // Newest first.
 domain::Result<QList<domain::ExportRecord>> bookExports(QSqlDatabase& db, const domain::BookId& book);

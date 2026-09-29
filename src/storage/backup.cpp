@@ -1,6 +1,7 @@
 #include "storage/backup.h"
 
 #include "catalog/backup.h"
+#include "catalog/exports.h"
 #include "catalog/library.h"
 #include "storage/exportdestination.h"
 #include "storage/filecopy.h"
@@ -8,6 +9,7 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <QHash>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -145,9 +147,16 @@ Result<Manifest> readManifest(const QString& folder)
     return m;
 }
 
-// The catalog file on its own connection: its integrity and schema version.
-Result<int> checkCatalogFile(const QString& file, int expectedVersion)
+// The catalog file on its own connection: its integrity and schema version,
+// and that the backup holds everything it needs: every source it references,
+// with the digest it records, and every report (or the report is listed as
+// missing). The manifest alone is not trusted to be complete.
+Result<int> checkCatalogFile(const QString& file, const Manifest& manifest)
 {
+    const int expectedVersion = manifest.schemaVersion;
+    QHash<QString, QString> listed;  // Path -> digest.
+    for (const ManifestFile& f : manifest.files)
+        listed.insert(f.path, f.sha256);
     const QString name = QStringLiteral("mbl-backup-check-%1").arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
     Result<int> result = failure(QStringLiteral("The backup's catalog could not be opened."));
     {
@@ -167,7 +176,31 @@ Result<int> checkCatalogFile(const QString& file, int expectedVersion)
                                      .arg(q.value(0).toInt())
                                      .arg(expectedVersion));
             } else {
-                result = q.value(0).toInt();
+                const int version = q.value(0).toInt();
+                QString problem;
+                if (!q.exec(QStringLiteral("SELECT managed_path, sha256 FROM assets"))) {
+                    problem = QStringLiteral("The backup's catalog cannot be read.");
+                } else {
+                    while (problem.isEmpty() && q.next()) {
+                        const QString path = q.value(0).toString();
+                        const auto it = listed.constFind(path);
+                        if (it == listed.cend())
+                            problem = QStringLiteral("The backup is missing %1, which its catalog needs.").arg(path);
+                        else if (it->compare(q.value(1).toString(), Qt::CaseInsensitive) != 0)
+                            problem = QStringLiteral("%1 in the backup is not the file its catalog records.").arg(path);
+                    }
+                }
+                if (problem.isEmpty()
+                    && !q.exec(QStringLiteral("SELECT report_path FROM metadata_runs WHERE report_path IS NOT NULL "
+                                              "UNION SELECT report_path FROM toc_runs WHERE report_path IS NOT NULL"))) {
+                    problem = QStringLiteral("The backup's catalog cannot be read.");
+                }
+                while (problem.isEmpty() && q.next()) {
+                    const QString path = q.value(0).toString();
+                    if (!listed.contains(path) && !manifest.missingReports.contains(path))
+                        problem = QStringLiteral("The backup is missing %1, which its catalog needs.").arg(path);
+                }
+                result = problem.isEmpty() ? Result<int>(version) : Result<int>(failure(problem));
             }
             q.finish();
             db.close();
@@ -362,12 +395,13 @@ Result<BackupInfo> verifyBackup(const QString& backupFolder, const std::atomic_b
         if (sha->compare(f.sha256, Qt::CaseInsensitive) != 0)
             return failure(QStringLiteral("%1 in the backup has changed since it was saved.").arg(f.path));
     }
-    if (auto version = checkCatalogFile(QDir(backupFolder).filePath(kCatalog), m.schemaVersion); !version)
+    if (auto version = checkCatalogFile(QDir(backupFolder).filePath(kCatalog), m); !version)
         return version.error();
     return infoOf(backupFolder, m);
 }
 
-Result<RestoreInfo> restoreBackup(const QString& backupFolder, const QString& targetFolder, const std::atomic_bool* cancel,
+Result<RestoreInfo> restoreBackup(const QString& backupFolder, const QString& targetFolder,
+                                  const QStringList& librariesInUse, const std::atomic_bool* cancel,
                                   const BackupProgress& progress)
 {
     const QFileInfo target(targetFolder);
@@ -382,6 +416,11 @@ Result<RestoreInfo> restoreBackup(const QString& backupFolder, const QString& ta
         return failure(QStringLiteral("The folder %1 does not exist.").arg(QDir::toNativeSeparators(parent)));
     if (isInsideFolder(targetFolder, backupFolder))
         return failure(QStringLiteral("The library cannot be restored inside the backup."));
+    for (const QString& root : librariesInUse) {
+        if (isInsideFolder(targetFolder, root) || isInsideFolder(root, targetFolder))
+            return failure(QStringLiteral("The library cannot be restored inside or around the library in use (%1).")
+                               .arg(QDir::toNativeSeparators(root)));
+    }
 
     auto verified = verifyBackup(backupFolder, cancel);  // Nothing is written if this fails.
     if (!verified)
@@ -447,6 +486,11 @@ Result<RestoreInfo> restoreBackup(const QString& backupFolder, const QString& ta
                          .result();
     if (!integrity || integrity.value() != QLatin1String("ok"))
         return Error{ErrorCode::Database, QStringLiteral("The restored catalog did not pass its integrity check.")};
+    // A copy is never written again without the user asking.
+    auto closed = opened.value()->run([](QSqlDatabase& db) { return catalog::closeExportsAfterRestore(db); }).result();
+    if (!closed)
+        return closed.error();
+    info.exportsClosed = closed.value();
     info.schemaVersion = opened.value()->schemaVersion();
     return info;
 }

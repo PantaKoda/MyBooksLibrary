@@ -195,6 +195,21 @@ Status finishExportJob(QSqlDatabase& db, const JobId& id, JobState state, const 
     return Done{};
 }
 
+Result<int> closeExportsAfterRestore(QSqlDatabase& db)
+{
+    const QString stamp = now();
+    QSqlQuery q(db);
+    q.prepare(QStringLiteral("UPDATE jobs SET state = 'cancelled', outcome = 'restored', error = ?, updated_at = ?, "
+                             "finished_at = ? WHERE kind = 'export' AND state = 'queued'"));
+    q.addBindValue(QStringLiteral("The library was restored from a backup; nothing was written. "
+                                  "Ask again if you still want this copy."));
+    q.addBindValue(stamp);
+    q.addBindValue(stamp);
+    if (!q.exec())
+        return sqlError(q);
+    return q.numRowsAffected();
+}
+
 Result<ExportRecord> exportRecord(QSqlDatabase& db, const JobId& id)
 {
     QSqlQuery q(db);

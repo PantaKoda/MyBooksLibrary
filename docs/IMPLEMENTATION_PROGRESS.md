@@ -16,7 +16,7 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | M07 Corrections/reruns | Merged: part 1 [PR #16](https://github.com/PantaKoda/MyBooksLibrary/pull/16) (merge `152eb8c`); part 2a [PR #17](https://github.com/PantaKoda/MyBooksLibrary/pull/17) (merge `c215319`); part 2b [PR #18](https://github.com/PantaKoda/MyBooksLibrary/pull/18) (merge `f40b99c`) | `feat/m07-presentation-metadata-corrections`; `feat/m07-a2-toc-edits`; `feat/m07-presentation-toc-editing` | See "M07" |
 | M08 Organization | Merged: part 1 [PR #19](https://github.com/PantaKoda/MyBooksLibrary/pull/19) (merge `7052536`); part 2 [PR #20](https://github.com/PantaKoda/MyBooksLibrary/pull/20) (merge `c182ec3`). Permanent deletion of trashed books remains open | `feat/m08-a2-collections-trash`; `feat/m08-presentation-organization` | See "M08" |
 | M09 Export | Merged: part 1 [PR #21](https://github.com/PantaKoda/MyBooksLibrary/pull/21) (merge `acc2b89`); part 2 [PR #22](https://github.com/PantaKoda/MyBooksLibrary/pull/22) (merge `f2bd6b4`); part 3 [PR #23](https://github.com/PantaKoda/MyBooksLibrary/pull/23) (merge `1dbbe0c`) | `feat/m09-a1-export-core`; `feat/m09-a2-export-jobs`; `feat/m09-presentation-export` | See "M09" |
-| M10 Windows release | Part 1 AwaitingReview (backup and restore, A1 and A2; PR from `feat/m10-a1-backup-restore`) | `feat/m10-a1-backup-restore` | See "M10" |
+| M10 Windows release | Part 1 AwaitingReview ([PR #24](https://github.com/PantaKoda/MyBooksLibrary/pull/24), backup and restore) | `feat/m10-a1-backup-restore` | See "M10" |
 | M11 | NotStarted | | |
 
 ## M10 — Windows release
@@ -56,9 +56,16 @@ M10 is split in three:
 - with a source's digest not checked, the damage test fails;
 - with the manifest path check removed, the escape test fails. The restore is still refused, as a missing file, and nothing is written outside.
 
+**Review fixes ([PR #24](https://github.com/PantaKoda/MyBooksLibrary/pull/24), review of `f811cae`):**
+- **Should fix, restoring inside the open library:** a new folder inside the library in use was accepted, including under `staging/`, which that library's next start removes. `restoreBackup` now takes `librariesInUse` and refuses a target inside or around any of them, on real paths. Covered by `tst_backup::neverRestoredInsideTheLibraryInUse`: `restored`, `files/`, `staging/`, `reports/` and a `..` spelling are refused, and nothing is created.
+- **Should decide, waiting exports:** an export waiting at backup time ran again in the restored library, perhaps on another machine. Decision: they are closed as not written (`cancelled` / `restored`) by `catalog::closeExportsAfterRestore` when the restore opens the library. Covered by `waitingExportsAreClosedByARestore`: none is open after recovery, the record says not written, and the library in use keeps its own request.
+- **Hardening, complete backups:** `verifyBackup` now also checks that every source the catalog references is in the manifest with the digest the catalog records, and every report is listed or listed as missing. Covered by `aBackupMissingANeededFileIsRefused`: a source removed together with its manifest entry is refused, and nothing is restored.
+- **Controls:** with each fix undone in one build, its test fails.
+- **Verification after the fixes:** `pwsh scripts/verify.ps1` Release and `-Configuration Debug` both **passed**, 30/30 tests.
+
 **Not in this part:** the packaged runtime (part 2), and the window's commands (part 3).
 
-**Next action:** open the PR for review.
+**Next action:** review of [PR #24](https://github.com/PantaKoda/MyBooksLibrary/pull/24).
 
 ## M09 — Export
 
