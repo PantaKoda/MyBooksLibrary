@@ -16,7 +16,7 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | M07 Corrections/reruns | Merged: part 1 [PR #16](https://github.com/PantaKoda/MyBooksLibrary/pull/16) (merge `152eb8c`); part 2a [PR #17](https://github.com/PantaKoda/MyBooksLibrary/pull/17) (merge `c215319`); part 2b [PR #18](https://github.com/PantaKoda/MyBooksLibrary/pull/18) (merge `f40b99c`) | `feat/m07-presentation-metadata-corrections`; `feat/m07-a2-toc-edits`; `feat/m07-presentation-toc-editing` | See "M07" |
 | M08 Organization | Merged: part 1 [PR #19](https://github.com/PantaKoda/MyBooksLibrary/pull/19) (merge `7052536`); part 2 [PR #20](https://github.com/PantaKoda/MyBooksLibrary/pull/20) (merge `c182ec3`). Permanent deletion of trashed books remains open | `feat/m08-a2-collections-trash`; `feat/m08-presentation-organization` | See "M08" |
 | M09 Export | Merged: part 1 [PR #21](https://github.com/PantaKoda/MyBooksLibrary/pull/21) (merge `acc2b89`); part 2 [PR #22](https://github.com/PantaKoda/MyBooksLibrary/pull/22) (merge `f2bd6b4`); part 3 [PR #23](https://github.com/PantaKoda/MyBooksLibrary/pull/23) (merge `1dbbe0c`) | `feat/m09-a1-export-core`; `feat/m09-a2-export-jobs`; `feat/m09-presentation-export` | See "M09" |
-| M10 Windows release | Part 1 AwaitingReview ([PR #24](https://github.com/PantaKoda/MyBooksLibrary/pull/24), backup and restore) | `feat/m10-a1-backup-restore` | See "M10" |
+| M10 Windows release | Part 1 Merged ([PR #24](https://github.com/PantaKoda/MyBooksLibrary/pull/24), merge `0c682c3`); part 2 AwaitingReview (the Windows package, `feat/m10-packaging`) | `feat/m10-a1-backup-restore` | See "M10" |
 | M11 | NotStarted | | |
 
 ## M10 — Windows release
@@ -65,7 +65,51 @@ M10 is split in three:
 
 **Not in this part:** the packaged runtime (part 2), and the window's commands (part 3).
 
-**Next action:** review of [PR #24](https://github.com/PantaKoda/MyBooksLibrary/pull/24).
+**Next action:** merged ([PR #24](https://github.com/PantaKoda/MyBooksLibrary/pull/24), merge `0c682c3`).
+
+### Part 2: the Windows package
+
+**Scope:**
+- **`scripts/package.ps1`** builds a Release app and stages `build\package\MyBooksLibrary\`, then zips it:
+  - the executable with the SDK runtime and OCR models;
+  - Qt through `windeployqt`, with only the SQLite driver and without software OpenGL, D3D/DXC compilers, QML debugging plugins or translations;
+  - the Visual C++ runtime, app-local;
+  - the notices (docs/BUILDING.md, "Windows package").
+- **Notices are complete by construction:** the Qt module of every shipped Qt file is looked up (qtbase, qtdeclarative, qtpdf, qtsvg), and its SBOM is included with Qt's licence text and the SDK's licences. A file of an unknown module stops the script. This caught `dxcompiler.dll` (Microsoft's shader compiler) and Qt Quick 3D pulled in by the debugging plugins; both are now left out.
+- **Checked outside the build tree:** the package is copied to a temporary folder and run with `PATH` reduced to Windows' own folders, no Qt variables, and the real platform. It runs the SDK check, the FTS5 probe, the reader checks (text, and OCR with the packaged models), and the window: import, read, save a copy with bookmarks, close. Each run has a time limit, because a GUI-subsystem program can hang on an error dialog.
+- **`--export-first <pdf>`** (development flag): when idle, the first book is saved as a copy with bookmarks through the Export dialog's session, and the app exits 1 unless it was saved. `verify.ps1`'s window check now uses it too.
+- **`scripts/toolchain.ps1`:** the toolchain setup (MSVC, CMake, Ninja, Qt and SDK checks), moved out of `verify.ps1` so both scripts use it.
+
+**Touched paths:** `scripts/{package.ps1,toolchain.ps1,verify.ps1}`, `tools/test_verify_guards.ps1`, `main.cpp`, `docs/`; for the CI fix, `qml/inspector/MetadataFieldEditor.qml` and `tests/presentation/tst_inspectorpane.cpp`.
+
+| Command | Result |
+| --- | --- |
+| `pwsh scripts/package.ps1 -SdkDir <sdk>` | **PACKAGE PASSED**: 323 MB, zip 166 MB; Qt modules qtbase, qtdeclarative, qtpdf, qtsvg.<br>**From the copy in `%TEMP%`:** `sdk-check`, `sqlite-check` (fts5, bm25, remove_diacritics, prefix), and `reader-check` on `contents-book.pdf` (all PASS; `pdfquickplugin` and `Qt6PdfQuick` loaded from the package).<br>**OCR with the packaged models** on `image-only.pdf`: 4 pages OCR'd, 0 failed, peak 2.4 GB; all checks PASS.<br>**The window:** import, page 15, `export=saved` to "Βιβλίο (bookmarked).pdf" (10 404 bytes), `close: reader.open=0`. |
+| `pwsh scripts/verify.ps1` (Release) and `-Configuration Debug` | **Passed** in both configurations: guard tests, whitespace and text checks, configure, build, **30/30 tests**, and the smoke checks. The window check now reports `export=saved`. Verified on the working tree based on `0c682c3`. |
+
+**Review fixes ([PR #25](https://github.com/PantaKoda/MyBooksLibrary/pull/25), review of `390408b`):**
+- **Should fix before a release, the OCR models' licence:** the PaddleOCR PP-OCR models (Apache-2.0) were shipped without their licence, because SDK 0.3.0's install silently skips it (reported as [PantaKoda/PDFMegine#6](https://github.com/PantaKoda/PDFMegine/issues/6)).
+  - The script now maps each shipped SDK DLL to its licence files, and requires the models' licence. `-ModelsLicenseFile` supplies it until the SDK does.
+  - An unmapped SDK DLL, or a missing licence, stops the script. Without `-ModelsLicenseFile` the run fails at once with the reason; with it, `NOTICE.txt` names the models and their licence.
+- **Record and report, Windows N editions:** `opencv_world500.dll` imports Media Foundation directly, so the app does not start on N editions without the Media Feature Pack. This is reported as [PantaKoda/PDFMegine#7](https://github.com/PantaKoda/PDFMegine/issues/7), and stated in `NOTICE.txt` and BUILDING.md.
+  - As the reviewer suggested, the package now **scans every shipped binary's imports** (`dumpbin /dependents`). An import that is neither shipped nor a known Windows component stops it. Media Foundation is reported, and delay-loaded imports only warn.
+- **Nit, `--export-first` with no book:** it now fails at once ("export=NOT SAVED: the library has no book") instead of waiting forever.
+- **Verification after the fixes:** `package.ps1 -ModelsLicenseFile <PaddleOCR LICENSE>` **passed**. The imports scan reported only Media Foundation, and the smoke checks passed. Without `-ModelsLicenseFile` it stops with the reason. **Control:** with `kernel32` left off the Windows allowlist, it stops ("generic\qtuiotouchplugin.dll needs kernel32.dll…"). `--export-first` on an empty library exits 1 in 1.1 s. `verify.ps1` Release and Debug both **passed**, 30/30.
+
+**CI failure on the first head (`f9769c8`), twice:** `tst_inspectorpane::correctionDialogSavesAndSurvivesRefreshes` found the last of 27 contributor rows outside the scroll area. This was a real race in `MetadataFieldEditor.qml`, not caused by this PR, but exposed by a slower runner:
+- After **Add**, the list scrolled to its end once (`Qt.callLater`). When the layout settled later, the new row ended below the visible area.
+- Now the list follows its end while the rows or their view change size after Add, and stops as soon as the user scrolls.
+- The test also shrinks the rows' visible height after Add. With the fix disabled it fails like CI did (last row at y 565, rows ending at 375); with the fix it passes.
+
+**Found while packaging:** with `QT_QPA_PLATFORM=offscreen`, the packaged reader check waited on Qt's "no platform plugin" message box. The package ships only the Windows platform plugin, as users need. The checks now use the real platform and a time limit.
+
+**Not in this part:**
+- **CI does not build the package yet.** Its Qt comes from `aqtinstall`, which does not install `C:\Qt\Licenses`; `-QtLicenseFile` would need a pinned copy of the licence text.
+- **No installer and no code signing:** the zip is the release artifact.
+- **The owner's manual check of the zip** on a machine without Qt or Visual Studio is still to do.
+- Backup and restore in the window come in part 3.
+
+**Next action:** open the PR for review. Then part 3.
 
 ## M09 — Export
 

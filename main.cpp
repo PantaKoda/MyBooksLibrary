@@ -12,6 +12,10 @@
 //                     [--search <text>]      development: search once the library is ready
 //                     [--read-page <n>]      development: open the first book at page n when idle (before
 //                                            --screenshot or --close, if given)
+//                     [--export-first <pdf>] development: when idle, save the first book as a copy with
+//                                            bookmarks at <pdf> (the Export dialog's session), print
+//                                            "export=<phase>", and exit 1 unless it was saved (before
+//                                            --screenshot or --close, if given)
 //                     [--close]              development: instead of --screenshot, close the window
 //                                            when idle (as its close button does) and quit; exit 1
 //                                            if the reader was still open when the window closed
@@ -229,11 +233,45 @@ int main(int argc, char *argv[])
     // once processing is idle, before the screenshot or close.
     const qsizetype readAt = args.indexOf(QLatin1String("--read-page"));
     const int readPage = readAt >= 0 && readAt + 1 < args.size() ? args.at(readAt + 1).toInt() : 0;
-    if (!screenshot.isEmpty() || closeWhenIdle || readPage > 0) {
+    const qsizetype exportAt = args.indexOf(QLatin1String("--export-first"));
+    const QString exportPath = exportAt >= 0 && exportAt + 1 < args.size() ? args.at(exportAt + 1) : QString();
+    auto exportFailed = std::make_shared<bool>(false);
+    if (!screenshot.isEmpty() || closeWhenIdle || readPage > 0 || !exportPath.isEmpty()) {
         auto readRequested = std::make_shared<bool>(false);
+        auto exportStage = std::make_shared<int>(exportPath.isEmpty() ? 3 : 0);  // 0 idle, 1 preview, 2 saving, 3 done.
         auto trySave = std::make_shared<std::function<void()>>();
-        *trySave = [&library, window, screenshot, closeWhenIdle, trySave, readPage, readRequested] {
+        *trySave = [&library, window, screenshot, closeWhenIdle, trySave, readPage, readRequested, exportPath,
+                    exportStage, exportFailed] {
             if (library.busy() || library.opening() || library.search()->searching()) {
+                QTimer::singleShot(200, *trySave);
+                return;
+            }
+            // --export-first: through the Export dialog's session, as a user would.
+            mbl::presentation::ExportController* exporter = library.exporter();
+            if (*exportStage == 0 && library.books()->rowCount() == 0) {
+                // Idle with no book (the import failed, or nothing was imported):
+                // fail at once rather than wait for one.
+                *exportStage = 3;
+                *exportFailed = true;
+                QTextStream(stdout) << "export=NOT SAVED: the library has no book" << Qt::endl;
+            }
+            if (*exportStage == 0) {
+                *exportStage = 1;
+                exporter->prepare(library.books()->bookIdAt(0));
+            }
+            if (*exportStage == 1 && !exporter->loading()) {
+                *exportStage = 2;
+                exporter->exportTo(exportPath);
+            }
+            if (*exportStage == 2 && !exporter->running()) {
+                *exportStage = 3;
+                using Phase = mbl::presentation::ExportController::Phase;
+                *exportFailed = exporter->phase() != Phase::Saved;
+                QTextStream(stdout) << "export=" << (*exportFailed ? QStringLiteral("NOT SAVED: ") : QStringLiteral("saved: "))
+                                    << (*exportFailed ? exporter->phaseText() + exporter->problem() : exporter->resultPath())
+                                    << Qt::endl;
+            }
+            if (*exportStage != 3) {
                 QTimer::singleShot(200, *trySave);
                 return;
             }
@@ -246,7 +284,7 @@ int main(int argc, char *argv[])
                 return;
             }
             if (screenshot.isEmpty() && !closeWhenIdle)
-                return;  // --read-page alone: stay open on the book.
+                return;  // --read-page or --export-first alone: stay open.
             QTimer::singleShot(readPage > 0 ? 1500 : 500, [window, screenshot, closeWhenIdle] {  // Let the view settle and render.
                 if (closeWhenIdle) {
                     window->close();  // Main.qml's onClosing, as for the close button.
@@ -261,6 +299,8 @@ int main(int argc, char *argv[])
     }
 
     const int code = QGuiApplication::exec();
+    if (*exportFailed)
+        return 1;
     if (closeWhenIdle) {
         // The window must close an open book (view, then document) before it
         // closes itself, never leave it to the engine's teardown.
