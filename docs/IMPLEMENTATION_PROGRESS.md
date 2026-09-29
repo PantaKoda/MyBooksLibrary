@@ -15,8 +15,57 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | M06 Search/read | Merged: part 1 [PR #14](https://github.com/PantaKoda/MyBooksLibrary/pull/14) (merge `c8dc23e`); part 2 [PR #15](https://github.com/PantaKoda/MyBooksLibrary/pull/15) (merge `e964184`) | `feat/m06-presentation-search`; `feat/m06-reader-chapter-navigation` | See "M06" |
 | M07 Corrections/reruns | Merged: part 1 [PR #16](https://github.com/PantaKoda/MyBooksLibrary/pull/16) (merge `152eb8c`); part 2a [PR #17](https://github.com/PantaKoda/MyBooksLibrary/pull/17) (merge `c215319`); part 2b [PR #18](https://github.com/PantaKoda/MyBooksLibrary/pull/18) (merge `f40b99c`) | `feat/m07-presentation-metadata-corrections`; `feat/m07-a2-toc-edits`; `feat/m07-presentation-toc-editing` | See "M07" |
 | M08 Organization | Merged: part 1 [PR #19](https://github.com/PantaKoda/MyBooksLibrary/pull/19) (merge `7052536`); part 2 [PR #20](https://github.com/PantaKoda/MyBooksLibrary/pull/20) (merge `c182ec3`). Permanent deletion of trashed books remains open | `feat/m08-a2-collections-trash`; `feat/m08-presentation-organization` | See "M08" |
-| M09 Export | Parts 1 and 2 Merged ([PR #21](https://github.com/PantaKoda/MyBooksLibrary/pull/21), merge `acc2b89`; [PR #22](https://github.com/PantaKoda/MyBooksLibrary/pull/22), merge `f2bd6b4`); part 3 AwaitingReview ([PR #23](https://github.com/PantaKoda/MyBooksLibrary/pull/23), the Export dialog) | `feat/m09-a1-export-core`; `feat/m09-a2-export-jobs`; `feat/m09-presentation-export` | See "M09" |
-| M10–M11 | NotStarted | | |
+| M09 Export | Merged: part 1 [PR #21](https://github.com/PantaKoda/MyBooksLibrary/pull/21) (merge `acc2b89`); part 2 [PR #22](https://github.com/PantaKoda/MyBooksLibrary/pull/22) (merge `f2bd6b4`); part 3 [PR #23](https://github.com/PantaKoda/MyBooksLibrary/pull/23) (merge `1dbbe0c`) | `feat/m09-a1-export-core`; `feat/m09-a2-export-jobs`; `feat/m09-presentation-export` | See "M09" |
+| M10 Windows release | Part 1 AwaitingReview ([PR #24](https://github.com/PantaKoda/MyBooksLibrary/pull/24), backup and restore) | `feat/m10-a1-backup-restore` | See "M10" |
+| M11 | NotStarted | | |
+
+## M10 — Windows release
+
+M10 is split in three:
+- **Part 1** (A1, A2): backup and restore, verified.
+- **Part 2** (packaging): a clean packaged runtime with models, SQL, the reader and the notices; startup outside the build tree.
+- **Part 3** (presentation): Back up… and Restore… in the window.
+
+### Part 1: backup and restore (A1, A2)
+
+**Scope:**
+- **`catalog::snapshotCatalog` (`catalog/backup.*`, A2):** on the database thread, lists every asset, with its recorded digest and size, and every report a run references. It then writes the catalog with **`VACUUM INTO`**, a consistent copy of the committed state that includes what is only in the WAL. Nothing else runs on that connection in between.
+- **`storage::createBackup` (`storage/backup.*`, A1):**
+  - writes "MyBooksLibrary backup *date time*" in a chosen folder outside the library;
+  - copies every managed source (trashed books included) and every referenced report with SHA-256. A source whose bytes no longer match its record **stops the backup**, rather than copying damage. A missing report is listed, not fatal;
+  - writes the manifest `backup.json` (format 1, schema version, each file with size and digest). The catalog copy is switched to rollback journaling, so it can be read without side files;
+  - **verifies everything**, then renames the hidden `.partial` folder into place. A cancelled or failed backup leaves nothing.
+- **`storage::verifyBackup`:** the manifest (whose paths must stay under `files/` or `reports/`), every size and digest, and the catalog's integrity check and schema version.
+- **`storage::restoreBackup`:**
+  - restores into a **new or empty folder only**, never the library in use or a folder inside the backup;
+  - verifies first, and writes nothing if that fails;
+  - copies through a hidden `.restoring` folder with every digest checked, and puts it in place;
+  - then opens it as a library (migrating an older catalog) and runs the integrity check.
+- **Why not quiesce jobs:** the catalog snapshot is one database task, and every catalog write goes through that thread. Managed sources and reports are immutable, and a referenced one is never removed (no permanent deletion yet). A backup is therefore consistent while work runs; see DECISIONS.md.
+- `storage::isInsideFolder` (A1) exposes the real-path check the export rules use.
+
+**Touched paths:** `src/catalog/backup.*`, `src/storage/{backup.*,exportdestination.*}`, `CMakeLists.txt`, `tests/storage/tst_backup.cpp`, `tests/CMakeLists.txt`, `docs/`.
+
+| Command | Result |
+| --- | --- |
+| `pwsh scripts/verify.ps1` (Release) and `-Configuration Debug` | **Passed** in both configurations: whitespace and text checks, guard tests, configure, build, **30/30 tests** (ctest), and the application smoke checks. Verified on the working tree based on `1dbbe0c`. |
+| `tst_backup` (new, 5 cases, real files and fixtures) | **Backup and restore:** a library with a correction, contents, a report, a collection and a book in Trash is backed up, with no partial folder left. A second backup gets its own name. It is restored as a new library while the original stays open, with the correction, contents, chapter search for "TCP/IP", Trash, the collection, the source digest and the report all kept.<br>**The latest change:** a title change still only in the WAL is in the backup.<br>**Damage and tampering:** a changed managed source stops the backup with nothing left. A report changed in the backup, by size or by bytes at the same size, is refused by verify and restore, which writes nothing. A manifest naming `../../escape/…` is refused before any copy. A library folder is not a backup.<br>**Cancel and refusals:** a cancelled backup or restore leaves nothing, and an empty target stays empty. Refused: backup inside the library (root or `files/`), a missing or relative folder; restore into the library in use (not empty), inside the backup, or a relative path.<br>**Missing report:** listed, not fatal, and kept in the manifest. |
+
+**Control runs:**
+- with the catalog copied as a file instead of `VACUUM INTO`, the copy has **schema version 0**, because everything was still in the WAL, and the tests fail;
+- with a source's digest not checked, the damage test fails;
+- with the manifest path check removed, the escape test fails. The restore is still refused, as a missing file, and nothing is written outside.
+
+**Review fixes ([PR #24](https://github.com/PantaKoda/MyBooksLibrary/pull/24), review of `f811cae`):**
+- **Should fix, restoring inside the open library:** a new folder inside the library in use was accepted, including under `staging/`, which that library's next start removes. `restoreBackup` now takes `librariesInUse` and refuses a target inside or around any of them, on real paths. Covered by `tst_backup::neverRestoredInsideTheLibraryInUse`: `restored`, `files/`, `staging/`, `reports/` and a `..` spelling are refused, and nothing is created.
+- **Should decide, waiting exports:** an export waiting at backup time ran again in the restored library, perhaps on another machine. Decision: they are closed as not written (`cancelled` / `restored`) by `catalog::closeExportsAfterRestore` when the restore opens the library. Covered by `waitingExportsAreClosedByARestore`: none is open after recovery, the record says not written, and the library in use keeps its own request.
+- **Hardening, complete backups:** `verifyBackup` now also checks that every source the catalog references is in the manifest with the digest the catalog records, and every report is listed or listed as missing. Covered by `aBackupMissingANeededFileIsRefused`: a source removed together with its manifest entry is refused, and nothing is restored.
+- **Controls:** with each fix undone in one build, its test fails.
+- **Verification after the fixes:** `pwsh scripts/verify.ps1` Release and `-Configuration Debug` both **passed**, 30/30 tests.
+
+**Not in this part:** the packaged runtime (part 2), and the window's commands (part 3).
+
+**Next action:** review of [PR #24](https://github.com/PantaKoda/MyBooksLibrary/pull/24).
 
 ## M09 — Export
 
@@ -161,7 +210,7 @@ M09 is split in three:
 - **Every managed source protected:** parts 1 and 2, with refusals shown here.
 - **Partial coverage visible:** the summary and a note per entry.
 
-**Next action:** review of [PR #23](https://github.com/PantaKoda/MyBooksLibrary/pull/23). After it is merged, M09 is complete. Next is M10, the Windows release.
+**Next action:** merged ([PR #23](https://github.com/PantaKoda/MyBooksLibrary/pull/23), merge `1dbbe0c`). M09 is complete.
 
 ## M08 — Organization
 

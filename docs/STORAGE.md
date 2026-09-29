@@ -54,6 +54,38 @@ Filesystem changes and SQLite commits are not one atomic transaction, so every p
 
 Afterwards, staging folders that belong to no open operation are removed, since they never hold catalogued files. Managed files that no asset references and no open operation claims are **reported only** (`RecoveryReport::orphanedManagedFiles`); they are never deleted automatically.
 
+## Backup and restore (`storage/backup.*`, M10)
+
+A backup is a folder "MyBooksLibrary backup *yyyy-MM-dd HHmmss*" in a folder the user chooses, outside the library:
+
+| Entry | Holds |
+| --- | --- |
+| `library.sqlite` | The catalog, written by `catalog::snapshotCatalog` with `VACUUM INTO`: the committed state, WAL content included, never a copy of the live file. Rollback journal mode, so it reads without side files. |
+| `files/<asset-id>/source.pdf` | Every managed source, trashed books included, copied with SHA-256 and checked against the digest recorded at import. |
+| `reports/<run-id>.json` | Every report a metadata or contents run references. A missing one is listed in the manifest, not fatal. |
+| `backup.json` | Format 1, creation time, schema version, book count, and the catalog and each file with its size and SHA-256. |
+
+`derivatives/`, `cache/` and `staging/` are not included.
+
+**Creating** (`createBackup`):
+- The catalog is listed and copied in **one database task**. Every catalog write goes through that thread, and sources and reports are immutable and never removed while referenced, so the backup is consistent while imports and jobs run.
+- The files are then copied on the caller's worker thread. A source whose bytes changed stops the backup.
+- Everything is written into a hidden `.<name>-<id>.partial` folder, **verified** (every digest, and the catalog's `integrity_check` and schema version), and renamed into place. A cancelled or failed backup removes its partial folder, so an incomplete backup never looks like one.
+
+**Verifying** (`verifyBackup`):
+- The manifest's format, and paths that stay under `files/` or `reports/`, so a crafted manifest cannot name a file elsewhere.
+- Every file's size and digest.
+- The catalog's `integrity_check` and schema version.
+- That the backup holds **everything the catalog needs**: each source it references, with the digest it records, and each report, unless the manifest lists it as missing. The manifest alone is not trusted to be complete.
+
+**Restoring** (`restoreBackup`):
+- Only into a **new or empty** folder. Never inside the backup, and never inside or around a library in use (`librariesInUse`), however the path is written: its start-up recovery removes unknown staging folders, and its managed folders must not mix with another library's.
+- The backup is verified first, and nothing is written if it fails.
+- The files are copied into a hidden `.<name>-<id>.restoring` folder, each digest checked again, and the folder is moved into place.
+- It is then opened as a library, which takes the lock and migrates an older catalog, and checked with `integrity_check`.
+- Exports that were waiting in the backup are closed as not written: `cancelled`, outcome `restored` (`catalog::closeExportsAfterRestore`). A restore can happen much later or on another machine, so a copy is never written again without the user asking. Running ones become `interrupted` at recovery, never requeued. Metadata and contents jobs stay queued, since they are the library's own work.
+- A cancelled or failed restore leaves the target as it was.
+
 ## Tests (`tests/storage/tst_importservice.cpp`)
 
 - a verified copy with unchanged original bytes, size and modification time, from a Greek/ü path;

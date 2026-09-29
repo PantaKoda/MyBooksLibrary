@@ -29,6 +29,11 @@ struct ExportDestinationRules {
 domain::Result<QString> validateExportDestination(const QString& destination, const LibraryLayout& layout,
                                                   const ExportDestinationRules& rules);
 
+// True if `path` (which may not exist yet) is `folder` or lies inside it, on
+// the real file system: case, "..", short names and links resolved. False
+// when `folder` cannot be resolved.
+bool isInsideFolder(const QString& path, const QString& folder);
+
 // The size and modification time of the file at `path`; nullopt when there
 // is no file (nothing, or a folder).
 std::optional<domain::FileIdentity> fileIdentity(const QString& path);

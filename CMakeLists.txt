@@ -61,6 +61,8 @@ qt_add_library(mbl_core STATIC
     src/catalog/jobs.cpp
     src/catalog/exports.h
     src/catalog/exports.cpp
+    src/catalog/backup.h
+    src/catalog/backup.cpp
     src/catalog/reading.h
     src/catalog/reading.cpp
     src/catalog/tocedits.h
@@ -84,6 +86,8 @@ qt_add_library(mbl_core STATIC
     src/search/searchindex.cpp
     src/storage/exportdestination.h
     src/storage/exportdestination.cpp
+    src/storage/backup.h
+    src/storage/backup.cpp
     src/storage/filecopy.h
     src/storage/filecopy.cpp
     src/storage/importservice.h
