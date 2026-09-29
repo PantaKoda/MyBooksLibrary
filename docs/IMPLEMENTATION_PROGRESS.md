@@ -32,7 +32,16 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 
 **Verification:** Locally: `pwsh scripts/package.ps1 -SdkDir <sdk>` with the pinned licences (no other options) **passed**, and wrote `MyBooksLibrary-0.1.0-win64.zip`. `pwsh scripts/verify.ps1` **passed** (170 text files, 31/31 tests). The workflows are exercised by this PR's CI (the setup action and the package step). `release.yml` runs only on a tag, so it is first exercised by the first release.
 
-**Next action:** review of the PR. After it and the contents-tree fix ([PR #27](https://github.com/PantaKoda/MyBooksLibrary/pull/27)) are merged, the owner decides on tagging `v0.1.0`.
+**Review fixes ([PR #28](https://github.com/PantaKoda/MyBooksLibrary/pull/28), review of `a61a92f`):**
+- **Must fix, CI failed:** the new package step's OCR check timed out on the 2-core runner. It needs about 370 s there, and every check had 300 s.
+  - Each check now has its own limit: 900 s for the OCR check, 300 s for the others.
+  - The OCR check skips the Qt-only control phase (`--no-control`), which runs as long as the SDK phase and is already covered by the text check.
+  - Locally the check now passes in about 2 minutes, with two phases.
+- **Should fix, the release notes' wording:** "replace this folder" could read as the library folder. The notes now say the library lives separately, give its real path (`%LOCALAPPDATA%\MyBooksLibrary\MyBooksLibrary\Library`), and say to replace only the app's folder, backing up first if wanted.
+- **Hardening:** the tag reaches the release scripts through `env:`, never pasted into the script text.
+- **Retry after a failed publish:** the release is created as a **draft**, both files are checked as uploaded, and only then is it published. docs/RELEASING.md says to delete a left-over draft (`gh release delete`) before tagging again.
+
+**Next action:** CI on the new head, then merge after [PR #27](https://github.com/PantaKoda/MyBooksLibrary/pull/27). Tagging `v0.1.0` waits for the owner's go.
 
 ## M10 — Windows release
 

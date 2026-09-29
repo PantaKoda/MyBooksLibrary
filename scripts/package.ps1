@@ -289,14 +289,19 @@ Windows "N" and "KN" editions need the Media Feature Pack: the OCR library
         }
         # The real platform, as users run it (the package ships no offscreen plugin).
         [Environment]::SetEnvironmentVariable('QT_QPA_PLATFORM', $null, 'Process')
+        # Each check with its own time limit (seconds). OCR of the scanned PDF
+        # takes about 2 minutes per pass on a 2-core CI runner; its check skips
+        # the Qt-only control phase (which runs as long as the SDK phase and is
+        # already covered by the text check), and still gets a generous limit.
         $checks = [ordered]@{
-            'sdk-check'                 = @('--sdk-check', (Join-Path $fixtures 'title-page.pdf'))
-            'sqlite-check (FTS5)'       = @('--sqlite-check')
-            'reader-check (text PDF)'   = @('--reader-check', (Join-Path $fixtures 'contents-book.pdf'), '--rounds', '2')
-            'reader-check (OCR models)' = @('--reader-check', (Join-Path $fixtures 'image-only.pdf'), '--rounds', '1', '--require-ocr')
+            'sdk-check'                 = @{ Limit = 300; Args = @('--sdk-check', (Join-Path $fixtures 'title-page.pdf')) }
+            'sqlite-check (FTS5)'       = @{ Limit = 300; Args = @('--sqlite-check') }
+            'reader-check (text PDF)'   = @{ Limit = 300; Args = @('--reader-check', (Join-Path $fixtures 'contents-book.pdf'), '--rounds', '2') }
+            'reader-check (OCR models)' = @{ Limit = 900; Args = @('--reader-check', (Join-Path $fixtures 'image-only.pdf'), '--rounds', '1',
+                                                                   '--require-ocr', '--no-control') }
         }
         foreach ($check in $checks.GetEnumerator()) {
-            $run = Invoke-App $app $check.Value 300
+            $run = Invoke-App $app $check.Value.Args $check.Value.Limit
             Write-Host "---- $($check.Key) (exit $($run.Code))"
             Write-Host $run.Output
             if ($run.Code -ne 0) { throw "$($check.Key) failed (exit $($run.Code))" }

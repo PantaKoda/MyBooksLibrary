@@ -32,9 +32,12 @@ A change that breaks packaging therefore fails its own pull request, not a relea
    - the release notes exist;
    - `verify.ps1` and `package.ps1` pass.
 
-   It then creates the release "MyBooksLibrary X.Y.Z" with `MyBooksLibrary-X.Y.Z-win64.zip` and its `.sha256`. The notes come first, followed by GitHub's list of the pull requests merged since the previous release.
+   It then creates the release "MyBooksLibrary X.Y.Z" as a **draft**, with `MyBooksLibrary-X.Y.Z-win64.zip` and its `.sha256`. The notes come first, followed by GitHub's list of the pull requests merged since the previous release. It checks that both files are attached, and only then publishes it.
 
-If the workflow fails, nothing is published. Fix the problem through a pull request, delete the tag (`git push origin :refs/tags/vX.Y.Z`, then `git tag -d vX.Y.Z`), and tag again.
+If the workflow fails, nothing is published. To retry:
+1. Fix the problem through a pull request.
+2. If a draft release `vX.Y.Z` was left behind by a failure during publishing, delete it: `gh release delete vX.Y.Z --yes`.
+3. Delete the tag (`git push origin :refs/tags/vX.Y.Z`, then `git tag -d vX.Y.Z`), and tag again.
 
 ## What a user downloads
 

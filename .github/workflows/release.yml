@@ -40,8 +40,10 @@ jobs:
           fetch-depth: 0  # The tag's ancestry, to check it is on main.
 
       - name: Check the tag, the version and the notes
+        env:
+          TAG: ${{ github.ref_name }}  # Through the environment, never pasted into the script.
         run: |
-          $tag = '${{ github.ref_name }}'
+          $tag = $env:TAG
           $version = (Select-String -Path CMakeLists.txt -Pattern 'project\(MyBooksLibrary VERSION ([0-9.]+)').Matches[0].Groups[1].Value
           if ($tag -ne "v$version") { throw "The tag $tag does not match VERSION $version in CMakeLists.txt." }
           git merge-base --is-ancestor $env:GITHUB_SHA origin/main
@@ -64,14 +66,25 @@ jobs:
           -QtDir "$env:QT_ROOT_DIR"
           -SdkDir "$env:PDFBOOKMARK_SDK"
 
+      # A draft first, published only once both files are attached: a release
+      # never appears with a missing or half-uploaded package.
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
         run: |
-          $tag = '${{ github.ref_name }}'
+          $tag = $env:TAG
           $name = "MyBooksLibrary-$env:VERSION-win64.zip"
           $zip = "build/package/$name"
           $sha = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLowerInvariant()
           Set-Content -Path "$zip.sha256" -Value "$sha  $name" -Encoding ascii
-          gh release create $tag $zip "$zip.sha256" --verify-tag --title "MyBooksLibrary $env:VERSION" `
+          gh release create $tag $zip "$zip.sha256" --draft --verify-tag --title "MyBooksLibrary $env:VERSION" `
             --notes-file "docs/releases/$tag.md" --generate-notes
+          if ($LASTEXITCODE -ne 0) { throw "Creating the draft release failed." }
+          $assets = (gh release view $tag --json assets | ConvertFrom-Json).assets
+          foreach ($expected in $name, "$name.sha256") {
+            $asset = $assets | Where-Object { $_.name -eq $expected }
+            if (-not $asset -or $asset.state -ne 'uploaded') { throw "The draft release lacks $expected." }
+          }
+          gh release edit $tag --draft=false
+          if ($LASTEXITCODE -ne 0) { throw "Publishing the draft release failed." }
