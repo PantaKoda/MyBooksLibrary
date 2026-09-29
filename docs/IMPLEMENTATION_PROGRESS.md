@@ -14,8 +14,51 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | M05 Contents | Merged: part 1 [PR #12](https://github.com/PantaKoda/MyBooksLibrary/pull/12) (merge `9feb9b3`); part 2 [PR #13](https://github.com/PantaKoda/MyBooksLibrary/pull/13) (merge `8ba9f49`) | `feat/m05-a4-contents-analysis`; `feat/m05-presentation-contents-inspector` | See "M05" |
 | M06 Search/read | Merged: part 1 [PR #14](https://github.com/PantaKoda/MyBooksLibrary/pull/14) (merge `c8dc23e`); part 2 [PR #15](https://github.com/PantaKoda/MyBooksLibrary/pull/15) (merge `e964184`) | `feat/m06-presentation-search`; `feat/m06-reader-chapter-navigation` | See "M06" |
 | M07 Corrections/reruns | Merged: part 1 [PR #16](https://github.com/PantaKoda/MyBooksLibrary/pull/16) (merge `152eb8c`); part 2a [PR #17](https://github.com/PantaKoda/MyBooksLibrary/pull/17) (merge `c215319`); part 2b [PR #18](https://github.com/PantaKoda/MyBooksLibrary/pull/18) (merge `f40b99c`) | `feat/m07-presentation-metadata-corrections`; `feat/m07-a2-toc-edits`; `feat/m07-presentation-toc-editing` | See "M07" |
-| M08 Organization | Part 1 Merged ([PR #19](https://github.com/PantaKoda/MyBooksLibrary/pull/19), merge `7052536`); part 2 AwaitingReview ([PR #20](https://github.com/PantaKoda/MyBooksLibrary/pull/20), the window) | `feat/m08-a2-collections-trash`; `feat/m08-presentation-organization` | See "M08" |
-| M09–M11 | NotStarted | | |
+| M08 Organization | Merged: part 1 [PR #19](https://github.com/PantaKoda/MyBooksLibrary/pull/19) (merge `7052536`); part 2 [PR #20](https://github.com/PantaKoda/MyBooksLibrary/pull/20) (merge `c182ec3`). Permanent deletion of trashed books remains open | `feat/m08-a2-collections-trash`; `feat/m08-presentation-organization` | See "M08" |
+| M09 Export | InProgress: part 1, the export core (plan, destination rules, SDK exporter) | `feat/m09-a1-export-core` | See "M09" |
+| M10–M11 | NotStarted | | |
+
+## M09 — Export
+
+M09 is split in three:
+- **Part 1** (domain + A1 + SDK boundary): the export core.
+- **Part 2** (A2 + A4): export records and durable export jobs on the SDK worker.
+- **Part 3** (presentation): the Export dialog and the state it shows.
+
+### Part 1: the export core (domain, A1, SDK boundary)
+
+**Scope:**
+- **`domain/export.*`:** `buildExportPlan` turns a book's effective contents (edits included) into bookmarks.
+  - Entries with a confirmed page become bookmarks.
+  - Others are **omitted**, with the reason ("No page was found for it.", "More than one possible page; none was chosen.").
+  - An entry whose parent has no bookmark goes to its nearest kept ancestor or the top level, and an uncertain level goes to the top level. Both are recorded as **promotions**.
+  - Entries the user removed are not bookmarks, and are counted rather than listed as missing.
+  - `complete()` is true only when nothing was omitted or moved.
+  - It fails when the page count is unknown, a page is outside the book, or nothing can be a bookmark.
+- **`storage/exportdestination.*` (A1):**
+  - Accepted: an absolute `.pdf` path in an existing folder.
+  - Never allowed: anywhere inside the library folder, however it is written (case, `..`, short names and links are resolved with `std::filesystem::canonical`), and never a managed source or an imported original under any name (`std::filesystem::equivalent`, so hard links are caught), even when replacing.
+  - An existing file is refused (Duplicate) unless replacing is asked for.
+  - `suggestedExportPath` gives a sanitized "*title* (bookmarked).pdf" that does not collide.
+- **`processing/bookexporter.h` and `processing/sdk/sdkbookexporter.*` (SDK boundary):**
+  - The plan becomes a `pdfbookmark::BookmarkPlan` bound to the source digest and page count, with omissions and promotions kept; `validate_plan` checks it, and `apply` writes the copy (replacing an existing file only when asked).
+  - The result reports `committed` exactly as the SDK does, with the verification (outline items, pages, structure matches, source unchanged) and the plan JSON to keep.
+  - A cancel counts only before the commit. Failures carry the SDK's error code and a plain-language message.
+
+**Touched paths:** `src/domain/export.*`, `src/storage/exportdestination.*`, `src/processing/bookexporter.h`, `src/processing/sdk/sdkbookexporter.*`, `CMakeLists.txt`, `tests/domain/`, `tests/storage/`, `tests/processing/`, `tests/CMakeLists.txt`, `docs/`.
+
+| Command | Result |
+| --- | --- |
+| `pwsh scripts/verify.ps1` (Release) and `-Configuration Debug` | **Passed** in both configurations: whitespace and text checks, guard tests, configure, build, **25/25 tests** (ctest), and the application smoke checks (SDK call, FTS5, Qt PDF coexistence, shutdown during analysis, non-ASCII paths). Verified on the working tree based on `c182ec3`. |
+| `tst_exportplan` (new, 4 cases) | **Bookmarks:** a parent listed after its child, page 0, trimmed titles, and a complete plan.<br>**Recorded choices:** an ambiguous entry and one without a page are omitted with their reasons. Their children go to the nearest kept ancestor or the top level, recorded as promotions. An uncertain level goes to the top level, recorded. Removed entries are counted but not listed as omitted.<br>**Refused:** an unknown page count, a page outside the book, and nothing to bookmark. |
+| `tst_exportdestination` (new, 5 cases, real files) | **Accepted:** a new `.PDF` outside the library, and a non-ASCII name.<br>**Refused inside the library:** the root, `derivatives/`, `files/`, through `..`, and in another letter case.<br>**Refused even when replacing:** the imported original, and a hard link to a managed source outside the library. An unrelated file can be replaced when asked, and is otherwise refused (Duplicate).<br>**Refused names:** an empty path, a relative path, `.txt`, a missing folder, and a folder named `.pdf`.<br>**Suggested names:** sanitized, with " (2)" on collision, and "Book" when nothing is left. **With the protected-file check removed, the test fails.** |
+| `tst_sdkbookexporter` (new, 3 cases, real SDK on `contents-book.pdf` with a non-ASCII name) | **Committed copy:** 4 bookmarks (a child before its parent, page 0, non-ASCII titles), reopened with 27 pages; the structure matches, the output digest matches the file, and the source digest is unchanged.<br>**Existing output:** refused (`OutputExists`), and replaced when asked.<br>**Refused, nothing written:** the source as output (even when replacing, and the source is unchanged), a plan bound to other bytes (`InputChanged`), and an invalid plan (`InvalidPlan`, with issues). A cancel before the write writes nothing. |
+
+**Found while testing:** the SDK's `validate_plan` reads an all-zero digest as missing (`MissingInputDigest`), so the test's wrong-digest case uses a non-zero digest to reach `InputChanged`.
+
+**Not in this part:** export records and jobs (part 2), and the window (part 3).
+
+**Next action:** hand over the PR for review. Then M09 part 2.
 
 ## M08 — Organization
 
@@ -76,7 +119,7 @@ M08 is split in two:
 
 **Not verified by hand:** the right-click and press-and-hold menus on collections with a real mouse, and full keyboard-only use of the window.
 
-**Next action:** review of [PR #20](https://github.com/PantaKoda/MyBooksLibrary/pull/20). After it is merged, M08 is complete (permanent deletion remains open); next is M09, export.
+**Next action:** merged; M08 is complete (permanent deletion remains open). Next: M09.
 
 ### Part 1: collections and trash races (A2 + A3)
 
