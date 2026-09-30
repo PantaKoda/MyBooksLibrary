@@ -21,6 +21,24 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 
 ## After M10: fixes from the owner's testing
 
+### A backup folder opened as a library (A2), issue #30 part 1
+
+**Found in the investigation of [issue #30](https://github.com/PantaKoda/MyBooksLibrary/issues/30):** a backup folder has a library's layout, and nothing stopped `Library::open` from opening one, for example through the user guide's `--library` shortcut pointed at the wrong folder. The session sets `journal_mode = WAL`, which is stored in the catalog's header, so the backup's catalog no longer matches its manifest and **Restore** refuses it ("library.sqlite in the backup has changed since it was saved"). Recovery, jobs and imports also write into the folder.
+
+**Fix:**
+- `catalog::Library::open` refuses a folder holding `backup.json` (`Library::kBackupManifestFileName`) before it creates, locks or opens anything. The message says it is a backup and points to **Backup → Restore a backup…**. The window shows it as "The library could not be opened: …".
+- `storage/backup.cpp` takes the manifest's file name from that constant, so the two cannot drift apart.
+- USER_GUIDE.md: the shortcut advice says to use the restored folder, not the backup, and the questions explain the message. STORAGE.md describes the rule.
+
+**Tests:**
+- `tst_backup::aBackupIsNeverOpenedAsALibrary`: `Library::open` on a fresh backup, and on the same folder written through `..`, fails with `InvalidArgument`. The folder's entries and the catalog's SHA-256 are unchanged (no lock, WAL or shared-memory file), and the backup still verifies and restores.
+- `tst_librarycontroller::aBackupFolderIsNotOpened`: a backup made through the window's backup session, then opened by a second session as `--library` would. The session fails with the reason, and the backup still verifies.
+- **Control run:** with the check disabled, both tests fail: the backup opens (`'!opened' returned FALSE`, `'second.failed()' returned FALSE`).
+
+**Verification:** `pwsh scripts/verify.ps1` Release and `-Configuration Debug` both **passed**: 179 text files, the guard tests, 31/31 tests and the smoke checks.
+
+**Next:** issue #30 part 2, *Open library…*, and part 3, remembering the last library, as PRs stacked on this one.
+
 ### The contents tree hidden by a long list of reasons (presentation)
 
 **Found by the owner:** a 746-page book (*Simulation Modeling and Arena*) seemed to have no contents. The analysis had published 221 entries, 204 with a confirmed page, and indexed all of them for search. But the Contents tab listed every analysis reason as a "Why:" line (18 here, one per entry without a page). At the default window size those lines pushed the tree out of view.

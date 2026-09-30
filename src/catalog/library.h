@@ -16,10 +16,15 @@ class Library {
 public:
     static constexpr const char* kCatalogFileName = "library.sqlite";
     static constexpr const char* kLockFileName = "library.lock";
+    // The manifest that marks a backup folder (storage/backup.h). A backup has
+    // a library's layout, but it is never opened as one.
+    static constexpr const char* kBackupManifestFileName = "backup.json";
 
     // Creates `rootDir` if needed, takes the writer lock, opens the catalog on
     // its own thread and applies pending migrations. Blocks until done; call
-    // from a non-GUI thread or before the window is shown.
+    // from a non-GUI thread or before the window is shown. A backup folder is
+    // refused (InvalidArgument) before anything in it is touched: opening it
+    // would change its catalog, and the backup would no longer verify.
     static domain::Result<std::unique_ptr<Library>> open(const QString& rootDir);
 
     // Closes the connection (after queued work) and releases the lock.

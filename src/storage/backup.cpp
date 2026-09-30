@@ -27,7 +27,7 @@ using namespace mbl::domain;
 namespace {
 
 constexpr int kFormat = 1;
-const QString kManifest = QStringLiteral("backup.json");
+const QString kManifest = QString::fromLatin1(catalog::Library::kBackupManifestFileName);  // Never opened as a library.
 const QString kCatalog = QStringLiteral("library.sqlite");
 
 struct ManifestFile {

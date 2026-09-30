@@ -3,6 +3,7 @@
 #include "catalog/migrations.h"
 
 #include <QDir>
+#include <QFileInfo>
 #include <QSqlError>
 #include <QSqlQuery>
 
@@ -14,6 +15,17 @@ using domain::makeError;
 domain::Result<std::unique_ptr<Library>> Library::open(const QString& rootDir)
 {
     const QString root = QDir::cleanPath(QDir(rootDir).absolutePath());
+    // A backup looks like a library, but opening it would change it: WAL mode
+    // is stored in the catalog file, and recovery and jobs write into the
+    // folder. Its catalog would then no longer match its manifest, and Restore
+    // would refuse it. Nothing is created, locked or opened.
+    if (QFileInfo::exists(QDir(root).filePath(QLatin1StringView(kBackupManifestFileName)))) {
+        return makeError(ErrorCode::InvalidArgument,
+                         QStringLiteral("%1 is a MyBooksLibrary backup, not a library. Opening it would change the "
+                                        "backup, so it is not opened. To use it, choose Backup → Restore a backup…, "
+                                        "which makes a new library from it.")
+                             .arg(QDir::toNativeSeparators(root)));
+    }
     if (!QDir().mkpath(root))
         return makeError(ErrorCode::Io, QStringLiteral("Cannot create the library folder %1.").arg(root));
 
