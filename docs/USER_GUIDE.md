@@ -206,14 +206,16 @@ Keep backups on another disk, or in cloud storage, to be safe from a disk failur
 **Good to know:**
 - A library can be open in only **one window** at a time; a second window on it says it is already open.
 - **Library → Open the default library** opens your usual library, in `%LOCALAPPDATA%\MyBooksLibrary\MyBooksLibrary\Library`.
-- The next time you start the app, it opens your default library again.
-- **To start the app with another library directly,** make a shortcut to `appMyBooksLibrary.exe`, and add `--library` and the folder in quotes at the end of the shortcut's *Target*, for example:
+- **The next time you start the app, it opens the library you last opened from the app:** with **Open library…**, **Open the default library** or **Open restored library**. It is remembered once it has opened, so a folder that failed to open is never remembered.
+  - A library opened through a shortcut with `--library` is **not** remembered, so a shortcut does not change your everyday library.
+  - With two windows open, the library opened last is the one remembered.
+  - If the remembered library cannot be opened any more (it was moved, or its drive is not connected), the window says so, with **Open library…** and **Open the default library**. The app never makes a new, empty library in its place.
+- **To make a restored library your everyday one,** open it once with **Library → Open library…** (or **Open restored library**); the next starts open it.
+- **To keep a shortcut to one particular library** without changing your everyday one, make a shortcut to `appMyBooksLibrary.exe`, and add `--library` and the folder in quotes at the end of the shortcut's *Target*, for example:
 
   ```text
   "C:\Programs\MyBooksLibrary\appMyBooksLibrary.exe" --library "D:\MyBooksLibrary restored 2026-09-29"
   ```
-
-- **To make a restored library your usual one,** close the app, move your current library folder (`%LOCALAPPDATA%\MyBooksLibrary\MyBooksLibrary\Library`) somewhere safe, then move the restored folder there under the name `Library`.
 
 ## The Activity panel
 
@@ -236,7 +238,7 @@ You can close the app at any time.
 - **Books are processed one at a time.** Scanned books are slow (OCR, several seconds per page) and use up to about 2.5 GB of memory. You cannot yet choose which book goes next.
 - **Automatic results can be incomplete or uncertain.** Some titles have several candidates; some contents entries get no confirmed page; an unusual table of contents may not be found at all. The app shows this rather than guess, and you can correct everything.
 - **No permanent deletion:** books in Trash stay in the library (and take disk space).
-- **One library per window.** Another library opens in its own window ([Opening another library](#opening-another-library)), and the app starts with your default library.
+- **One library per window.** Another library opens in its own window ([Opening another library](#opening-another-library)), and the app starts with the library you last opened from the app.
 - **Windows 10 and 11 (64-bit) only.** macOS and Linux need native builds of the text-recognition library.
 - **Windows "N" and "KN" editions** need the **Media Feature Pack**; without it the app does not start. Install it from Windows' *Optional features*: on Windows 11, *Settings → System → Optional features*; on Windows 10, *Settings → Apps → Optional features*.
 - **Not code-signed**, so SmartScreen may warn the first time.
@@ -258,7 +260,7 @@ You can close the app at any time.
 
 **The app does not start.** On a Windows "N" edition, install the Media Feature Pack (Windows 11: *Settings → System → Optional features*; Windows 10: *Settings → Apps → Optional features*). Otherwise, check that the whole unpacked folder is there: the executable needs the files next to it.
 
-**A restored library is gone after restarting the app.** It is not gone: the app opened your default library. Use **Library → Open library…** and choose the restored folder.
+**A library is gone after restarting the app.** It is not gone: the app opened the library you last opened *from the app*. A library opened through a `--library` shortcut is not remembered. Use **Library → Open library…** and choose its folder; from then on, it opens at each start.
 
 **"This library could not be opened."** The window says why, with **Open library…** and **Open the default library** next to the reason. Common reasons:
 - the library is **already open in another window**: switch to that window;

@@ -21,6 +21,42 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 
 ## After M10: fixes from the owner's testing
 
+### Remembering the last library (composition), issue #30 part 3
+
+**Asked in [issue #30](https://github.com/PantaKoda/MyBooksLibrary/issues/30):** remember the library last opened, so that it opens again at the next start. Stacked on part 2.
+
+**Change:**
+- **`app::LibraryMemory`** (`src/app/librarymemory.*`): the library last opened from the app, in `QSettings` (`library/last`, on Windows under `HKCU\Software\MyBooksLibrary\MyBooksLibrary`). `app::rememberWhenOpened` stores it once the session is **Ready**, and never if the open fails.
+- **`app::resolveLibraryRoot(arguments, remembered)`:** `--library`, then `MYBOOKSLIBRARY_ROOT`, then the remembered library (source "remembered"), then the default. A remembered default folder resolves as "default", so it is made again on first use.
+- **`main.cpp`:**
+  - it opens a remembered library with `openExisting`, so a moved one fails with the reason and the part 2 notice (Open library…, Open the default library), never falling back to the default or creating an empty library;
+  - `--remember` arms `rememberWhenOpened`;
+  - the `QSettings` is declared before the library session.
+- **What gets remembered:** the in-app starts pass `--remember` (the switcher's Open library… and Open the default library, and **Open restored library**). A `--library` shortcut does not, so it never replaces the everyday library.
+- **The tooltip's source text:** "the library you opened last".
+- **Docs:**
+  - USER_GUIDE.md (the next start, shortcuts, two windows, a moved remembered library; moving folders into place is no longer needed);
+  - BUILDING.md (the order, `--remember`), UI.md, DECISIONS.md.
+
+**Tests:**
+- `tst_librarycontroller::theRememberedLibraryOpensNext`: the remembered library comes after `--library` and the environment and before the default; a remembered default is the default; nothing remembered is the default. It is a parameter, so the test never reads the real settings.
+- `tst_librarycontroller::onlyAnOpenedLibraryIsRemembered` (settings in a temporary INI file, never the registry):
+  - nothing is remembered while the library opens, and then it is;
+  - a library that fails to open is not remembered, and the last good one stays;
+  - the value is read back from the file, and `forget()` clears it.
+- `tst_libraryswitcher`: the in-app starts carry `--remember`, and the tooltip text for a remembered library.
+
+**Checked end to end** with the Release app, offscreen:
+1. `--library <restored>` alone remembers nothing.
+2. `--library <moved> --existing-library --remember` fails, remembers nothing and creates no folder.
+3. `--library <restored> --existing-library --remember` writes `library/last` with that folder.
+
+The machine's settings key did not exist before; it was removed afterwards. **A start without `--library` was not run here**, because this machine's default library holds real books. That path is covered by `theRememberedLibraryOpensNext` and the six-line `main.cpp` wiring.
+
+**Verification:** `pwsh scripts/verify.ps1` Release and `-Configuration Debug` both **passed**: 186 text files, the guard tests, 33/33 tests and the smoke checks.
+
+**Next:** review of the three stacked PRs. Then a manual check by the owner: open a restored library with **Library → Open library…**, close the app, and start it again.
+
 ### Open library… (presentation, A2), issue #30 part 2
 
 **Asked in [issue #30](https://github.com/PantaKoda/MyBooksLibrary/issues/30):** the app always started with the default library, and a restored library could be reached only through a `--library` shortcut or by moving folders. Users who restarted the app thought the restore was lost. Stacked on part 1.

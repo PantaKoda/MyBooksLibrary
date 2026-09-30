@@ -108,6 +108,8 @@ endif()
 
 # Presentation (GUI-owned models and controllers) and the composition helpers.
 qt_add_library(mbl_presentation STATIC
+    src/app/librarymemory.h
+    src/app/librarymemory.cpp
     src/app/libraryroot.h
     src/app/libraryroot.cpp
     src/presentation/bookinspector.h
