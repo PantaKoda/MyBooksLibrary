@@ -14,6 +14,7 @@ This guide explains every part of the window, what happens in the background, an
 - [Collections and Trash](#collections-and-trash)
 - [Saving a copy with bookmarks](#saving-a-copy-with-bookmarks)
 - [Backing up and restoring](#backing-up-and-restoring)
+- [Opening another library](#opening-another-library)
 - [The Activity panel](#the-activity-panel)
 - [Closing the app](#closing-the-app)
 - [Limitations](#limitations)
@@ -40,7 +41,7 @@ It holds the library's own **copy** of each PDF and a catalog of everything the 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────┐
 │ Library  C:\…\Library   [ Search titles, authors and contents ] [All ▾]  │
-│                                               [Import PDFs…]  [Backup ▾] │
+│                                    [Library ▾] [Import PDFs…] [Backup ▾] │
 ├────────────────┬──────────────────────┬──────────────────────────────────┤
 │ Library (12)   │ Book list            │ The selected book                │
 │ Collections    │  Title               │  Title, file, pages              │
@@ -52,7 +53,8 @@ It holds the library's own **copy** of each PDF and a catalog of everything the 
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Toolbar:** the name of what the list shows and the library's folder; the **search** field and what to search in (**All**, **Titles**, **Authors**, **Contents**); **Import PDFs…**; and the **Backup** menu.
+- **Toolbar:** the name of what the list shows and the library's folder (point at it to see the whole path); the **search** field and what to search in (**All**, **Titles**, **Authors**, **Contents**); the **Library** menu, to [open another library](#opening-another-library); **Import PDFs…**; and the **Backup** menu.
+- **The window's title** names the library, so two windows on two libraries can be told apart.
 - **Sidebar:** the **Library** (all books), your **collections**, and **Trash**. The numbers are book counts.
 - **Book list:** each book's title and authors, and its processing state, such as "Analyzing contents…" or "Title uncertain".
 - **Book details** (on the right): the selected book. See [A book's details](#a-books-details).
@@ -184,19 +186,34 @@ Choose where to save it (**Choose…**; Documents is suggested) and click **Save
 - **Your current library is never changed.** A restore never goes inside or over it.
 - **Open restored library** opens it in a new window.
 
-**Opening a restored library later.** The app always starts with your usual library, and it has no command to open another one yet. To use a restored library again later, either:
-- **Start the app with its folder:** make a shortcut to `appMyBooksLibrary.exe`, and add `--library` and the folder in quotes at the end of the shortcut's *Target*, for example:
+**Opening a restored library later:** **Library → Open library…**, and choose its folder ("MyBooksLibrary restored …"). See [Opening another library](#opening-another-library).
+- Use the **restored** folder, not the backup ("MyBooksLibrary backup …"). The app refuses to open a backup as a library, because that would change the backup and it could no longer be restored.
+- A copy with bookmarks that was still waiting when the backup was made is not written again; ask again if you want it.
+
+Keep backups on another disk, or in cloud storage, to be safe from a disk failure.
+
+## Opening another library
+
+**Library → Open library…** opens another MyBooksLibrary library, for example one you restored from a backup.
+1. Choose the library's folder: the one that holds `library.sqlite`, such as "MyBooksLibrary restored 2026-09-29".
+2. Choose **New window**, to keep this library open beside it, or **Instead of this library**, which closes this window once its work has stopped (as when you close it yourself).
+
+**What is refused, with the reason:**
+- a folder that is not a library, such as Documents, an empty folder, or a library's own `files` folder. The app never creates a library in a folder you choose;
+- a **backup** ("MyBooksLibrary backup …"): restore it first;
+- the library already open in this window.
+
+**Good to know:**
+- A library can be open in only **one window** at a time; a second window on it says it is already open.
+- **Library → Open the default library** opens your usual library, in `%LOCALAPPDATA%\MyBooksLibrary\MyBooksLibrary\Library`.
+- The next time you start the app, it opens your default library again.
+- **To start the app with another library directly,** make a shortcut to `appMyBooksLibrary.exe`, and add `--library` and the folder in quotes at the end of the shortcut's *Target*, for example:
 
   ```text
   "C:\Programs\MyBooksLibrary\appMyBooksLibrary.exe" --library "D:\MyBooksLibrary restored 2026-09-29"
   ```
 
-  Use the **restored** folder ("MyBooksLibrary restored …"), not the backup ("MyBooksLibrary backup …"). The app refuses to open a backup as a library, because that would change the backup and it could no longer be restored.
-
-- **Make it your usual library:** close the app, move your current library folder (`%LOCALAPPDATA%\MyBooksLibrary\MyBooksLibrary\Library`) somewhere safe, then move the restored folder there under the name `Library`.
-- A copy with bookmarks that was still waiting when the backup was made is not written again; ask again if you want it.
-
-Keep backups on another disk, or in cloud storage, to be safe from a disk failure.
+- **To make a restored library your usual one,** close the app, move your current library folder (`%LOCALAPPDATA%\MyBooksLibrary\MyBooksLibrary\Library`) somewhere safe, then move the restored folder there under the name `Library`.
 
 ## The Activity panel
 
@@ -219,7 +236,7 @@ You can close the app at any time.
 - **Books are processed one at a time.** Scanned books are slow (OCR, several seconds per page) and use up to about 2.5 GB of memory. You cannot yet choose which book goes next.
 - **Automatic results can be incomplete or uncertain.** Some titles have several candidates; some contents entries get no confirmed page; an unusual table of contents may not be found at all. The app shows this rather than guess, and you can correct everything.
 - **No permanent deletion:** books in Trash stay in the library (and take disk space).
-- **One library per window, and no command to open another library.** The app starts with your usual library. A restored library opens in its own window, and later only as described in [Backing up and restoring](#backing-up-and-restoring).
+- **One library per window.** Another library opens in its own window ([Opening another library](#opening-another-library)), and the app starts with your default library.
 - **Windows 10 and 11 (64-bit) only.** macOS and Linux need native builds of the text-recognition library.
 - **Windows "N" and "KN" editions** need the **Media Feature Pack**; without it the app does not start. Install it from Windows' *Optional features*: on Windows 11, *Settings → System → Optional features*; on Windows 10, *Settings → Apps → Optional features*.
 - **Not code-signed**, so SmartScreen may warn the first time.
@@ -241,8 +258,13 @@ You can close the app at any time.
 
 **The app does not start.** On a Windows "N" edition, install the Media Feature Pack (Windows 11: *Settings → System → Optional features*; Windows 10: *Settings → Apps → Optional features*). Otherwise, check that the whole unpacked folder is there: the executable needs the files next to it.
 
-**A restored library is gone after restarting the app.** It is not gone: the app opened your usual library. See [Opening a restored library later](#backing-up-and-restoring).
+**A restored library is gone after restarting the app.** It is not gone: the app opened your default library. Use **Library → Open library…** and choose the restored folder.
 
-**"… is a MyBooksLibrary backup, not a library."** The folder the app was started with, for example in a shortcut with `--library`, is a backup. A backup is never opened directly. Restore it with **Backup → Restore a backup…**, and use the restored folder instead.
+**"This library could not be opened."** The window says why, with **Open library…** and **Open the default library** next to the reason. Common reasons:
+- the library is **already open in another window**: switch to that window;
+- its folder was **moved**, or its drive is **not connected**: connect it, or choose its new folder with **Open library…**;
+- it is a **backup** (see below).
+
+**"… is a MyBooksLibrary backup, not a library."** The folder you chose, or the one the app was started with (for example in a shortcut with `--library`), is a backup. A backup is never opened directly. Restore it with **Backup → Restore a backup…**, and use the restored folder instead.
 
 **Where are the licences?** `NOTICE.txt` and the `licenses` folder, next to the app.

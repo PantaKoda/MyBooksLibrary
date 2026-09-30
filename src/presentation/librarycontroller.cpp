@@ -113,14 +113,26 @@ void LibraryController::setExporter(std::shared_ptr<processing::BookExporter> ex
 
 void LibraryController::open(const QString& rootDir)
 {
+    openLibrary(rootDir, false);
+}
+
+void LibraryController::openExisting(const QString& rootDir)
+{
+    openLibrary(rootDir, true);
+}
+
+void LibraryController::openLibrary(const QString& rootDir, bool existingOnly)
+{
     if (m_state == State::Opening || m_state == State::Ready)
         return;
     m_libraryPath = QDir::toNativeSeparators(QDir(rootDir).absolutePath());
+    m_switcher.setCurrent(m_libraryPath, true);
     setState(State::Opening);
     setStatus(tr("Opening library…"));
 
-    m_pool.start([this, rootDir] {
-        auto opened = catalog::Library::open(rootDir);
+    const auto mode = existingOnly ? catalog::Library::OpenMode::ExistingOnly : catalog::Library::OpenMode::CreateIfMissing;
+    m_pool.start([this, rootDir, mode] {
+        auto opened = catalog::Library::open(rootDir, mode);
         if (!opened) {
             const QString error = opened.error().message;
             QMetaObject::invokeMethod(this, [this, error] { onOpened(nullptr, nullptr, error, {}); },
@@ -158,7 +170,9 @@ void LibraryController::onOpened(std::shared_ptr<catalog::Library> library,
             dropped = int(m_queue.size());
             m_queue.clear();
         }
+        m_openError = error;
         setState(State::Failed);
+        m_switcher.setCurrent(m_libraryPath, false);  // Another library, or this one again, can be opened.
         setStatus(tr("The library could not be opened: %1").arg(error));
         if (dropped > 0) {
             m_problems << trn("%n file(s) were not imported because the library could not be opened.", dropped);

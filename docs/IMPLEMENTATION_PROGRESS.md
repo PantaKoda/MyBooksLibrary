@@ -21,6 +21,47 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 
 ## After M10: fixes from the owner's testing
 
+### Open library… (presentation, A2), issue #30 part 2
+
+**Asked in [issue #30](https://github.com/PantaKoda/MyBooksLibrary/issues/30):** the app always started with the default library, and a restored library could be reached only through a `--library` shortcut or by moving folders. Users who restarted the app thought the restore was lost. Stacked on part 1.
+
+**Change:**
+- **Library → Open library…** (a folder dialog), then **New window** or **Instead of this library**, and **Library → Open the default library**.
+- **The new library always starts in a new process**, as a restored library already did (DECISIONS.md): `appMyBooksLibrary --library <folder> --existing-library`. "Instead" then closes this window through its normal closing flow, which stops work first. **Open restored library** now passes `--existing-library` too.
+- **`LibrarySwitcher`** (presentation, owned by `LibraryController` as `switcher`):
+  - it checks the chosen folder off the GUI thread and refuses the library this window holds (real paths);
+  - it starts the process through a launcher that tests replace;
+  - it gives the window's title (`currentName`), the path tooltip and `currentIsDefault`.
+- **`catalog::Library::OpenMode::ExistingOnly` and `Library::checkExisting`:** a missing folder, a file, a folder without `library.sqlite` (Documents, the folder around a library, a library's own `files` folder) or a backup is refused with the reason. **Nothing is created, locked or opened.** `LibraryController::openExisting` and `--existing-library` use it; the default folder, `--library` and `MYBOOKSLIBRARY_ROOT` still create a library on first use.
+- **The window:**
+  - its title is "*folder* – MyBooksLibrary";
+  - the toolbar's path has a tooltip with the whole path and how the library was chosen;
+  - a library that could not be opened shows the reason (`LibraryController::openError`), with **Open library…** and **Open the default library**. Before, only a status line showed it, and every command was disabled.
+- **`app::defaultLibraryRoot()`**, for **Open the default library**.
+- **Docs:**
+  - USER_GUIDE.md: a new "Opening another library" section, and the backup section, limitations and questions updated;
+  - UI.md, BUILDING.md (`--existing-library`), DECISIONS.md.
+
+**Tests:**
+- `tst_libraryfolder` (new, catalog):
+  - an existing library, with a non-ASCII name and written through `..`, is accepted and opens;
+  - a missing folder, an empty folder, a file, the folder around a library, a library's `files` folder and a backup are each refused with the reason, and left exactly as they were: a missing folder is not created, and no lock or catalog appears;
+  - create-if-missing still makes a library.
+- `tst_libraryswitcher` (new, presentation, with a recording launcher):
+  - **Accepted:** another library, given as a URL or a path, starts with `--library <folder> --existing-library`, for a new window or instead of this one, and this session is untouched.
+  - **Refused, and nothing started:** no folder, a relative path, a missing folder (not created), Documents, a library's `files` folder, a backup (unchanged), and the library this window holds, written through `..` in upper case. A launcher failure says so.
+  - **The default library** starts without `--existing-library`, and is refused when this window holds it.
+  - **The title and tooltip texts.**
+  - **`openExisting` on a moved library** fails with the reason, creates nothing, and another library can still be opened.
+  - **The real `OpenLibraryDialog.qml`** at the window's minimum size: a refusal shows in the dialog, which stays open; **New window** starts the library and closes the dialog; **Instead of this library** also asks the window to close.
+- **The app** (Release): `--library "D:\Books\My library" --existing-library` shows the notice with the reason and creates nothing (screenshot in UI.md).
+
+**Verification:** `pwsh scripts/verify.ps1` Release and `-Configuration Debug` both **passed**: 184 text files, the guard tests, 33/33 tests and the smoke checks.
+- The first Debug run stopped in the build: two test targets' `pdfbookmark_deploy_runtime` steps copied the OCR models into the same folder at once ("Permission denied" on `models/rec/charset.txt`).
+- This is a race between the existing targets; none of the new tests deploys the SDK runtime. The rerun passed.
+
+**Next:** issue #30 part 3, remembering the last library, stacked on this PR.
+
 ### A backup folder opened as a library (A2), issue #30 part 1
 
 **Found in the investigation of [issue #30](https://github.com/PantaKoda/MyBooksLibrary/issues/30):** a backup folder has a library's layout, and nothing stopped `Library::open` from opening one, for example through the user guide's `--library` shortcut pointed at the wrong folder. The session sets `journal_mode = WAL`, which is stored in the catalog's header, so the backup's catalog no longer matches its manifest and **Restore** refuses it ("library.sqlite in the backup has changed since it was saved"). Recovery, jobs and imports also write into the folder.

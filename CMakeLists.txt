@@ -126,6 +126,8 @@ qt_add_library(mbl_presentation STATIC
     src/presentation/toctreemodel.cpp
     src/presentation/librarycontroller.h
     src/presentation/librarycontroller.cpp
+    src/presentation/libraryswitcher.h
+    src/presentation/libraryswitcher.cpp
     src/presentation/searchcontroller.h
     src/presentation/searchcontroller.cpp
     src/presentation/searchresultsmodel.h
@@ -178,6 +180,7 @@ qt_add_qml_module(appMyBooksLibrary
         qml/inspector/MetadataFieldEditor.qml
         qml/library/LibrarySidebar.qml
         qml/library/BookListView.qml
+        qml/library/OpenLibraryDialog.qml
         qml/search/SearchResultsView.qml
         qml/reader/ReaderPane.qml
         qml/export/ExportDialog.qml

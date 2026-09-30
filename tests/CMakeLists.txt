@@ -20,6 +20,7 @@ mbl_add_test(tst_databaseexecutor infrastructure/tst_databaseexecutor.cpp)
 mbl_add_test(tst_ftsquery search/tst_ftsquery.cpp)
 mbl_add_test(tst_migrations catalog/tst_migrations.cpp)
 mbl_add_test(tst_catalog catalog/tst_catalog.cpp)
+mbl_add_test(tst_libraryfolder catalog/tst_libraryfolder.cpp)
 mbl_add_test(tst_tocedits catalog/tst_tocedits.cpp)
 mbl_add_test(tst_organization catalog/tst_organization.cpp)
 mbl_add_test(tst_exports catalog/tst_exports.cpp)
@@ -96,6 +97,12 @@ target_compile_definitions(tst_booklistview PRIVATE MBL_SOURCE_DIR="${PROJECT_SO
 mbl_add_test(tst_librarysidebar presentation/tst_librarysidebar.cpp)
 target_link_libraries(tst_librarysidebar PRIVATE mbl_presentation mbl_presentationplugin Qt6::Quick)
 target_compile_definitions(tst_librarysidebar PRIVATE MBL_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+
+# Open library… (issue #30): the switcher on real folders, and the real
+# OpenLibraryDialog.qml (offscreen). No process is started.
+mbl_add_test(tst_libraryswitcher presentation/tst_libraryswitcher.cpp)
+target_link_libraries(tst_libraryswitcher PRIVATE mbl_presentation mbl_presentationplugin Qt6::Quick)
+target_compile_definitions(tst_libraryswitcher PRIVATE MBL_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 
 mbl_add_test(tst_searchcontroller presentation/tst_searchcontroller.cpp)
 target_link_libraries(tst_searchcontroller PRIVATE mbl_presentation)
