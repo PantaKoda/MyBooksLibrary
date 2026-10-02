@@ -16,7 +16,9 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | M07 Corrections/reruns | Merged: part 1 [PR #16](https://github.com/PantaKoda/MyBooksLibrary/pull/16) (merge `152eb8c`); part 2a [PR #17](https://github.com/PantaKoda/MyBooksLibrary/pull/17) (merge `c215319`); part 2b [PR #18](https://github.com/PantaKoda/MyBooksLibrary/pull/18) (merge `f40b99c`) | `feat/m07-presentation-metadata-corrections`; `feat/m07-a2-toc-edits`; `feat/m07-presentation-toc-editing` | See "M07" |
 | M08 Organization | Merged: part 1 [PR #19](https://github.com/PantaKoda/MyBooksLibrary/pull/19) (merge `7052536`); part 2 [PR #20](https://github.com/PantaKoda/MyBooksLibrary/pull/20) (merge `c182ec3`). Permanent deletion of trashed books remains open | `feat/m08-a2-collections-trash`; `feat/m08-presentation-organization` | See "M08" |
 | M09 Export | Merged: part 1 [PR #21](https://github.com/PantaKoda/MyBooksLibrary/pull/21) (merge `acc2b89`); part 2 [PR #22](https://github.com/PantaKoda/MyBooksLibrary/pull/22) (merge `f2bd6b4`); part 3 [PR #23](https://github.com/PantaKoda/MyBooksLibrary/pull/23) (merge `1dbbe0c`) | `feat/m09-a1-export-core`; `feat/m09-a2-export-jobs`; `feat/m09-presentation-export` | See "M09" |
-| M10 Windows release | Merged: part 1 [PR #24](https://github.com/PantaKoda/MyBooksLibrary/pull/24) (merge `0c682c3`); part 2 [PR #25](https://github.com/PantaKoda/MyBooksLibrary/pull/25) (merge `54ed8fc`); part 3 [PR #26](https://github.com/PantaKoda/MyBooksLibrary/pull/26). The owner's manual check of the package on a machine without Qt or Visual Studio remains | `feat/m10-a1-backup-restore`; `feat/m10-packaging`; `feat/m10-presentation-backup` | See "M10" |
+| M10 Windows release | Merged: part 1 [PR #24](https://github.com/PantaKoda/MyBooksLibrary/pull/24) (merge `0c682c3`); part 2 [PR #25](https://github.com/PantaKoda/MyBooksLibrary/pull/25) (merge `54ed8fc`); part 3 [PR #26](https://github.com/PantaKoda/MyBooksLibrary/pull/26) (merge `1683e9a`). The owner's manual check of the package on a machine without Qt or Visual Studio remains | `feat/m10-a1-backup-restore`; `feat/m10-packaging`; `feat/m10-presentation-backup` | See "M10" |
+| Releases on GitHub; **v0.1.0** | Merged: [PR #28](https://github.com/PantaKoda/MyBooksLibrary/pull/28) (merge `4a7dda1`). **v0.1.0** tagged at `e142797` and published on the Releases page | `ci/m10-release-workflow` | See "Releases on GitHub" |
+| After M10: owner's testing | Merged. **In v0.1.0:** [PR #27](https://github.com/PantaKoda/MyBooksLibrary/pull/27) (merge `adcf7b2`), [PR #29](https://github.com/PantaKoda/MyBooksLibrary/pull/29) (merge `e142797`). **For the next release** (notes in `docs/releases/UNRELEASED.md`): [PR #32](https://github.com/PantaKoda/MyBooksLibrary/pull/32) (merge `e3539ed`), [PR #33](https://github.com/PantaKoda/MyBooksLibrary/pull/33) (merge `41e7dec`), [PR #34](https://github.com/PantaKoda/MyBooksLibrary/pull/34) (merge `307c8ad`), [PR #31](https://github.com/PantaKoda/MyBooksLibrary/pull/31) (merge `edad42c`). The owner's manual check of the remembered library remains | `fix/m05-contents-notes-visible`; `docs/user-guide`; `fix/m10-a2-refuse-backup-folder`; `feat/m10-presentation-open-library`; `feat/m10-app-remember-library`; `fix/m05-a4-page-label-sections` | See "After M10" |
 | M11 | NotStarted | | |
 
 ## After M10: fixes from the owner's testing
@@ -55,7 +57,7 @@ The machine's settings key did not exist before; it was removed afterwards. **A 
 
 **Verification:** `pwsh scripts/verify.ps1` Release and `-Configuration Debug` both **passed**: 186 text files, the guard tests, 33/33 tests and the smoke checks.
 
-**Next:** review of the three stacked PRs. Then a manual check by the owner: open a restored library with **Library → Open library…**, close the app, and start it again.
+**Merged:** [PR #34](https://github.com/PantaKoda/MyBooksLibrary/pull/34), merge `307c8ad` (2026-10-02), after review and CI on the head `95be063`, which had `main` merged in. It closed issue #30. **Remaining:** a manual check by the owner. Open a restored library with **Library → Open library…**, close the app, and start it with no arguments.
 
 ### Open library… (presentation, A2), issue #30 part 2
 
@@ -96,7 +98,10 @@ The machine's settings key did not exist before; it was removed afterwards. **A 
 - The first Debug run stopped in the build: two test targets' `pdfbookmark_deploy_runtime` steps copied the OCR models into the same folder at once ("Permission denied" on `models/rec/charset.txt`).
 - This is a race between the existing targets; none of the new tests deploys the SDK runtime. The rerun passed.
 
-**Next:** issue #30 part 3, remembering the last library, stacked on this PR.
+**Merged:** [PR #33](https://github.com/PantaKoda/MyBooksLibrary/pull/33), merge `41e7dec` (2026-10-02), after review and CI on the head `3f463fc`, which had `main` merged in. The review's nits remain open:
+- a window started by **Open library…** describes its source as "opened with --library";
+- `openError` is never cleared;
+- the toolbar overflows at the minimum width, as it did before this PR.
 
 ### A backup folder opened as a library (A2), issue #30 part 1
 
@@ -114,7 +119,7 @@ The machine's settings key did not exist before; it was removed afterwards. **A 
 
 **Verification:** `pwsh scripts/verify.ps1` Release and `-Configuration Debug` both **passed**: 179 text files, the guard tests, 31/31 tests and the smoke checks.
 
-**Next:** issue #30 part 2, *Open library…*, and part 3, remembering the last library, as PRs stacked on this one.
+**Merged:** [PR #32](https://github.com/PantaKoda/MyBooksLibrary/pull/32), merge `e3539ed` (2026-10-02), after review and CI on the head `c74a4bb`. The first CI run lost its runner during packaging and was re-run. The review's nit remains open: the refusal points to **Backup → Restore a backup…**, which is disabled in a window whose library failed to open.
 
 ### The contents tree hidden by a long list of reasons (presentation)
 
@@ -134,6 +139,8 @@ The machine's settings key did not exist before; it was removed afterwards. **A 
 **Verification:** `pwsh scripts/verify.ps1` Release and `-Configuration Debug` both **passed**, 31/31 tests.
 
 **Also seen, not a bug:** the book's title is "uncertain", because the SDK found several candidates. The app shows the file name rather than guess. The owner can pick or type it with **Correct**.
+
+**Merged:** [PR #27](https://github.com/PantaKoda/MyBooksLibrary/pull/27), merge `adcf7b2`, in **v0.1.0**.
 
 ### A user guide
 
@@ -160,6 +167,8 @@ The machine's settings key did not exist before; it was removed afterwards. **A 
   - **Follow-up worth an issue:** an *Open library…* command in the app.
 
 **Verification:** `pwsh scripts/package.ps1 -SdkDir <sdk>` **passed**, with `USER_GUIDE.md` in the package. `pwsh scripts/verify.ps1` **passed**: 177 text files, 31/31 tests.
+
+**Merged:** [PR #29](https://github.com/PantaKoda/MyBooksLibrary/pull/29), merge `e142797`, in **v0.1.0**. The follow-up it named became [issue #30](https://github.com/PantaKoda/MyBooksLibrary/issues/30), done by PRs #32–#34.
 
 ### Contents without pages when the printed numbering skips pages (A4, presentation)
 
@@ -214,6 +223,8 @@ The machine's settings key did not exist before; it was removed afterwards. **A 
 
 **Verification:** `pwsh scripts/verify.ps1 -SdkDir <sdk>` (Release) **passed** at `ce28fd6`: 181 text files, 31/31 tests, smoke checks. `-Configuration Debug` **passed** at the same commit: 31/31 tests, smoke checks. Only documentation and these images changed after it.
 
+**Merged:** [PR #31](https://github.com/PantaKoda/MyBooksLibrary/pull/31), merge `edad42c` (2026-10-02). It was merged after issue #30's PRs, so `main` was merged into it first (`e50a7c6`). The only conflict was in DECISIONS.md, where both sides had added entries, and both are kept. CI passed on that head. **Follow-up from the review (not blocking):** the second report is kept when it places more entries in total. It can therefore drop a page the first analysis confirmed: an entry whose printed page lies in no label run, or in two runs, gets no association. Keeping it only when no confirmed page is lost would be safer.
+
 ## Releases on GitHub
 
 **Asked by the owner (2026-09-29):** a Releases page to download the Windows app, with every change going through a PR and CI, and changes grouped into releases.
@@ -236,7 +247,7 @@ The machine's settings key did not exist before; it was removed afterwards. **A 
 - **Hardening:** the tag reaches the release scripts through `env:`, never pasted into the script text.
 - **Retry after a failed publish:** the release is created as a **draft**, both files are checked as uploaded, and only then is it published. docs/RELEASING.md says to delete a left-over draft (`gh release delete`) before tagging again.
 
-**Next action:** CI on the merged head, then merge ([PR #27](https://github.com/PantaKoda/MyBooksLibrary/pull/27) is merged). Tagging `v0.1.0` waits for the owner's go.
+**Merged:** [PR #28](https://github.com/PantaKoda/MyBooksLibrary/pull/28), merge `4a7dda1`. **v0.1.0** was tagged at `e142797` (after [PR #29](https://github.com/PantaKoda/MyBooksLibrary/pull/29)) and published on 2026-09-29 with `MyBooksLibrary-0.1.0-win64.zip` and its `.sha256`. Notes for the next release collect in `docs/releases/UNRELEASED.md` (RELEASING.md).
 
 ## M10 — Windows release
 
