@@ -573,3 +573,43 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - **Cancelling the second analysis cancels the analysis**, rather than publishing the first result: on shutdown the job is requeued and gets the better result next time.
   - **Books analyzed before this change keep their result** until **Analyze contents again**; nothing is rerun automatically.
 - **Verified:** See IMPLEMENTATION_PROGRESS.md, "Contents without pages when the printed numbering skips pages".
+
+## 2026-09-29 — A backup folder is never opened as a library
+
+- **Change:** `catalog::Library::open` refuses a folder that holds `backup.json` (`Library::kBackupManifestFileName`, which `storage/backup.cpp` now uses too), with `InvalidArgument` and a message that points to **Restore**. The check comes before the folder is created, locked or opened.
+- **Why:** issue #30. A backup has a library's layout, and the user guide suggests a `--library` shortcut to reopen a restored library. Pointed at the backup instead, the session would set `journal_mode = WAL` (stored in the catalog's header) and write recovery, jobs and imports into the folder, so the backup would no longer verify and **Restore** would refuse it, without any warning. AGENTS.md §10 asks for a recoverable backup.
+- **Assumptions:**
+  - **In `Library::open`, not in the window:** every way of opening a library goes through it (`--library`, `MYBOOKSLIBRARY_ROOT`, a restore's own check, and a future *Open library…*), so one check covers them all.
+  - **The manifest marks a backup:** only `createBackup` writes `backup.json`, and a restore does not copy it into the restored library, so a real library never has one.
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, "A backup folder opened as a library".
+
+## 2026-09-30 — Open library… starts another process, and only for an existing library
+
+- **Change:**
+  - **Library → Open library…** and **Open the default library** in the window. The new `LibrarySwitcher` checks the chosen folder and starts `appMyBooksLibrary --library <folder> --existing-library` in a new process: in a new window, or instead of this one, which this window then closes with its normal closing flow.
+  - `catalog::Library::OpenMode::ExistingOnly` and `Library::checkExisting` refuse anything that is not an existing library, before anything is created, locked or opened.
+  - The window's title names the library, the toolbar's path has a tooltip with how it was chosen, and a library that could not be opened shows its reason with a way out.
+- **Why:** issue #30. A restored library could be reached only through a `--library` shortcut or by moving folders, and users who restarted the app thought the restore was lost. The investigation on the issue weighed switching in place against a new process.
+- **Assumptions:**
+  - **A new process, as for a restored library (M10 part 3):** `LibraryController` is written for one open per lifetime. Switching in place would mean resetting every session object without blocking (coordinator, import queue, models, search, inspector, reader, backup and export sessions), and each field missed would be a cross-library bug, such as a book ID from one library sent to another. The window's closing flow already stops work cleanly, and the two libraries have separate locks, so starting the new one before this one closes has no lock race.
+  - **Never create a library in a chosen folder:** a wrong choice (Documents, the folder around a library, its `files` folder) or a moved library would otherwise silently become a new, empty library, which looks like lost books. Create-if-missing stays for the default folder, `--library` and `MYBOOKSLIBRARY_ROOT`, which `verify.ps1` and `package.ps1` rely on. **Open the default library** may still create it, as on a first start.
+  - **Checked in this window, then again in the new one:** the check here gives the reason where the user chose the folder, and `--existing-library` makes the new process refuse the folder too if it changed in between.
+  - **Remembering the last library** is part 3 of the issue (a separate PR). Until then, the app starts with the default library.
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, "Open library…".
+
+## 2026-09-30 — The next start opens the library last opened from the app
+
+- **Change:**
+  - `app::LibraryMemory` keeps the library last opened from the app in `QSettings`: `library/last`, on Windows under `HKCU\Software\MyBooksLibrary\MyBooksLibrary`.
+  - `app::resolveLibraryRoot` takes it as a parameter, in the order `--library`, `MYBOOKSLIBRARY_ROOT`, the remembered library, the default.
+  - The in-app starts (Open library…, Open the default library, Open restored library) pass `--remember`, and `app::rememberWhenOpened` stores the library once it is Ready.
+  - A remembered library is opened with `ExistingOnly`.
+- **Why:** issue #30, part 3. Without it, a restored or other library had to be opened again at every start, and users thought it was lost.
+- **Assumptions:**
+  - **Only after it has opened:** writing the setting before the open would make one failed open (a lock, a newer catalog, a moved folder) the start-up library.
+  - **Only when chosen in the app:** a library opened through a `--library` shortcut is not remembered, so a test or occasional shortcut never replaces the everyday library. The in-app starts carry `--remember` because they are also `--library` starts.
+  - **Never made again:** a remembered library that cannot be opened any more fails with the reason and the way out from part 2 (Open library…, Open the default library). The app does not quietly fall back to the default library, which would recreate the confusion the issue describes, and it does not create an empty library in the old place.
+  - **The default stays the default:** remembering the default folder (Open the default library) resolves as "default", so it is made again on first use, as on a first start.
+  - **A parameter, not a lookup:** `resolveLibraryRoot` receives the remembered path instead of reading `QSettings`. Tests would otherwise depend on the machine's registry, which `QStandardPaths::setTestModeEnabled` does not redirect. The composition root owns the `QSettings`, declared before the library session, which writes to it.
+  - **Two windows:** the library opened last wins.
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, "Remembering the last library".

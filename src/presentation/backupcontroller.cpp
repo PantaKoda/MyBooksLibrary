@@ -244,8 +244,12 @@ bool BackupController::openRestoredLibrary()
 {
     if (m_running || !m_succeeded || m_operation != Operation::Restore || m_resultFolder.isEmpty())
         return false;
+    // An existing library only: if the folder was moved meanwhile, the new
+    // window says so rather than make an empty library there. Remembered for
+    // the next start once it has opened.
     return QProcess::startDetached(QCoreApplication::applicationFilePath(),
-                                   {QStringLiteral("--library"), QDir::fromNativeSeparators(m_resultFolder)});
+                                   {QStringLiteral("--library"), QDir::fromNativeSeparators(m_resultFolder),
+                                    QStringLiteral("--existing-library"), QStringLiteral("--remember")});
 }
 
 } // namespace mbl::presentation

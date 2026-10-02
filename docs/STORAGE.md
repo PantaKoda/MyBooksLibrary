@@ -86,6 +86,8 @@ A backup is a folder "MyBooksLibrary backup *yyyy-MM-dd HHmmss*" in a folder the
 - Exports that were waiting in the backup are closed as not written: `cancelled`, outcome `restored` (`catalog::closeExportsAfterRestore`). A restore can happen much later or on another machine, so a copy is never written again without the user asking. Running ones become `interrupted` at recovery, never requeued. Metadata and contents jobs stay queued, since they are the library's own work.
 - A cancelled or failed restore leaves the target as it was.
 
+**Never opened as a library:** a backup has a library's layout, but `catalog::Library::open` refuses a folder holding `backup.json` (`Library::kBackupManifestFileName`) before it creates, locks or opens anything there. Opening it would change it: `journal_mode = WAL` is stored in the catalog file's header, so the catalog's digest no longer matches the manifest, and recovery, jobs and imports write into the folder. **Restore** would then refuse the backup. The only way to use a backup is to restore it (issue #30).
+
 ## Tests (`tests/storage/tst_importservice.cpp`)
 
 - a verified copy with unchanged original bytes, size and modification time, from a Greek/ü path;

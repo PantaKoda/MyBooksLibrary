@@ -48,9 +48,12 @@ Running a development build outside Qt Creator needs Qt's DLLs on `PATH` (for ex
 
 1. `--library <dir>`;
 2. the `MYBOOKSLIBRARY_ROOT` environment variable;
-3. the default `%LOCALAPPDATA%\MyBooksLibrary\MyBooksLibrary\Library` (Qt's `AppLocalDataLocation` plus `Library`).
+3. the library last opened from the app (the setting `library/last`, on Windows under `HKCU\Software\MyBooksLibrary\MyBooksLibrary`), unless it is the default one. It is opened only if it still exists, never created again;
+4. the default `%LOCALAPPDATA%\MyBooksLibrary\MyBooksLibrary\Library` (Qt's `AppLocalDataLocation` plus `Library`).
 
-The folder is created on first use. Only one running app may open a library at a time; a second one shows "already open".
+The folder is created on first use, except for the remembered library. Only one running app may open a library at a time; a second one shows "already open". A backup folder (one holding `backup.json`) is never opened as a library.
+
+`--existing-library` opens only an existing library there and never creates one: a missing folder, a folder without `library.sqlite`, or a backup fails with the reason in the window. `--remember` stores the library as `library/last` once it has opened, and never if it fails. **Library → Open library…**, **Open the default library** and **Open restored library** start the app with `--remember`; a shortcut with only `--library` leaves the remembered library alone. Scripts (`verify.ps1`, `package.ps1`) always pass `--library`, so they never read or change it.
 
 Development options: `--import <pdf>` (repeatable) queues files once the library is open, and `--screenshot <png>` saves the window when the app is idle and then quits. They are used for smoke runs and PR screenshots.
 

@@ -57,6 +57,7 @@ private slots:
     void neverRestoredInsideTheLibraryInUse();
     void waitingExportsAreClosedByARestore();
     void aBackupMissingANeededFileIsRefused();
+    void aBackupIsNeverOpenedAsALibrary();
 
 private:
     template <typename Task>
@@ -450,6 +451,35 @@ void TestBackup::aBackupMissingANeededFileIsRefused()
     const QString target = m_dir->filePath(QStringLiteral("Incomplete"));
     QVERIFY(!storage::restoreBackup(backup.value().folder, target, {m_root}));
     QVERIFY(!QFileInfo::exists(target));
+}
+
+// A backup has a library's layout, but it is never opened as one (issue #30):
+// opening it would change its catalog (WAL mode is stored in the file), and
+// Restore would then refuse it. It is refused before anything in it is
+// touched, so it still verifies and restores.
+void TestBackup::aBackupIsNeverOpenedAsALibrary()
+{
+    auto backup = storage::createBackup(*m_library, m_backups);
+    QVERIFY2(backup, backup ? "" : qPrintable(backup.error().message));
+    const QString folder = backup.value().folder;
+    const QStringList before = entriesOf(folder);
+    const QString catalogFile = QDir(folder).filePath(QLatin1StringView(Library::kCatalogFileName));
+    const QString catalogSha = storage::sha256OfFile(catalogFile).value_or(QString());
+    QCOMPARE(catalogSha.size(), 64);
+
+    auto opened = Library::open(folder);
+    QVERIFY(!opened);
+    QCOMPARE(opened.error().code, ErrorCode::InvalidArgument);
+    QVERIFY2(opened.error().message.contains(QStringLiteral("is a MyBooksLibrary backup, not a library")),
+             qPrintable(opened.error().message));
+    QVERIFY(!Library::open(folder + QStringLiteral("/../") + QFileInfo(folder).fileName()));  // Written another way.
+
+    QCOMPARE(entriesOf(folder), before);  // No lock file, no WAL or shared-memory file.
+    QCOMPARE(storage::sha256OfFile(catalogFile).value_or(QString()), catalogSha);
+    auto verified = storage::verifyBackup(folder);
+    QVERIFY2(verified, verified ? "" : qPrintable(verified.error().message));
+    auto restored = storage::restoreBackup(folder, m_dir->filePath(QStringLiteral("Restored after the refusal")), {m_root});
+    QVERIFY2(restored, restored ? "" : qPrintable(restored.error().message));
 }
 
 QTEST_GUILESS_MAIN(TestBackup)

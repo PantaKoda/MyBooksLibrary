@@ -3,6 +3,7 @@
 #include "catalog/migrations.h"
 
 #include <QDir>
+#include <QFileInfo>
 #include <QSqlError>
 #include <QSqlQuery>
 
@@ -11,9 +12,63 @@ namespace mbl::catalog {
 using domain::ErrorCode;
 using domain::makeError;
 
-domain::Result<std::unique_ptr<Library>> Library::open(const QString& rootDir)
+namespace {
+
+// A backup looks like a library, but opening it would change it: WAL mode is
+// stored in the catalog file, and recovery and jobs write into the folder.
+// Its catalog would then no longer match its manifest, and Restore would
+// refuse it.
+bool isBackup(const QString& root)
+{
+    return QFileInfo::exists(QDir(root).filePath(QLatin1StringView(Library::kBackupManifestFileName)));
+}
+
+domain::Error backupRefused(const QString& root)
+{
+    return domain::Error{ErrorCode::InvalidArgument,
+                         QStringLiteral("%1 is a MyBooksLibrary backup, not a library. Opening it would change the "
+                                        "backup, so it is not opened. To use it, choose Backup → Restore a backup…, "
+                                        "which makes a new library from it.")
+                             .arg(QDir::toNativeSeparators(root))};
+}
+
+} // namespace
+
+domain::Status Library::checkExisting(const QString& rootDir)
 {
     const QString root = QDir::cleanPath(QDir(rootDir).absolutePath());
+    const QString shown = QDir::toNativeSeparators(root);
+    const QFileInfo folder(root);
+    if (!folder.exists()) {
+        return makeError(ErrorCode::NotFound,
+                         QStringLiteral("The folder %1 does not exist. If the library was moved or its drive is not "
+                                        "connected, use Library → Open library… to choose its folder.")
+                             .arg(shown));
+    }
+    if (!folder.isDir())
+        return makeError(ErrorCode::InvalidArgument, QStringLiteral("%1 is a file, not a library folder.").arg(shown));
+    if (isBackup(root))
+        return backupRefused(root);
+    if (!QFileInfo(QDir(root).filePath(QLatin1StringView(kCatalogFileName))).isFile()) {
+        return makeError(ErrorCode::NotFound,
+                         QStringLiteral("%1 is not a MyBooksLibrary library: it has no catalog (%2). Choose the "
+                                        "library's own folder, the one that holds %2.")
+                             .arg(shown, QLatin1StringView(kCatalogFileName)));
+    }
+    return domain::Done{};
+}
+
+domain::Result<std::unique_ptr<Library>> Library::open(const QString& rootDir, OpenMode mode)
+{
+    const QString root = QDir::cleanPath(QDir(rootDir).absolutePath());
+    // Nothing is created, locked or opened for a backup, nor, with
+    // ExistingOnly, for anything that is not already a library.
+    if (isBackup(root))
+        return backupRefused(root);
+    if (mode == OpenMode::ExistingOnly) {
+        if (auto existing = checkExisting(root); !existing)
+            return existing.error();
+    }
     if (!QDir().mkpath(root))
         return makeError(ErrorCode::Io, QStringLiteral("Cannot create the library folder %1.").arg(root));
 
