@@ -69,7 +69,7 @@ Dialog {
                     Layout.fillWidth: true
                     text: dialog.exporter.bookTitle
                     textFormat: Text.PlainText
-                    font.bold: true
+                    font.weight: Theme.headingWeight
                     wrapMode: Text.Wrap
                 }
                 BusyIndicator {

@@ -70,9 +70,8 @@ ListView {
                 Layout.fillWidth: true
                 text: row.title
                 textFormat: Text.PlainText
-                font.bold: true
+                font.weight: Theme.headingWeight
                 elide: Text.ElideRight
-                color: row.highlighted ? row.palette.highlightedText : row.palette.windowText
             }
             Label {
                 Layout.fillWidth: true
@@ -80,8 +79,7 @@ ListView {
                                                      : qsTr("Matched: %1").arg(row.matchText)
                 textFormat: Text.PlainText
                 elide: Text.ElideRight
-                opacity: 0.7
-                color: row.highlighted ? row.palette.highlightedText : row.palette.windowText
+                color: Theme.textSecondary
             }
             Repeater {
                 model: row.chapters
@@ -96,7 +94,6 @@ ListView {
                         text: hit.modelData.title
                         textFormat: Text.PlainText
                         elide: Text.ElideRight
-                        color: row.highlighted ? row.palette.highlightedText : row.palette.windowText
                     }
                     Label {
                         text: hit.modelData.stateText.length > 0
@@ -104,8 +101,7 @@ ListView {
                               : hit.modelData.pageText
                         textFormat: Text.PlainText
                         font.italic: hit.modelData.page < 0
-                        opacity: 0.75
-                        color: row.highlighted ? row.palette.highlightedText : row.palette.windowText
+                        color: Theme.textSecondary
                     }
                     Button {
                         flat: true
@@ -125,8 +121,7 @@ ListView {
                 visible: row.moreChapters.length > 0
                 text: row.moreChapters
                 textFormat: Text.PlainText
-                opacity: 0.6
-                color: row.highlighted ? row.palette.highlightedText : row.palette.windowText
+                color: Theme.textSecondary
             }
         }
     }
@@ -143,7 +138,7 @@ ListView {
             textFormat: Text.PlainText
             wrapMode: Text.Wrap
             horizontalAlignment: view.count === 0 ? Text.AlignHCenter : Text.AlignLeft
-            opacity: 0.7
+            color: Theme.textSecondary
         }
         Button {
             Layout.alignment: Qt.AlignHCenter

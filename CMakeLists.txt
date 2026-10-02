@@ -137,12 +137,20 @@ qt_add_library(mbl_presentation STATIC
     src/reader/readercontroller.h
     src/reader/readercontroller.cpp
 )
+# Theme: the views' shared sizes, spacing and colours (docs/UI.md, "Theme"). In
+# this module, which every view and every QML test already imports.
+set_source_files_properties(qml/theme/Theme.qml PROPERTIES
+    QT_QML_SINGLETON_TYPE TRUE
+    QT_RESOURCE_ALIAS Theme.qml
+)
 qt_add_qml_module(mbl_presentation
     URI MyBooksLibrary.Presentation
     VERSION 1.0
     OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/MyBooksLibrary/Presentation
+    QML_FILES
+        qml/theme/Theme.qml
 )
-target_link_libraries(mbl_presentation PUBLIC mbl_core Qt6::Core Qt6::Qml)
+target_link_libraries(mbl_presentation PUBLIC mbl_core Qt6::Core Qt6::Qml Qt6::Quick)
 # qmltyperegistrar includes registered headers by bare file name.
 target_include_directories(mbl_presentation PRIVATE src/presentation)
 
@@ -189,6 +197,13 @@ qt_add_qml_module(appMyBooksLibrary
         qml/reader/ReaderPane.qml
         qml/export/ExportDialog.qml
         qml/backup/BackupDialog.qml
+)
+
+# The window's Qt Quick Controls style: FluentWinUI3 (docs/UI.md, "Theme").
+# QT_QUICK_CONTROLS_STYLE and -style still override it; the QML tests set Basic.
+qt_add_resources(appMyBooksLibrary "controls_style"
+    PREFIX "/"
+    FILES qtquickcontrols2.conf
 )
 
 set_target_properties(appMyBooksLibrary PROPERTIES

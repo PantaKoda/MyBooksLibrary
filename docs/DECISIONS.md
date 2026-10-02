@@ -613,3 +613,28 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - **A parameter, not a lookup:** `resolveLibraryRoot` receives the remembered path instead of reading `QSettings`. Tests would otherwise depend on the machine's registry, which `QStandardPaths::setTestModeEnabled` does not redirect. The composition root owns the `QSettings`, declared before the library session, which writes to it.
   - **Two windows:** the library opened last wins.
 - **Verified:** See IMPLEMENTATION_PROGRESS.md, "Remembering the last library".
+
+## 2026-10-02 — UI overhaul, PR 1: the FluentWinUI3 style and a shared Theme
+
+- **Change:**
+  - The window uses Qt's **FluentWinUI3** style (`qtquickcontrols2.conf` in the app's resources).
+  - The views take their sizes, spacing and colours from a **`Theme`** singleton (`qml/theme/Theme.qml`, in `MyBooksLibrary.Presentation`), not from fixed pixel sizes, `"firebrick"`, opacities or `palette.highlightedText`.
+  - Selected rows look as Fluent draws them.
+  - The contents entry's details become a card that scrolls within half the tab.
+  - The default window is 1100×720.
+  - `--color-scheme light|dark` (development) shows either scheme.
+- **Why:** the owner found the window "very ugly" after v0.1.0, and chose this direction (2026-10-02) after an audit of the running app:
+  - with no style set, Qt uses its older "Windows" style on Windows: grey, classic controls, no accent;
+  - the views mixed fixed sizes (11 px captions), opacity-dimmed text and a fixed red;
+  - with Fluent alone, the selected book's text turned white on a light grey fill, and the contents details ran under the status bar.
+- **Assumptions:**
+  - **FluentWinUI3, not Material or a custom style:** a Windows app should look like one (Jakob's law). Fluent follows Windows' light or dark setting and accent colour, and Qt maintains it. It needs Qt 6.8; the kit is 6.11.
+  - **Fluent's values, not new ones:** the type ramp (12/14/18/20/28 px), the secondary text and the status colours are WinUI 3's, so the custom-drawn parts match the controls.
+    - A larger application font scales the ramp up, and it never goes below Fluent's sizes.
+    - Fluent's body is 14 px, under the 16 px some guidance gives for desk distance; a Windows app follows Windows here.
+    - One exception: the light caution colour is darkened to `#8a5000`, because WinUI's `#9d5d00` reaches only 4.4:1 on a selected row. `tst_theme` found it.
+  - **Readable by test, not by eye:** `tst_theme` computes WCAG contrast on Fluent's measured light window (`#f3f3f3`) and dark window (`#202020`). It also fails if a view sets a fixed colour, a fixed font size or `highlightedText` again.
+  - **The tests stay on Basic:** the style is in the configuration file, which `QT_QUICK_CONTROLS_STYLE` overrides, so the QML tests keep the platform-independent Basic style. Fluent's look is checked in the screenshots.
+  - **Layout changes wait for PR 2:** this PR changes only what the style switch needs: selection colours, the details card, the pane dividers (Fusion's fallback handle is a thick bar) and the default size. The toolbar, the status bar and the sidebar are PR 2's.
+  - **English plurals are their own PR (1b):** "(s)" strings need an English numerus translation (`qt_add_translations`, a plurals-only `.ts`), a build step that deserves its own review.
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, "UI overhaul, PR 1".

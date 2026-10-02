@@ -14,8 +14,10 @@ ApplicationWindow {
     required property LibraryController library
     property bool closeRequested: false
 
-    width: 900
-    height: 640
+    // Fluent's controls are larger than the classic style's: room for the
+    // three panes without crowding the toolbar.
+    width: 1100
+    height: 720
     minimumWidth: 480
     minimumHeight: 360
     visible: true
@@ -130,8 +132,8 @@ ApplicationWindow {
                 objectName: "viewTitleLabel"
                 text: window.library.viewTitle
                 textFormat: Text.PlainText
-                font.bold: true
-                font.pixelSize: 16
+                font.pixelSize: Theme.bodyLargeSize
+                font.weight: Theme.headingWeight
                 elide: Text.ElideRight
                 Layout.maximumWidth: 220
             }
@@ -140,7 +142,7 @@ ApplicationWindow {
                 Layout.preferredWidth: 160
                 text: window.library.libraryPath
                 elide: Text.ElideMiddle
-                opacity: 0.6
+                color: Theme.textSecondary
                 // The whole path, and how the library was chosen.
                 HoverHandler { id: pathHover }
                 ToolTip.visible: pathHover.hovered && text.length > 0
@@ -250,6 +252,19 @@ ApplicationWindow {
                 SplitView {
                     anchors.fill: parent
                     orientation: Qt.Horizontal
+                    // A thin divider with a wider grab area (FluentWinUI3 has no
+                    // SplitView of its own, and Fusion's handle is a thick bar).
+                    handle: Item {
+                        implicitWidth: 7
+                        Rectangle {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            width: parent.SplitHandle.hovered || parent.SplitHandle.pressed ? 3 : 1
+                            height: parent.height
+                            radius: width / 2
+                            color: parent.SplitHandle.hovered || parent.SplitHandle.pressed ? window.palette.accent
+                                                                                             : Theme.divider
+                        }
+                    }
 
                 LibrarySidebar {
                     library: window.library
@@ -312,7 +327,7 @@ ApplicationWindow {
                 Rectangle {
                     anchors.fill: parent
                     visible: dropArea.containsDrag
-                    color: window.palette.highlight
+                    color: window.palette.accent
                     opacity: 0.15
                 }
             }
@@ -333,7 +348,7 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         Label {
                             text: qsTr("Activity")
-                            font.bold: true
+                            font.weight: Theme.headingWeight
                         }
                         Label {
                             Layout.fillWidth: true
@@ -341,7 +356,7 @@ ApplicationWindow {
                                   ? qsTr("OCR models were not found: title pages that are scanned images cannot be read.")
                                   : ""
                             wrapMode: Text.WordWrap
-                            opacity: 0.7
+                            color: Theme.textSecondary
                         }
                         Button {
                             text: qsTr("Cancel all")
@@ -402,7 +417,7 @@ ApplicationWindow {
                                               : qsTr("%1 · %2").arg(jobRow.kindText).arg(jobRow.stateText)
                                         textFormat: Text.PlainText
                                         elide: Text.ElideRight
-                                        opacity: 0.7
+                                        color: Theme.textSecondary
                                     }
                                 }
                                 Button {
@@ -423,7 +438,7 @@ ApplicationWindow {
                         Label {
                             anchors.centerIn: parent
                             visible: jobList.count === 0
-                            opacity: 0.7
+                            color: Theme.textSecondary
                             text: qsTr("No processing yet.")
                         }
                     }
@@ -451,7 +466,8 @@ ApplicationWindow {
             Label {
                 Layout.fillWidth: true
                 text: qsTr("This library could not be opened")
-                font.bold: true
+                font.pixelSize: Theme.subtitleSize
+                font.weight: Theme.headingWeight
                 wrapMode: Text.Wrap
             }
             Label {
@@ -533,7 +549,7 @@ ApplicationWindow {
                                                                  : qsTr("Processing idle.")
                     textFormat: Text.PlainText
                     elide: Text.ElideRight
-                    opacity: 0.8
+                    color: Theme.textSecondary
                 }
                 Button {
                     flat: true
@@ -554,7 +570,7 @@ ApplicationWindow {
                     text: modelData
                     textFormat: Text.PlainText
                     elide: Text.ElideRight
-                    opacity: 0.8
+                    color: Theme.critical  // A file that was not imported.
                 }
             }
             Button {

@@ -63,7 +63,7 @@ Pane {
                     Layout.fillWidth: true
                     text: pane.reader.title
                     textFormat: Text.PlainText
-                    font.bold: true
+                    font.weight: Theme.headingWeight
                     elide: Text.ElideRight
                 }
                 Button {
@@ -121,7 +121,7 @@ Pane {
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.Wrap
                 visible: viewLoader.item === null
-                opacity: 0.7
+                color: Theme.textSecondary
                 text: pane.reader.error.length > 0 ? pane.reader.error
                       : document.status === PdfDocument.Error ? qsTr("This PDF could not be opened.")
                       : qsTr("Opening…")

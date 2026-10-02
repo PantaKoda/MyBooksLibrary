@@ -52,8 +52,9 @@ ListView {
                 Layout.fillWidth: true
                 text: row.title
                 textFormat: Text.PlainText   // Extracted text is never markup.
-                color: row.highlighted ? row.palette.highlightedText : row.palette.windowText
-                font.bold: true
+                // The style draws the selection (Fluent: a subtle fill and an
+                // accent bar) and keeps the text colour.
+                font.weight: Theme.headingWeight
                 elide: Text.ElideRight
             }
             Label {
@@ -63,8 +64,7 @@ ListView {
                       ? qsTr("From the file name · %1").arg(row.processingState)
                       : (row.contributors.length > 0 ? row.contributors + " · " + row.processingState
                                                      : row.processingState)
-                color: row.highlighted ? row.palette.highlightedText : row.palette.windowText
-                opacity: row.highlighted ? 0.9 : 0.7
+                color: Theme.textSecondary
                 elide: Text.ElideRight
             }
         }
@@ -102,7 +102,7 @@ ListView {
         horizontalAlignment: Text.AlignHCenter
         wrapMode: Text.WordWrap
         visible: bookList.count === 0
-        opacity: 0.7
+        color: Theme.textSecondary
         text: bookList.library.opening ? qsTr("Opening the library…")
               : bookList.library.failed ? qsTr("The library could not be opened.")
               : bookList.library.view === LibraryController.Trash ? qsTr("Trash is empty.")
