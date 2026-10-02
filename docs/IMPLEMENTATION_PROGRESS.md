@@ -18,7 +18,8 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | M09 Export | Merged: part 1 [PR #21](https://github.com/PantaKoda/MyBooksLibrary/pull/21) (merge `acc2b89`); part 2 [PR #22](https://github.com/PantaKoda/MyBooksLibrary/pull/22) (merge `f2bd6b4`); part 3 [PR #23](https://github.com/PantaKoda/MyBooksLibrary/pull/23) (merge `1dbbe0c`) | `feat/m09-a1-export-core`; `feat/m09-a2-export-jobs`; `feat/m09-presentation-export` | See "M09" |
 | M10 Windows release | Merged: part 1 [PR #24](https://github.com/PantaKoda/MyBooksLibrary/pull/24) (merge `0c682c3`); part 2 [PR #25](https://github.com/PantaKoda/MyBooksLibrary/pull/25) (merge `54ed8fc`); part 3 [PR #26](https://github.com/PantaKoda/MyBooksLibrary/pull/26) (merge `1683e9a`). The owner's manual check of the package on a machine without Qt or Visual Studio remains | `feat/m10-a1-backup-restore`; `feat/m10-packaging`; `feat/m10-presentation-backup` | See "M10" |
 | Releases on GitHub; **v0.1.0** | Merged: [PR #28](https://github.com/PantaKoda/MyBooksLibrary/pull/28) (merge `4a7dda1`). **v0.1.0** tagged at `e142797` and published on the Releases page | `ci/m10-release-workflow` | See "Releases on GitHub" |
-| After M10: owner's testing | Merged. **In v0.1.0:** [PR #27](https://github.com/PantaKoda/MyBooksLibrary/pull/27) (merge `adcf7b2`), [PR #29](https://github.com/PantaKoda/MyBooksLibrary/pull/29) (merge `e142797`). **For the next release** (notes in `docs/releases/UNRELEASED.md`): [PR #32](https://github.com/PantaKoda/MyBooksLibrary/pull/32) (merge `e3539ed`), [PR #33](https://github.com/PantaKoda/MyBooksLibrary/pull/33) (merge `41e7dec`), [PR #34](https://github.com/PantaKoda/MyBooksLibrary/pull/34) (merge `307c8ad`), [PR #31](https://github.com/PantaKoda/MyBooksLibrary/pull/31) (merge `edad42c`). The owner's manual check of the remembered library remains | `fix/m05-contents-notes-visible`; `docs/user-guide`; `fix/m10-a2-refuse-backup-folder`; `feat/m10-presentation-open-library`; `feat/m10-app-remember-library`; `fix/m05-a4-page-label-sections` | See "After M10" |
+| After M10: owner's testing | Merged. **In v0.1.0:** [PR #27](https://github.com/PantaKoda/MyBooksLibrary/pull/27) (merge `adcf7b2`), [PR #29](https://github.com/PantaKoda/MyBooksLibrary/pull/29) (merge `e142797`). **In v0.2.0:** [PR #32](https://github.com/PantaKoda/MyBooksLibrary/pull/32) (merge `e3539ed`), [PR #33](https://github.com/PantaKoda/MyBooksLibrary/pull/33) (merge `41e7dec`), [PR #34](https://github.com/PantaKoda/MyBooksLibrary/pull/34) (merge `307c8ad`), [PR #31](https://github.com/PantaKoda/MyBooksLibrary/pull/31) (merge `edad42c`). The owner's manual check of the remembered library remains | `fix/m05-contents-notes-visible`; `docs/user-guide`; `fix/m10-a2-refuse-backup-folder`; `feat/m10-presentation-open-library`; `feat/m10-app-remember-library`; `fix/m05-a4-page-label-sections` | See "After M10" |
+| UI overhaul; build fix; **v0.2.0** | Merged: [PR #37](https://github.com/PantaKoda/MyBooksLibrary/pull/37) (merge `9968194`, the SDK runtime deployed once), [PR #35](https://github.com/PantaKoda/MyBooksLibrary/pull/35) (merge `03859dc`, release notes), [PR #36](https://github.com/PantaKoda/MyBooksLibrary/pull/36) (merge `c100105`, UI PR 1). **v0.2.0** via the release PR `release/v0.2.0` | `fix/ci-sdk-runtime-deploy-race`; `docs/next-release-notes`; `feat/ui-01-presentation-foundation`; `release/v0.2.0` | See "UI overhaul" |
 | M11 | NotStarted | | |
 
 ## UI overhaul (after v0.1.0)
@@ -31,7 +32,7 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 
 ### PR 1: the FluentWinUI3 style and a shared Theme (presentation)
 
-**Branch:** `feat/ui-01-presentation-foundation`. **Status:** LocallyVerified, then AwaitingReview once its PR is open.
+**Branch:** `feat/ui-01-presentation-foundation`. **Status:** Merged: [PR #36](https://github.com/PantaKoda/MyBooksLibrary/pull/36), merge `c100105` (2026-10-03), after CI on the head `90818ea`. It was merged on the owner's go without an independent review, for the 0.2.0 release.
 
 **Audit of `main`** (Release build, scratch library with the fixtures; `docs/images/ui1-before.png`):
 - with no style set, Qt uses its older "Windows" style;
@@ -65,6 +66,10 @@ With `-style FluentWinUI3` alone (`docs/images/ui1-fluent-style-only.png`), the 
 Its first run failed twice, rightly: WinUI's light caution `#9d5d00` reaches 4.36:1 on a selected row (now `#8a5000`), and a ramp scaled from Qt's 9 pt default gave 10 px captions (Fluent's sizes are now the floor). The existing QML tests run on the Basic style and pass unchanged.
 
 **Screenshots:** `docs/images/ui1-after-light.png` and `ui1-after-dark.png` (`--color-scheme`), at 1100×720.
+
+**CI note:** the first CI run of PR #36 failed in the build, before any test ran. The app and five SDK tests each copied the SDK runtime into the same folder in parallel, and two copies of `pdfium.dll` collided. [PR #37](https://github.com/PantaKoda/MyBooksLibrary/pull/37) fixed this (merge `9968194`): the SDK tests reuse the app's deployment (`mbl_use_sdk_runtime`), so the build has one deployment step. A fresh-build `verify.ps1` passed with 33/33 tests, and CI passed.
+
+**Released in v0.2.0**, with issue #30's PRs and the page-label fix (`docs/releases/v0.2.0.md`).
 
 **Next:** PR 1b, English plurals.
 
