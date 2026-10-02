@@ -20,12 +20,32 @@ public:
     // a library's layout, but it is never opened as one.
     static constexpr const char* kBackupManifestFileName = "backup.json";
 
-    // Creates `rootDir` if needed, takes the writer lock, opens the catalog on
-    // its own thread and applies pending migrations. Blocks until done; call
-    // from a non-GUI thread or before the window is shown. A backup folder is
-    // refused (InvalidArgument) before anything in it is touched: opening it
-    // would change its catalog, and the backup would no longer verify.
-    static domain::Result<std::unique_ptr<Library>> open(const QString& rootDir);
+    // What open() does with a folder that holds no library yet.
+    enum class OpenMode {
+        // Make one there: the default folder on first start, --library and
+        // MYBOOKSLIBRARY_ROOT (which scripts rely on).
+        CreateIfMissing,
+        // Refuse it: a library the user chose in the app (Open library…, a
+        // restored library). A missing or wrong folder must never silently
+        // become a new, empty library.
+        ExistingOnly,
+    };
+
+    // Creates `rootDir` if needed (CreateIfMissing), takes the writer lock,
+    // opens the catalog on its own thread and applies pending migrations.
+    // Blocks until done; call from a non-GUI thread or before the window is
+    // shown. A backup folder is refused (InvalidArgument) before anything in
+    // it is touched: opening it would change its catalog, and the backup
+    // would no longer verify. With ExistingOnly, so is anything that is not an
+    // existing library (see checkExisting()).
+    static domain::Result<std::unique_ptr<Library>> open(const QString& rootDir,
+                                                         OpenMode mode = OpenMode::CreateIfMissing);
+
+    // Whether `rootDir` is an existing library, without creating or changing
+    // anything: a folder holding the catalog, and not a backup. Fails with
+    // NotFound (no such folder, or no catalog in it) or InvalidArgument (not
+    // a folder, or a backup), with the reason in plain words.
+    static domain::Status checkExisting(const QString& rootDir);
 
     // Closes the connection (after queued work) and releases the lock.
     ~Library();

@@ -17,6 +17,7 @@
 #include "presentation/collectionlistmodel.h"
 #include "presentation/exportcontroller.h"
 #include "presentation/joblistmodel.h"
+#include "presentation/libraryswitcher.h"
 #include "presentation/searchcontroller.h"
 #include "reader/readercontroller.h"
 
@@ -61,6 +62,8 @@ class LibraryController : public QObject {
     Q_PROPERTY(QString currentFile READ currentFile NOTIFY importProgressChanged)
     Q_PROPERTY(double fileProgress READ fileProgress NOTIFY importProgressChanged)  // 0..1
     Q_PROPERTY(QString libraryPath READ libraryPath NOTIFY stateChanged)
+    // Failed: why the library could not be opened, in plain words.
+    Q_PROPERTY(QString openError READ openError NOTIFY stateChanged)
     Q_PROPERTY(QString statusText READ statusText NOTIFY statusTextChanged)
     Q_PROPERTY(QStringList problems READ problems NOTIFY problemsChanged)
     Q_PROPERTY(mbl::presentation::BookListModel* books READ books CONSTANT)
@@ -76,6 +79,8 @@ class LibraryController : public QObject {
     Q_PROPERTY(mbl::presentation::ExportController* exporter READ exporter CONSTANT)
     // Back up… and Restore… (M10).
     Q_PROPERTY(mbl::presentation::BackupController* backup READ backup CONSTANT)
+    // Which library this window holds, and Open library… (issue #30).
+    Q_PROPERTY(mbl::presentation::LibrarySwitcher* switcher READ switcher CONSTANT)
     // What the book list shows, and its heading.
     Q_PROPERTY(View view READ view NOTIFY viewChanged)
     Q_PROPERTY(QString viewCollectionId READ viewCollectionId NOTIFY viewChanged)
@@ -122,6 +127,11 @@ public:
     // thread, then recovers interrupted imports and jobs, loads the book
     // list and starts processing.
     Q_INVOKABLE void open(const QString& rootDir);
+    // As open(), but only an existing library (catalog::Library::OpenMode::
+    // ExistingOnly): a missing folder, one without a catalog, or a backup
+    // fails with the reason, and nothing is created. For a library the user
+    // chose in the app (--existing-library).
+    void openExisting(const QString& rootDir);
     // Queues files for import. Files queued while the library is opening are
     // imported once it is ready, or reported as not imported if opening fails.
     // Ignored when the library is closed or failed.
@@ -179,6 +189,7 @@ public:
     QString currentFile() const { return m_currentFile; }
     double fileProgress() const { return m_fileProgress; }
     QString libraryPath() const { return m_libraryPath; }
+    QString openError() const { return m_openError; }
     QString statusText() const { return m_statusText; }
     QStringList problems() const { return m_problems; }
     BookListModel* books() { return &m_books; }
@@ -192,6 +203,7 @@ public:
     CollectionListModel* collections() { return &m_collections; }
     ExportController* exporter() { return &m_export; }
     BackupController* backup() { return &m_backup; }
+    LibrarySwitcher* switcher() { return &m_switcher; }
     View view() const { return m_view; }
     QString viewCollectionId() const { return m_view == View::Collection ? m_viewCollection.toString() : QString(); }
     QString viewTitle() const;
@@ -218,6 +230,7 @@ signals:
 
 private:
     struct FileResult;
+    void openLibrary(const QString& rootDir, bool existingOnly);
     void startBatch();
     void onOpened(std::shared_ptr<catalog::Library> library, std::shared_ptr<storage::ImportService> importer,
                   QString error, QString recoveryText);
@@ -259,6 +272,7 @@ private:
     ExportController m_export;
     BackupController m_backup;
     bool m_backupBusy = false;  // A backup or restore runs; closing waits for it.
+    LibrarySwitcher m_switcher;
     std::unique_ptr<processing::ProcessingCoordinator> m_coordinator;  // Destroyed before m_library.
     bool m_ocrAvailable = false;
     bool m_recoveringJobs = false;
@@ -276,6 +290,7 @@ private:
 
     State m_state = State::Closed;
     QString m_libraryPath;
+    QString m_openError;
     QString m_statusText;
     QStringList m_problems;
     int m_importTotal = 0;

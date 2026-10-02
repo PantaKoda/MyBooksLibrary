@@ -13,8 +13,13 @@ LibraryRoot resolveLibraryRoot(const QStringList& arguments)
     const QString fromEnv = qEnvironmentVariable("MYBOOKSLIBRARY_ROOT");
     if (!fromEnv.isEmpty())
         return {QDir::cleanPath(QDir(fromEnv).absolutePath()), QStringLiteral("environment")};
+    return {defaultLibraryRoot(), QStringLiteral("default")};
+}
+
+QString defaultLibraryRoot()
+{
     const QString base = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
-    return {QDir::cleanPath(QDir(base).filePath(QStringLiteral("Library"))), QStringLiteral("default")};
+    return QDir::cleanPath(QDir(base).filePath(QStringLiteral("Library")));
 }
 
 } // namespace mbl::app

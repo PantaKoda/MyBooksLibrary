@@ -2,6 +2,9 @@
 //   appMyBooksLibrary [--library <dir>]      the window (Main.qml) on the library folder from
 //                                            --library, MYBOOKSLIBRARY_ROOT or the default
 //                                            (src/app/libraryroot.h).
+//                     [--existing-library]   open only an existing library there, never create one
+//                                            (how Open library… and Open restored library start a
+//                                            window: a wrong or moved folder fails, visibly)
 //                     [--import <pdf>]...    development: import files once the library is open
 //                     [--screenshot <png>]   development: save the window when idle (imports and
 //                                            metadata jobs finished), then quit
@@ -195,7 +198,11 @@ int main(int argc, char *argv[])
         return -1;
 
     const mbl::app::LibraryRoot root = mbl::app::resolveLibraryRoot(args);
-    library.open(root.path);
+    library.switcher()->setStartup(mbl::app::defaultLibraryRoot(), root.source);
+    if (args.contains(QLatin1String("--existing-library")))
+        library.openExisting(root.path);
+    else
+        library.open(root.path);
 
     // Development smoke mode: --import <pdf> (repeatable) queues files once the
     // library is ready; --screenshot <png> saves the window when idle and quits;

@@ -50,7 +50,9 @@ Running a development build outside Qt Creator needs Qt's DLLs on `PATH` (for ex
 2. the `MYBOOKSLIBRARY_ROOT` environment variable;
 3. the default `%LOCALAPPDATA%\MyBooksLibrary\MyBooksLibrary\Library` (Qt's `AppLocalDataLocation` plus `Library`).
 
-The folder is created on first use. Only one running app may open a library at a time; a second one shows "already open".
+The folder is created on first use. Only one running app may open a library at a time; a second one shows "already open". A backup folder (one holding `backup.json`) is never opened as a library.
+
+`--existing-library` opens only an existing library there and never creates one: a missing folder, a folder without `library.sqlite`, or a backup fails with the reason in the window. **Library → Open library…** and **Open restored library** start the app this way.
 
 Development options: `--import <pdf>` (repeatable) queues files once the library is open, and `--screenshot <png>` saves the window when the app is idle and then quits. They are used for smoke runs and PR screenshots.
 

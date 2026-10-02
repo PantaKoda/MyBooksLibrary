@@ -568,3 +568,17 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - **In `Library::open`, not in the window:** every way of opening a library goes through it (`--library`, `MYBOOKSLIBRARY_ROOT`, a restore's own check, and a future *Open library…*), so one check covers them all.
   - **The manifest marks a backup:** only `createBackup` writes `backup.json`, and a restore does not copy it into the restored library, so a real library never has one.
 - **Verified:** See IMPLEMENTATION_PROGRESS.md, "A backup folder opened as a library".
+
+## 2026-09-30 — Open library… starts another process, and only for an existing library
+
+- **Change:**
+  - **Library → Open library…** and **Open the default library** in the window. The new `LibrarySwitcher` checks the chosen folder and starts `appMyBooksLibrary --library <folder> --existing-library` in a new process: in a new window, or instead of this one, which this window then closes with its normal closing flow.
+  - `catalog::Library::OpenMode::ExistingOnly` and `Library::checkExisting` refuse anything that is not an existing library, before anything is created, locked or opened.
+  - The window's title names the library, the toolbar's path has a tooltip with how it was chosen, and a library that could not be opened shows its reason with a way out.
+- **Why:** issue #30. A restored library could be reached only through a `--library` shortcut or by moving folders, and users who restarted the app thought the restore was lost. The investigation on the issue weighed switching in place against a new process.
+- **Assumptions:**
+  - **A new process, as for a restored library (M10 part 3):** `LibraryController` is written for one open per lifetime. Switching in place would mean resetting every session object without blocking (coordinator, import queue, models, search, inspector, reader, backup and export sessions), and each field missed would be a cross-library bug, such as a book ID from one library sent to another. The window's closing flow already stops work cleanly, and the two libraries have separate locks, so starting the new one before this one closes has no lock race.
+  - **Never create a library in a chosen folder:** a wrong choice (Documents, the folder around a library, its `files` folder) or a moved library would otherwise silently become a new, empty library, which looks like lost books. Create-if-missing stays for the default folder, `--library` and `MYBOOKSLIBRARY_ROOT`, which `verify.ps1` and `package.ps1` rely on. **Open the default library** may still create it, as on a first start.
+  - **Checked in this window, then again in the new one:** the check here gives the reason where the user chose the folder, and `--existing-library` makes the new process refuse the folder too if it changed in between.
+  - **Remembering the last library** is part 3 of the issue (a separate PR). Until then, the app starts with the default library.
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, "Open library…".

@@ -19,7 +19,11 @@ ApplicationWindow {
     minimumWidth: 480
     minimumHeight: 360
     visible: true
-    title: qsTr("MyBooksLibrary")
+    // Which library, so two windows (a restored library, Open library…) can
+    // be told apart in the taskbar.
+    title: window.library.switcher.currentName.length > 0
+           ? qsTr("%1 – MyBooksLibrary").arg(window.library.switcher.currentName)
+           : qsTr("MyBooksLibrary")
 
     property bool showActivity: false
     // Development (--inspect-first): select the first book once the list has one.
@@ -101,6 +105,20 @@ ApplicationWindow {
         onAccepted: window.library.importUrls(selectedFiles)
     }
 
+    // Open library… (issue #30), from the toolbar's Library menu or the
+    // notice shown when this window's library could not be opened.
+    FolderDialog {
+        id: libraryFolderDialog
+        title: qsTr("Choose the library's folder")
+        onAccepted: openLibraryDialog.openFolder(selectedFolder)
+    }
+    OpenLibraryDialog {
+        id: openLibraryDialog
+        switcher: window.library.switcher
+        enabledForUse: !window.closeRequested
+        onSwitchRequested: window.close()  // The normal closing flow: work stops first.
+    }
+
     header: ToolBar {
         RowLayout {
             anchors.fill: parent
@@ -118,10 +136,18 @@ ApplicationWindow {
                 Layout.maximumWidth: 220
             }
             Label {
+                objectName: "libraryPathLabel"
                 Layout.preferredWidth: 160
                 text: window.library.libraryPath
                 elide: Text.ElideMiddle
                 opacity: 0.6
+                // The whole path, and how the library was chosen.
+                HoverHandler { id: pathHover }
+                ToolTip.visible: pathHover.hovered && text.length > 0
+                ToolTip.delay: 500
+                ToolTip.text: window.library.switcher.sourceText.length > 0
+                              ? qsTr("%1 (%2)").arg(window.library.libraryPath, window.library.switcher.sourceText)
+                              : window.library.libraryPath
             }
             TextField {
                 id: searchField
@@ -142,6 +168,30 @@ ApplicationWindow {
                 currentIndex: window.library.search.scope
                 onActivated: (index) => window.library.search.scope = index
                 Accessible.name: qsTr("Search in")
+            }
+            Button {
+                id: libraryButton
+                objectName: "libraryMenuButton"
+                text: qsTr("Library")
+                // Also when this window's library could not be opened: the way out.
+                enabled: !window.closeRequested
+                onClicked: libraryMenu.open()
+                Accessible.description: qsTr("Open another library, in a new window or instead of this one")
+                Menu {
+                    id: libraryMenu
+                    y: libraryButton.height
+                    MenuItem {
+                        objectName: "openLibraryItem"
+                        text: qsTr("Open library…")
+                        onTriggered: libraryFolderDialog.open()
+                    }
+                    MenuItem {
+                        objectName: "openDefaultLibraryItem"
+                        text: qsTr("Open the default library")
+                        enabled: !window.library.switcher.currentIsDefault
+                        onTriggered: openLibraryDialog.openDefault()
+                    }
+                }
             }
             Button {
                 id: importButton
@@ -383,6 +433,49 @@ ApplicationWindow {
 
         ReaderPane {
             reader: window.library.reader
+        }
+    }
+
+    // This window's library could not be opened (locked in another window,
+    // moved, a backup, a newer catalog…): the reason, and a way out. Over the
+    // library view, which stays disabled.
+    Pane {
+        objectName: "libraryFailedNotice"
+        anchors.centerIn: parent
+        width: Math.min(520, parent.width - 32)
+        visible: window.library.failed
+        ColumnLayout {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            spacing: 8
+            Label {
+                Layout.fillWidth: true
+                text: qsTr("This library could not be opened")
+                font.bold: true
+                wrapMode: Text.Wrap
+            }
+            Label {
+                objectName: "libraryFailedReason"
+                Layout.fillWidth: true
+                text: window.library.openError
+                textFormat: Text.PlainText
+                wrapMode: Text.Wrap
+            }
+            RowLayout {
+                Button {
+                    objectName: "failedOpenLibraryButton"
+                    text: qsTr("Open library…")
+                    enabled: !window.closeRequested
+                    onClicked: libraryFolderDialog.open()
+                }
+                Button {
+                    objectName: "failedOpenDefaultButton"
+                    text: qsTr("Open the default library")
+                    visible: !window.library.switcher.currentIsDefault
+                    enabled: !window.closeRequested
+                    onClicked: openLibraryDialog.openDefault()
+                }
+            }
         }
     }
 
