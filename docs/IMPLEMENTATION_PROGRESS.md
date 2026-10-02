@@ -161,6 +161,59 @@ The machine's settings key did not exist before; it was removed afterwards. **A 
 
 **Verification:** `pwsh scripts/package.ps1 -SdkDir <sdk>` **passed**, with `USER_GUIDE.md` in the package. `pwsh scripts/verify.ps1` **passed**: 177 text files, 31/31 tests.
 
+### Contents without pages when the printed numbering skips pages (A4, presentation)
+
+**Found by the owner** in the v0.1.0 release: the contents of *Computational Physics* (Springer, 2017, 640 pages) were "trash".
+- The 378 entries were parsed well: titles, levels and printed page numbers were right.
+- **None had a page:** 372 were `ambiguous` and 6 `unresolved`.
+- Each row listed up to 40 possible pages ("Page 24 or 25 or 33 or …"), which pushed the titles out of view.
+
+**Cause:**
+- The PDF leaves out the blank pages of the printed book. The offset between physical and printed pages falls from 21 (chapter 1) to 6 (the index).
+- SDK 0.3.0 maps with one decimal numbering section and one offset by default. Its anchors disagreed ("Conflicting observed offset"), so it placed nothing.
+- The PDF's page labels record every skip, in 20 label runs.
+- The SDK accepts caller-supplied numbering sections and entry associations (`AnalysisOptions::sections`, `entry_sections`), which the app did not use.
+
+**Fix (A4, SDK boundary):** `src/processing/sdk/pagelabels.{h,cpp}` and `SdkContentsAnalyzer` (PROCESSING.md, "Numbering sections from the PDF's page labels"; DECISIONS.md).
+- If the analysis leaves entries without a page and the page labels show a break in the numbering, a second analysis runs. It has a numbering section per label run, and each entry is associated with the run holding its printed page.
+- Its report is kept only if it has the same entries and places more of them. `"page_label_sections"` in the run's options records the outcome.
+- Qt PDF reads the labels on the worker, between SDK calls.
+
+**Fix (presentation):** an ambiguous entry's row lists at most 3 possible pages, else "Page uncertain (*n* possible)". The details list up to 10 of them. The page text takes at most half the row, so the title always shows.
+
+**Tests:**
+- `tst_sdkcontentsanalyzer`, 6 new cases:
+  - label runs, including roman, prefixed and restarted numbering;
+  - Qt PDF's labels of the new fixture, and of a PDF without labels;
+  - sections and associations from a constructed report (unique runs only; uncertain and unnumbered entries skipped; other options kept);
+  - the second report is kept only when it places more of the same entries;
+  - `analyze` and `analyze_book` on the new fixture `dropped-pages-book.pdf`, which places all 5 entries with `page_label_sections: "used"`;
+  - a cancel during the second analysis cancels.
+  - With the second analysis disabled, the two fixture cases fail.
+- `tst_toctreemodel`: 3 possible pages are listed, 12 are counted, and the details list them.
+- `tst_inspectorpane::uncertainPagesLeaveTheTitleInView`: an entry with 40 possible pages keeps its title in view at 640 and 300 px. It fails without the width limit (page text 336 of 596 px).
+
+**Checked on the owner's book** (the app built from this branch, a new library, `--import` of the book):
+- **351 of 378 entries have a page**; 13 are ambiguous and 14 unresolved. It took 4.3 s in all.
+- Every placed page's label equals the entry's printed number: "1 Error Analysis" (printed 3) → page 25, "5.1 Gaussian Elimination Method" (64) → page 85, which shows printed 64.
+- Searching "Gaussian elimination" finds 5.1 at page 85 with **Open**.
+- The v0.1.0 package on the same book shows 0 of 378.
+
+**Also checked:** a throwaway harness ran the same two-step logic over the 84 PDFs in the owner's book folder, without OCR.
+- The second analysis ran on 13 of them, and never placed a page whose label differs from the printed number.
+- It placed many more entries on 8. Examples: *Numerical Python in Astronomy* 0 → 41 of 41, *Network Programming with Go* 0 → 325 of 325, *Pro C# 10* 0 → 631 of 1367, *Pro Cryptography* 0 → 197 of 231.
+- It placed as many on 4, and 2 fewer on 1 (`NMFSC.pdf`, 133 → 131), where the first result is kept.
+
+**Limitations and follow-ups (SDK, PantaKoda/PDFMegine):**
+- **The second analysis reads the pages again.** The SDK takes entry associations only by entry ID, known only after parsing. An engine that derived sections from the page labels itself, or took associations by printed page, would need one run.
+- **Two chapters in one label run:** chapters 10 and 11 of the owner's book share a run and each has a "Problems" heading. S4 then sees conflicting heading anchors, so their 25 entries stay without a page.
+- Books analyzed with 0.1.0 keep their result until **Analyze contents again** (USER_GUIDE.md, "Questions and problems").
+- Many other books in the folder place few or no entries for other reasons (e.g. *The Linux Programming Interface*, 0 of 971). The labels do not show a break there; not investigated here.
+
+**UI evidence:** `docs/images/m05-page-labels-before.png` (the v0.1.0 package) and `m05-page-labels-after.png` (this branch), both of `dropped-pages-book.pdf`: `appMyBooksLibrary --library C:\MBL-demo-PageLabels --import tests\fixtures\dropped-pages-book.pdf --inspect-first --screenshot <png>`. Before: "5 contents entries, 0 with a confirmed page". After: "every page confirmed", pages 4, 11, 13, 18 and 25.
+
+**Verification:** `pwsh scripts/verify.ps1 -SdkDir <sdk>` (Release) **passed** at `ce28fd6`: 181 text files, 31/31 tests, smoke checks. `-Configuration Debug` **passed** at the same commit: 31/31 tests, smoke checks. Only documentation and these images changed after it.
+
 ## Releases on GitHub
 
 **Asked by the owner (2026-09-29):** a Releases page to download the Windows app, with every change going through a PR and CI, and changes grouped into releases.

@@ -160,12 +160,14 @@ qt_add_library(mbl_sdk STATIC
     src/processing/sdk/sdkcommon.cpp
     src/processing/sdk/contentsnormalize.h
     src/processing/sdk/contentsnormalize.cpp
+    src/processing/sdk/pagelabels.h
+    src/processing/sdk/pagelabels.cpp
     src/processing/sdk/sdkcontentsanalyzer.h
     src/processing/sdk/sdkcontentsanalyzer.cpp
     src/processing/sdk/sdkbookexporter.h
     src/processing/sdk/sdkbookexporter.cpp
 )
-target_link_libraries(mbl_sdk PUBLIC mbl_core pdfbookmark::pdfbookmark)
+target_link_libraries(mbl_sdk PUBLIC mbl_core pdfbookmark::pdfbookmark PRIVATE Qt6::Pdf)
 
 qt_add_executable(appMyBooksLibrary
     main.cpp

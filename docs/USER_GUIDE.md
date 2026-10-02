@@ -74,6 +74,7 @@ Every new book is **analyzed automatically in the background**. You can keep wor
 
 1. **Title and authors:** the first pages are read to find the title, subtitle, authors (with roles such as editor or translator), edition, publication year and copyright year.
 2. **Contents:** the book's printed table of contents is found and read, and each entry is matched to the PDF page where that chapter starts.
+   - Some publishers' PDFs leave out the blank pages of the printed book, so the printed page numbers skip ahead at chapter ends. The app then uses the page numbering stored in the PDF (its page labels) and reads the book a second time, which takes about as long again.
 
 **One book at a time.** Books are processed in the order they were added; the **Activity** panel shows which one and how many are waiting.
 - A book with real text takes **seconds to about half a minute**.
@@ -251,6 +252,8 @@ You can close the app at any time.
 - Open its **Contents** tab and scroll down to the tree.
 - If it really has none, the summary says so. The book may have no printed table of contents, or one the analysis could not read.
 - You can **Analyze contents again** (More menu), or add entries yourself with **Add after…**.
+
+**Most contents entries say "Page not found".** The printed page numbers may skip pages: many publishers' PDFs leave out the blank pages of the printed book. The app handles this when the PDF records its page numbering (page labels), but version 0.1.0 did not. For a book added with 0.1.0, use **Analyze contents again** (More menu). Entries still without a page can be set with **Change page…**.
 
 **The title shows the file name.** The analysis found several possible titles and did not choose one. Use **Correct** on the **Title and authors** tab; **Why?** shows the candidates.
 

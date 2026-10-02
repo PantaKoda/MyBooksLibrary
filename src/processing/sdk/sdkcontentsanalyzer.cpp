@@ -1,12 +1,15 @@
 #include "processing/sdk/sdkcontentsanalyzer.h"
 
 #include "processing/sdk/contentsnormalize.h"
+#include "processing/sdk/pagelabels.h"
 #include "processing/sdk/sdkcommon.h"
 
 #include <pdfbookmark/pdfbookmark.hpp>
 
 #include <QJsonDocument>
 #include <QJsonObject>
+
+#include <algorithm>
 
 namespace mbl::sdk {
 
@@ -61,13 +64,33 @@ QString metadataOptionsJson(const pb::AnalysisOptions& session, const pb::Metada
             .toJson(QJsonDocument::Compact));
 }
 
-pb::AnalysisProgressCallback progressCallback(const processing::ContentsAnalyzer::Progress& progress)
+// `pagesBefore`: pages a first analysis already read, so the count keeps
+// growing through a second one.
+pb::AnalysisProgressCallback progressCallback(const processing::ContentsAnalyzer::Progress& progress,
+                                              int pagesBefore = 0)
 {
     if (!progress)
         return {};
-    return [progress](const pb::AnalysisProgress& p) {
-        progress(QString::fromStdString(p.stage), int(p.pages_acquired));
+    return [progress, pagesBefore](const pb::AnalysisProgress& p) {
+        progress(QString::fromStdString(p.stage), pagesBefore + int(p.pages_acquired));
     };
+}
+
+QString withPageLabels(const QString& optionsJson, const QString& use)
+{
+    QJsonObject json = QJsonDocument::fromJson(optionsJson.toUtf8()).object();
+    json.insert(QStringLiteral("page_label_sections"), use);
+    return QString::fromUtf8(QJsonDocument(json).toJson(QJsonDocument::Compact));
+}
+
+// Entries the analysis gave no page: only then can the page labels help, and
+// only then are they read.
+bool hasUnplacedEntries(const pb::AnalysisReport& report)
+{
+    return report.outcome != pb::AnalysisOutcome::Cancelled && report.mapping
+           && std::any_of(report.mapping->entries.begin(), report.mapping->entries.end(), [](const auto& m) {
+                  return m.status != pb::mapping::MappingStatus::Resolved;
+              });
 }
 
 ContentsAnalysis failure(const pb::Error& error, const QString& optionsJson)
@@ -101,6 +124,34 @@ ContentsAnalysis fromReport(const pb::AnalysisReport& report, const pb::Analysis
     return out;
 }
 
+// The first analysis, or a second one with numbering sections from the page
+// labels when that places more entries (pagelabels.h). The options JSON
+// records "page_label_sections": "used", "not_better" or "failed" when a
+// second analysis ran. Cancelling during it cancels the whole analysis.
+ContentsAnalysis withPageLabelSections(const QString& pdfPath, const pb::AnalysisReport& first,
+                                       const pb::AnalysisOptions& options, const QString& optionsJson,
+                                       const std::atomic_bool& cancel,
+                                       const processing::ContentsAnalyzer::Progress& progress)
+{
+    const auto second = hasUnplacedEntries(first)
+                            ? pageLabelAnalysisOptions(readPageLabels(pdfPath), first, options)
+                            : std::nullopt;
+    if (!second)
+        return fromReport(first, options, optionsJson);
+    const auto again = pb::analyze(toSdkPath(pdfPath), *second, pb::RunControl{&cancel},
+                                   progressCallback(progress, int(first.pages.size())));
+    if (!again) {
+        if (again.error().code == pb::ErrorCode::Cancelled)
+            return failure(again.error(), optionsJson);
+        return fromReport(first, options, withPageLabels(optionsJson, QStringLiteral("failed")));
+    }
+    if (again.value().outcome == pb::AnalysisOutcome::Cancelled)
+        return fromReport(again.value(), *second, optionsJson);
+    if (!placesMoreEntries(again.value(), first))
+        return fromReport(first, options, withPageLabels(optionsJson, QStringLiteral("not_better")));
+    return fromReport(again.value(), *second, withPageLabels(optionsJson, QStringLiteral("used")));
+}
+
 MetadataExtraction metadataFailure(const pb::Error& error, const QString& optionsJson)
 {
     MetadataExtraction out;
@@ -122,7 +173,7 @@ ContentsAnalysis SdkContentsAnalyzer::analyze(const QString& pdfPath, const std:
     const auto report = pb::analyze(toSdkPath(pdfPath), options, pb::RunControl{&cancel}, progressCallback(progress));
     if (!report)
         return failure(report.error(), optionsJson);
-    return fromReport(report.value(), options, optionsJson);
+    return withPageLabelSections(pdfPath, report.value(), options, optionsJson, cancel, progress);
 }
 
 ContentsAnalysis SdkContentsAnalyzer::analyzeBook(const QString& pdfPath, const std::atomic_bool& cancel,
@@ -162,7 +213,7 @@ ContentsAnalysis SdkContentsAnalyzer::analyzeBook(const QString& pdfPath, const 
         out.error = QStringLiteral("The contents analysis did not run.");
         return out;
     }
-    return fromReport(*report.analysis, options, optionsJson);
+    return withPageLabelSections(pdfPath, *report.analysis, options, optionsJson, cancel, progress);
 }
 
 } // namespace mbl::sdk

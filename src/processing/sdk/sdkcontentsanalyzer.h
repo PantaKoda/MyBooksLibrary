@@ -3,7 +3,10 @@
 // session, pages OCR'd once), with the located OCR models and the automatic
 // settings of AGENTS.md section 4: titles as printed, no partial plan, no
 // flattening of unknown hierarchy. Those settings only affect the plan; every
-// parsed entry is still returned. SDK types stay in the .cpp files.
+// parsed entry is still returned. When the printed page numbers skip pages and
+// the PDF's page labels show where, a second analysis maps the entries with
+// numbering sections taken from the labels (see the .cpp and pagelabels.h).
+// SDK types stay in the .cpp files.
 #pragma once
 
 #include "processing/contentsanalyzer.h"

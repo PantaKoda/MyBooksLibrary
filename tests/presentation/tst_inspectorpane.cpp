@@ -79,6 +79,20 @@ QQuickItem* findItem(QQuickItem* root, const QString& name)
     return nullptr;
 }
 
+// The item with that object name whose text starts with `text`.
+QQuickItem* findItemWithText(QQuickItem* root, const QString& name, const QString& text)
+{
+    if (!root)
+        return nullptr;
+    if (root->objectName() == name && root->property("text").toString().startsWith(text))
+        return root;
+    for (QQuickItem* child : root->childItems()) {
+        if (QQuickItem* found = findItemWithText(child, name, text))
+            return found;
+    }
+    return nullptr;
+}
+
 QVariantMap fieldOf(BookInspector* inspector, const QString& code)
 {
     for (const QVariant& f : inspector->metadataFields()) {
@@ -111,6 +125,7 @@ private slots:
     void contentsEditingInThePane();
     void addToCollectionMenuFollowsTheCollections();
     void manyReasonsLeaveTheTreeInView();
+    void uncertainPagesLeaveTheTitleInView();
 };
 
 void TestInspectorPane::entryDetailsFollowTheSelectedBook()
@@ -497,6 +512,97 @@ void TestInspectorPane::manyReasonsLeaveTheTreeInView()
         QTRY_VERIFY_WITH_TIMEOUT(!popup->property("visible").toBool(), 5000);
     }
     QTRY_VERIFY2_WITH_TIMEOUT(treeInView(), qPrintable(QDebug::toString(sceneRect(tree))), 5000);
+}
+
+void TestInspectorPane::uncertainPagesLeaveTheTitleInView()
+{
+    // An entry with 40 possible pages, as the analysis gave for a book whose
+    // printed page numbers skip pages: its row used to list them all, and the
+    // list pushed the title out of view.
+    QTemporaryDir dir;
+    BookId book;
+    {
+        auto library = mbl::catalog::Library::open(dir.path());
+        QVERIFY(library);
+        book = library.value()
+                   ->run([](QSqlDatabase& db) {
+                       NewBook b;
+                       b.asset.id = AssetId::create();
+                       b.asset.sha256 = QString(64, u'e');
+                       b.asset.byteSize = 1;
+                       b.asset.pageCount = 640;
+                       b.asset.managedPath = QStringLiteral("files/%1/source.pdf").arg(b.asset.id.toString());
+                       b.originalFileName = QStringLiteral("skips.pdf");
+                       b.originalPath = b.originalFileName;
+                       const BookId id = mbl::catalog::registerBook(db, b).value();
+                       const PublishTicket ticket = mbl::catalog::requestTocRun(db, id).value();
+                       TocAnalysis toc;
+                       toc.outcome = QStringLiteral("analysis_partial");
+                       TocEntry uncertain;
+                       uncertain.sdkEntryId = QStringLiteral("e0");
+                       uncertain.title = QStringLiteral("1 Error Analysis");
+                       uncertain.hierarchy = HierarchyState::Root;
+                       uncertain.destinationState = DestinationState::Ambiguous;
+                       for (int p = 0; p < 40; ++p)
+                           uncertain.evidence.alternativePages << 24 + 12 * p;
+                       TocEntry placed;
+                       placed.sdkEntryId = QStringLiteral("e1");
+                       placed.order = 1;
+                       placed.title = QStringLiteral("2 Interpolation");
+                       placed.hierarchy = HierarchyState::Root;
+                       placed.destinationState = DestinationState::Resolved;
+                       placed.destinationPage = 38;
+                       toc.entries << uncertain << placed;
+                       RunIdentity run;
+                       run.sourceSha256 = b.asset.sha256;
+                       run.sdkVersion = QStringLiteral("test");
+                       run.optionsJson = QStringLiteral("{}");
+                       run.outcome = toc.outcome;
+                       mbl::catalog::publishToc(db, ticket, run, toc).value();
+                       return id;
+                   })
+                   .result();
+    }
+    LibraryController controller;
+    controller.open(dir.path());
+    QTRY_VERIFY_WITH_TIMEOUT(controller.ready() && !controller.busy(), 10000);
+
+    QQmlEngine engine;
+    QQmlComponent component(&engine, QUrl::fromLocalFile(QStringLiteral(MBL_SOURCE_DIR "/qml/inspector/BookInspectorPane.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    QQuickWindow window;
+    window.resize(640, 640);
+    std::unique_ptr<QObject> object(component.createWithInitialProperties(
+        {{QStringLiteral("inspector"), QVariant::fromValue<QObject*>(controller.inspector())},
+         {QStringLiteral("selectFirstEntry"), true}}));  // Contents tab.
+    auto* pane = qobject_cast<QQuickItem*>(object.get());
+    QVERIFY2(pane, qPrintable(component.errorString()));
+    pane->setParentItem(window.contentItem());
+    pane->setSize(QSizeF(640, 640));
+    window.show();
+
+    controller.inspector()->select(book.toString());
+    QTRY_COMPARE_WITH_TIMEOUT(controller.inspector()->contents()->entryCount(), 2, 5000);
+    QQuickItem* title = nullptr;
+    QQuickItem* page = nullptr;
+    QTRY_VERIFY_WITH_TIMEOUT((title = findItemWithText(pane, QStringLiteral("entryTitle"), QStringLiteral("1 Error"))), 5000);
+    QTRY_VERIFY_WITH_TIMEOUT((page = findItemWithText(pane, QStringLiteral("entryPage"), QStringLiteral("Page uncertain"))),
+                             5000);
+    QCOMPARE(page->property("text").toString(), QStringLiteral("Page uncertain (40 possible)"));
+    QQuickItem* row = title->parentItem();
+    QVERIFY(row && row == page->parentItem());
+    // In a normal and in a narrow pane (about the app's minimum window), the
+    // page text takes at most half the row and the title keeps its room.
+    for (const QSizeF size : {QSizeF(640, 640), QSizeF(300, 300)}) {
+        pane->setSize(size);
+        window.resize(size.toSize());
+        QTRY_VERIFY2_WITH_TIMEOUT(row->width() < size.width() && page->width() <= row->width() / 2 + 0.5,
+                                  qPrintable(QStringLiteral("row %1, page %2").arg(row->width()).arg(page->width())),
+                                  5000);
+        QVERIFY2(title->width() >= 60, qPrintable(QStringLiteral("title %1").arg(title->width())));
+        QVERIFY(title->isVisible());
+    }
+    QVERIFY(headingText(pane).startsWith(QStringLiteral("1 Error Analysis · Page uncertain (40 possible)")));
 }
 
 void TestInspectorPane::addToCollectionMenuFollowsTheCollections()

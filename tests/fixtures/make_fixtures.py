@@ -42,13 +42,14 @@ def write_objects(path: Path, objects):
     path.write_bytes(bytes(out))
 
 
-def write_pdf(path: Path, pages):
-    """pages: list of line lists. Writes a minimal PDF 1.4 with no outline."""
+def write_pdf(path: Path, pages, catalog_extra: str = ""):
+    """pages: list of line lists. Writes a minimal PDF 1.4 with no outline.
+    catalog_extra: more catalog entries, e.g. a /PageLabels number tree."""
     objects = []
     n_pages = len(pages)
     # 1: catalog, 2: pages, 3: font, then per page: page object + content stream.
     page_ids = [4 + 2 * i for i in range(n_pages)]
-    objects.append(b"<< /Type /Catalog /Pages 2 0 R >>")
+    objects.append(f"<< /Type /Catalog /Pages 2 0 R{catalog_extra} >>".encode())
     kids = " ".join(f"{pid} 0 R" for pid in page_ids)
     objects.append(f"<< /Type /Pages /Kids [{kids}] /Count {n_pages} >>".encode())
     objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
@@ -134,6 +135,51 @@ def contents_book_pages():
     return pages
 
 
+# A publisher's PDF without its blank pages: each chapter ends on an odd
+# printed page and the blank even page after it is left out, so the printed
+# numbers skip one at every chapter end. The PDF's page labels record the
+# skips. Body page n is physical index n + 2 in chapter 1, n + 1 in chapter 2,
+# n in chapter 3 and n - 1 in chapter 4.
+DROPPED_CONTENTS = [
+    ("1", "Introduction", 1),
+    ("2", "Getting Started", 9),
+    ("2.1", "Installing the Tools", 11),
+    ("3", "Networking with TCP/IP", 17),
+    ("4", "Summary", 25),
+]
+DROPPED_BODY = [*range(1, 8), *range(9, 16), *range(17, 24), *range(25, 31)]
+# Front matter i-iii, then decimal ranges starting at printed 1, 9, 17 and 25.
+DROPPED_PAGE_LABELS = (" /PageLabels << /Nums [0 << /S /r >> 3 << /S /D >> "
+                       "10 << /S /D /St 9 >> 17 << /S /D /St 17 >> 24 << /S /D /St 25 >>] >>")
+
+
+def dropped_pages_book_pages():
+    pages = [
+        [(32, 72, 600, "Library Systems Without Blanks"),
+         (14, 72, 540, "Alex Sample")],
+        [(10, 72, 700, "Copyright 2022 Alex Sample."),
+         (10, 72, 684, "First published 2022.")],
+    ]
+    toc = [(20, 72, 720, "Contents")]
+    y = 680
+    for number, title, page in DROPPED_CONTENTS:
+        indent = 96 if "." in number else 72
+        toc.append((12, indent, y, f"{number} {title}"))
+        toc.append((12, 520, y, str(page)))
+        y -= 24
+    pages.append(toc)
+    starts = {page: (number, title) for number, title, page in DROPPED_CONTENTS}
+    for printed in DROPPED_BODY:
+        lines = []
+        if printed in starts:
+            number, title = starts[printed]
+            lines.append((18, 72, 700, f"{number} {title}"))
+        lines.append((11, 72, 640, f"Body text of printed page {printed}."))
+        lines.append((10, 300, 40, str(printed)))
+        pages.append(lines)
+    return pages
+
+
 def main():
     # Title page, copyright page and one body page.
     write_pdf(HERE / "title-page.pdf", [
@@ -146,6 +192,8 @@ def main():
     ])
     # Printed contents page with right-aligned page numbers and a 24-page body.
     write_pdf(HERE / "contents-book.pdf", contents_book_pages())
+    # The same kind of contents, with the printed numbering skipping pages.
+    write_pdf(HERE / "dropped-pages-book.pdf", dropped_pages_book_pages(), DROPPED_PAGE_LABELS)
     # Scan-like pages: exercises SDK rendering and OCR.
     write_image_pdf(HERE / "image-only.pdf", 4)
 

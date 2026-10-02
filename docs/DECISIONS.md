@@ -560,6 +560,20 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - **Unsigned zip:** there is no code-signing certificate. SmartScreen may warn, and the notes say so.
 - **Verified:** See IMPLEMENTATION_PROGRESS.md, "Releases on GitHub".
 
+## 2026-09-29 — Numbering sections from the PDF's page labels
+
+- **Change:** when the contents analysis leaves entries without a page and the PDF's page labels show that the printed numbering skips or restarts, `sdk::SdkContentsAnalyzer` runs a second analysis. That analysis has one numbering section per run of labels (`AnalysisOptions::sections`), and each entry is associated with the run that holds its printed page (`entry_sections`). The second report is kept only when it parses the same entries and gives more of them a page. `src/processing/sdk/pagelabels.{h,cpp}`; see PROCESSING.md.
+- **Why:** the owner's *Computational Physics* (Springer, 2017) came out with 0 of 378 entries placed. Its PDF leaves out the printed book's blank pages, so the offset between physical and printed pages falls from 21 to 6. SDK 0.3.0 assumes one decimal section with one offset ("engine default … assumption; supply sections to override"), sees conflicting anchors, and leaves every entry ambiguous. The PDF's page labels record each skip (20 label runs). The SDK takes caller-supplied sections and entry associations for this.
+- **Assumptions:**
+  - **Public options only:** sections and entry associations are fields of the facade's `AnalysisOptions`. Nothing reimplements S4. The SDK still needs two agreeing printed numbers in each section and confirms each target page from its content; the labels only bound the sections (`viewer_labels_match_printed` stays false). No page is guessed.
+  - **Two analyses, not one:** entry IDs exist only after parsing, and without an association an entry fits every section of its style and cannot be placed. The SDK takes no associations during a run, so the analysis runs again. For text PDFs that takes a few seconds; with OCR it is bounded by the same finite limits. Parsing does not depend on sections, so the second run parses the same entries; this is checked (same IDs, titles and printed pages) before its report is used.
+  - **Kept only when better:** "more entries with a page" is the measure. A page placed in either analysis has the SDK's full confirmation. On one book of the owner's collection the second analysis placed 2 fewer, and the first is kept.
+  - **Only when the numbering breaks:** labels that count up in one run per style (including a PDF without labels, where Qt PDF gives the physical numbers) add nothing, so no second analysis runs. Most books pay nothing.
+  - **Qt PDF reads the labels:** the SDK's facade does not expose them, and the app already ships Qt PDF. The worker reads them between SDK calls.
+  - **Cancelling the second analysis cancels the analysis**, rather than publishing the first result: on shutdown the job is requeued and gets the better result next time.
+  - **Books analyzed before this change keep their result** until **Analyze contents again**; nothing is rerun automatically.
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, "Contents without pages when the printed numbering skips pages".
+
 ## 2026-09-29 — A backup folder is never opened as a library
 
 - **Change:** `catalog::Library::open` refuses a folder that holds `backup.json` (`Library::kBackupManifestFileName`, which `storage/backup.cpp` now uses too), with `InvalidArgument` and a message that points to **Restore**. The check comes before the folder is created, locked or opened.

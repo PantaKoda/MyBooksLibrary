@@ -464,6 +464,7 @@ Pane {
                                 }
                             }
                             Label {
+                                objectName: "entryTitle"
                                 Layout.fillWidth: true
                                 text: entry.title
                                 textFormat: Text.PlainText
@@ -473,8 +474,12 @@ Pane {
                                 color: entry.current ? pane.palette.highlightedText : pane.palette.windowText
                             }
                             Label {
+                                objectName: "entryPage"
+                                // At most half the row, so the title always shows.
+                                Layout.maximumWidth: rowContent.width / 2
                                 text: entry.pageText
                                 textFormat: Text.PlainText
+                                elide: Text.ElideRight
                                 font.italic: entry.uncertain
                                 color: entry.current ? pane.palette.highlightedText : pane.palette.windowText
                                 opacity: entry.uncertain || entry.current ? 1.0 : 0.6
