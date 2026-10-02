@@ -10,12 +10,20 @@ Every change reaches `main` through a pull request: a branch, then the PR, then 
 
 A change that breaks packaging therefore fails its own pull request, not a release. Qt and the pdfbookmark SDK are set up once, pinned, in `.github/actions/setup`, which the release uses too.
 
+## Notes between releases
+
+`docs/releases/UNRELEASED.md` collects the next release's notes while pull requests are merged:
+- **What goes in:** each merged pull request that users would notice, as a new feature, a fix or a changed limit. Write it in plain words, with its PR number, for example `(#33)`.
+- **When:** in the pull request itself, or in a docs pull request soon after the merge.
+- **The comment at the top** lists the pull requests merged since the last release. It does not show on the Releases page.
+
 ## Cutting a release
 
 1. **Pick the version.** Use `X.Y.Z`: the patch number for fixes, the minor number for new features.
 2. **Open a release pull request** that:
    - sets `project(MyBooksLibrary VERSION X.Y.Z …)` in `CMakeLists.txt`;
-   - adds `docs/releases/vX.Y.Z.md`, the release notes: what is new, what was fixed, and known limits, in plain words for users.
+   - renames `docs/releases/UNRELEASED.md` to `docs/releases/vX.Y.Z.md` and replaces `X.Y.Z` in it. These are the release notes: what is new, what was fixed, and known limits, in plain words for users. Check them against the merged pull requests;
+   - starts a new, empty `UNRELEASED.md` for the release after.
 
    It goes through CI and review like any other change.
 3. **After it is merged**, tag the merge commit on `main` and push the tag:
