@@ -559,3 +559,12 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - **Pinned licence texts in the repository:** they are small, reviewable, and the same on every machine. The package script no longer depends on a Qt online installer's `Licenses` folder.
   - **Unsigned zip:** there is no code-signing certificate. SmartScreen may warn, and the notes say so.
 - **Verified:** See IMPLEMENTATION_PROGRESS.md, "Releases on GitHub".
+
+## 2026-09-29 — A backup folder is never opened as a library
+
+- **Change:** `catalog::Library::open` refuses a folder that holds `backup.json` (`Library::kBackupManifestFileName`, which `storage/backup.cpp` now uses too), with `InvalidArgument` and a message that points to **Restore**. The check comes before the folder is created, locked or opened.
+- **Why:** issue #30. A backup has a library's layout, and the user guide suggests a `--library` shortcut to reopen a restored library. Pointed at the backup instead, the session would set `journal_mode = WAL` (stored in the catalog's header) and write recovery, jobs and imports into the folder, so the backup would no longer verify and **Restore** would refuse it, without any warning. AGENTS.md §10 asks for a recoverable backup.
+- **Assumptions:**
+  - **In `Library::open`, not in the window:** every way of opening a library goes through it (`--library`, `MYBOOKSLIBRARY_ROOT`, a restore's own check, and a future *Open library…*), so one check covers them all.
+  - **The manifest marks a backup:** only `createBackup` writes `backup.json`, and a restore does not copy it into the restored library, so a real library never has one.
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, "A backup folder opened as a library".

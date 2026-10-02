@@ -191,6 +191,8 @@ Choose where to save it (**Choose…**; Documents is suggested) and click **Save
   "C:\Programs\MyBooksLibrary\appMyBooksLibrary.exe" --library "D:\MyBooksLibrary restored 2026-09-29"
   ```
 
+  Use the **restored** folder ("MyBooksLibrary restored …"), not the backup ("MyBooksLibrary backup …"). The app refuses to open a backup as a library, because that would change the backup and it could no longer be restored.
+
 - **Make it your usual library:** close the app, move your current library folder (`%LOCALAPPDATA%\MyBooksLibrary\MyBooksLibrary\Library`) somewhere safe, then move the restored folder there under the name `Library`.
 - A copy with bookmarks that was still waiting when the backup was made is not written again; ask again if you want it.
 
@@ -240,5 +242,7 @@ You can close the app at any time.
 **The app does not start.** On a Windows "N" edition, install the Media Feature Pack (Windows 11: *Settings → System → Optional features*; Windows 10: *Settings → Apps → Optional features*). Otherwise, check that the whole unpacked folder is there: the executable needs the files next to it.
 
 **A restored library is gone after restarting the app.** It is not gone: the app opened your usual library. See [Opening a restored library later](#backing-up-and-restoring).
+
+**"… is a MyBooksLibrary backup, not a library."** The folder the app was started with, for example in a shortcut with `--library`, is a backup. A backup is never opened directly. Restore it with **Backup → Restore a backup…**, and use the restored folder instead.
 
 **Where are the licences?** `NOTICE.txt` and the `licenses` folder, next to the app.

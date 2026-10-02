@@ -5,6 +5,7 @@
 #include "catalog/jobs.h"
 #include "catalog/library.h"
 #include "catalog/tocedits.h"
+#include "presentation/backupcontroller.h"
 #include "presentation/bookinspector.h"
 #include "presentation/booklistmodel.h"
 #include "presentation/collectionlistmodel.h"
@@ -14,6 +15,7 @@
 #include "presentation/toctreemodel.h"
 #include "processing/contentsanalyzer.h"
 #include "processing/metadataextractor.h"
+#include "storage/backup.h"
 #include "storage/filecopy.h"
 #include "storage/importservice.h"
 
@@ -197,6 +199,7 @@ private slots:
     void cancelDropsQueuedFiles();
     void startupRecoversInterruptedImport();
     void secondSessionOnSameLibraryFails();
+    void aBackupFolderIsNotOpened();
     void libraryRootResolution();
     void filesAddedAsBatchEndsAreImported();
     void filesAddedWhileCancellingAreImported();
@@ -370,6 +373,34 @@ void TestLibraryController::secondSessionOnSameLibraryFails()
     QVERIFY(second.statusText().contains(QStringLiteral("already open")));
     second.importFiles({fixture("title-page.pdf")});  // Ignored when failed.
     QVERIFY(!second.busy());
+}
+
+// Issue #30: `--library "<backup folder>"` (the user guide's shortcut, pointed
+// at the wrong folder) is refused with the reason, and the backup still
+// verifies, so it can still be restored.
+void TestLibraryController::aBackupFolderIsNotOpened()
+{
+    QTemporaryDir dir;
+    LibraryController first;
+    openAndWait(first, dir.filePath(QStringLiteral("Library")));
+    first.importFiles({fixture("title-page.pdf")});
+    QTRY_VERIFY_WITH_TIMEOUT(first.books()->rowCount() == 1 && !first.busy(), 10000);
+    const QString backups = dir.filePath(QStringLiteral("Backups"));
+    QVERIFY(QDir().mkpath(backups));
+    mbl::presentation::BackupController* backup = first.backup();
+    QSignalSpy finished(backup, &mbl::presentation::BackupController::finished);
+    backup->backUp(backups);
+    QTRY_VERIFY_WITH_TIMEOUT(!finished.isEmpty(), 30000);
+    QVERIFY2(backup->succeeded(), qPrintable(backup->statusText()));
+    const QString folder = QDir::fromNativeSeparators(backup->resultFolder());
+
+    LibraryController second;
+    openAndWait(second, folder);
+    QVERIFY(second.failed());
+    QVERIFY2(second.statusText().contains(QStringLiteral("is a MyBooksLibrary backup, not a library")),
+             qPrintable(second.statusText()));
+    auto verified = mbl::storage::verifyBackup(folder);
+    QVERIFY2(verified, verified ? "" : qPrintable(verified.error().message));
 }
 
 void TestLibraryController::libraryRootResolution()
