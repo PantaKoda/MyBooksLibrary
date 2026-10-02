@@ -27,7 +27,7 @@ Install each SDK version in its own folder (for example `…\pdfbookmark-sdk\0.3
 
 ## Qt Creator
 
-Open `CMakeLists.txt` with the MSVC 64-bit kit, set `PDFBOOKMARK_SDK` as above, then build and run. `pdfbookmark_deploy_runtime` copies the SDK DLLs and `models/` next to the executable on every build.
+Open `CMakeLists.txt` with the MSVC 64-bit kit, set `PDFBOOKMARK_SDK` as above, then build and run. `pdfbookmark_deploy_runtime` copies the SDK DLLs and `models/` next to the executable on every build. The tests are built into the same folder, so the ones that call the SDK wait for the app's deployment (`mbl_use_sdk_runtime` in `tests/CMakeLists.txt`) instead of copying again: several copies into one folder at once raced and failed the build.
 
 ## Command line
 
