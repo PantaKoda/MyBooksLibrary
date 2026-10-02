@@ -29,6 +29,44 @@
 
 `mbl_presentation` is a static QML module (`MyBooksLibrary.Presentation`), so `Main.qml` uses typed `LibraryController`/`BookListModel` and `qmllint` checks its member accesses. Both types are uncreatable from QML.
 
+## Theme
+
+The window uses the **FluentWinUI3** style (Qt 6.8+), set in `qtquickcontrols2.conf`, which is built into the app's resources. Qt's default on Windows is the older "Windows" style, which the app used until the UI overhaul.
+- **Light and dark:** both follow the Windows setting. `--color-scheme light|dark` (development) overrides it for screenshots and checks.
+- **Who overrides it:** `QT_QUICK_CONTROLS_STYLE` and `-style` take precedence over the configuration file. The QML tests set `Basic`, because the native styles need a real window.
+- **Fusion fallback:** FluentWinUI3 falls back to Fusion for the controls it does not cover, such as `SplitView`'s handles. The package ships both styles, since `windeployqt` deploys every Qt Quick Controls style.
+
+**`Theme`** (`qml/theme/Theme.qml`, a singleton in `MyBooksLibrary.Presentation`, so every view and QML test can use it) holds the views' shared values. Views use these roles instead of fixed colours, opacities and pixel sizes. Colours the palette already provides (text, window, accent) come from the palette.
+
+| Group | Roles | Values |
+| --- | --- | --- |
+| Type ramp | `captionSize`, `bodySize`, `bodyLargeSize`, `subtitleSize`, `titleSize`, `headingWeight` | Fluent's 12 / 14 / 18 / 20 / 28 px. A larger application font scales them up, and they never go below Fluent's. Headings are DemiBold |
+| Spacing and shape | `spacingXS`…`spacingXL` (4, 8, 12, 16, 24), `controlRadius` (4), `cardRadius` (8) | A 4 px grid |
+| Text | `textSecondary` | WinUI's secondary text: labels, sources, counts. Never made fainter with opacity |
+| Status | `critical`, `success`, `caution` | WinUI's status colours, light and dark, always with words. The light caution is darkened to `#8a5000`, because WinUI's `#9d5d00` reaches only 4.4:1 on a selected row |
+| Surfaces | `selectedFill`, `selectionBarWidth`, `cardFill`, `cardStroke`, `divider` | A selected row the view draws itself, cards and dividers |
+
+**Selected rows:**
+- Lists use the style's own selection: a subtle fill and an accent bar. The text keeps its colour, and views never use `palette.highlightedText`, which would be white on light grey under Fluent.
+- The contents tree draws its current row the same way, with `selectedFill` and an accent bar.
+
+**Panes:** the `SplitView`'s handle is a thin `divider` line with a 7 px grab area. It turns into a 3 px accent line on hover or drag. Fusion's own handle is a thick bar.
+
+**The contents entry's details:** a card (`cardFill`, `cardStroke`) at most half the Contents tab high. Its contents scroll inside it, so a long list of reasons or actions never pushes it under the status bar.
+
+Screenshots of PR 1, at the default size (1100×720) on a scratch library with the test fixtures:
+
+| Before (the "Windows" style) | Light | Dark |
+| --- | --- | --- |
+| ![Before](images/ui1-before.png) | ![Light](images/ui1-after-light.png) | ![Dark](images/ui1-after-dark.png) |
+
+`images/ui1-fluent-style-only.png` shows FluentWinUI3 without these changes. The selected book is white on light grey there, and the contents details run under the status bar.
+
+**`tst_theme`** checks three things:
+- the text and status colours have at least **4.5:1** contrast (WCAG 2.2 AA) on Fluent's light (`#f3f3f3`) and dark (`#202020`) window, on a card and on a selected row;
+- the type ramp is ordered;
+- no handwritten view sets a fixed colour, a fixed font size or `highlightedText`.
+
 ## Behaviour
 
 - **Opening:** "Opening the library…" with a busy indicator. The result of recovering interrupted imports is shown in the status bar ("1 interrupted import completed"). If the library cannot be opened (for example it is already open in another instance), the reason is shown.

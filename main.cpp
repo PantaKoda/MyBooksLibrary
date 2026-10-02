@@ -25,6 +25,8 @@
 //                     [--close]              development: instead of --screenshot, close the window
 //                                            when idle (as its close button does) and quit; exit 1
 //                                            if the reader was still open when the window closed
+//                     [--color-scheme light|dark]  development: show the window light or dark
+//                                            whatever Windows is set to (screenshots, checks)
 //   appMyBooksLibrary --sdk-check [<pdf>]    no window: print the pdfbookmark SDK identity and,
 //                                            with a PDF, its identity and extracted title.
 //                                            Exit 0 on success, 1 on an SDK error.
@@ -54,6 +56,7 @@
 #include <QQmlApplicationEngine>
 #include <QQmlExtensionPlugin>
 #include <QQuickWindow>
+#include <QStyleHints>
 #include <QSettings>
 #include <QTextStream>
 #include <QTimer>
@@ -184,6 +187,15 @@ int main(int argc, char *argv[])
     QCoreApplication::setOrganizationName(QStringLiteral("MyBooksLibrary"));
     QCoreApplication::setApplicationName(QStringLiteral("MyBooksLibrary"));
     const QStringList args = QCoreApplication::arguments();
+    // Development: --color-scheme light|dark, before the window exists. The
+    // style and the Theme follow it as they follow Windows' setting.
+    if (const qsizetype at = args.indexOf(QLatin1String("--color-scheme")); at >= 0 && at + 1 < args.size()) {
+        const QString scheme = args.at(at + 1);
+        if (scheme == QLatin1String("dark"))
+            QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Dark);
+        else if (scheme == QLatin1String("light"))
+            QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Light);
+    }
 
     // The library last opened from the app (on Windows in
     // HKCU\Software\MyBooksLibrary\MyBooksLibrary). Declared before the

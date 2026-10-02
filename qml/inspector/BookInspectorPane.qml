@@ -52,15 +52,15 @@ Pane {
                 Layout.fillWidth: true
                 text: pane.inspector.title
                 textFormat: Text.PlainText
-                font.bold: true
-                font.pixelSize: 16
+                font.pixelSize: Theme.subtitleSize
+                font.weight: Theme.headingWeight
                 wrapMode: Text.Wrap
             }
             Label {
                 objectName: "inTrashLabel"
                 visible: pane.inspector.inTrash
                 text: qsTr("In Trash")
-                font.italic: true
+                color: Theme.caution
             }
             Button {
                 objectName: "restoreBookButton"
@@ -150,7 +150,7 @@ Pane {
             Layout.fillWidth: true
             text: pane.inspector.error.length > 0 ? pane.inspector.error : pane.inspector.fileText
             textFormat: Text.PlainText
-            opacity: 0.7
+            color: pane.inspector.error.length > 0 ? Theme.critical : Theme.textSecondary
             elide: Text.ElideMiddle
         }
 
@@ -161,7 +161,7 @@ Pane {
             text: pane.inspector.correctionError
             textFormat: Text.PlainText
             wrapMode: Text.Wrap
-            color: "firebrick"
+            color: Theme.critical
         }
 
         TabBar {
@@ -205,7 +205,7 @@ Pane {
                                 Layout.fillWidth: true
                                 Label {
                                     text: fieldRow.modelData.label
-                                    opacity: 0.7
+                                    color: Theme.textSecondary
                                     Layout.preferredWidth: 150
                                 }
                                 Label {
@@ -223,7 +223,7 @@ Pane {
                                     text: fieldRow.modelData.sourceText
                                     textFormat: Text.PlainText
                                     font.italic: true
-                                    opacity: 0.6
+                                    color: Theme.textSecondary
                                 }
                                 Button {
                                     visible: fieldRow.hasWhy
@@ -249,8 +249,8 @@ Pane {
                                 text: qsTr("The document says: %1").arg(fieldRow.modelData.documentValue)
                                 textFormat: Text.PlainText
                                 wrapMode: Text.Wrap
-                                opacity: 0.6
-                                font.pixelSize: 11
+                                color: Theme.textSecondary
+                                font.pixelSize: Theme.captionSize
                             }
                             Label {
                                 Layout.leftMargin: 156
@@ -259,8 +259,8 @@ Pane {
                                 text: fieldRow.modelData.evidence.join("\n")
                                 textFormat: Text.PlainText
                                 wrapMode: Text.Wrap
-                                opacity: 0.6
-                                font.pixelSize: 11
+                                color: Theme.textSecondary
+                                font.pixelSize: Theme.captionSize
                             }
                             Label {
                                 Layout.leftMargin: 156
@@ -269,8 +269,8 @@ Pane {
                                 text: qsTr("Other candidates: %1").arg(fieldRow.modelData.alternatives.join("; "))
                                 textFormat: Text.PlainText
                                 wrapMode: Text.Wrap
-                                opacity: 0.6
-                                font.pixelSize: 11
+                                color: Theme.textSecondary
+                                font.pixelSize: Theme.captionSize
                             }
                         }
                     }
@@ -278,7 +278,8 @@ Pane {
             }
 
             ColumnLayout {
-                spacing: 8
+                id: contentsTab
+                spacing: Theme.spacingS
 
                 // Contents: the catalog's TOC as a tree, with the reasons per entry.
                 Label {
@@ -293,7 +294,7 @@ Pane {
                     text: pane.inspector.contentsNotes.join("\n")
                     textFormat: Text.PlainText
                     wrapMode: Text.Wrap
-                    opacity: 0.7
+                    color: Theme.textSecondary
                 }
                 // The analysis's reasons, on request, in a popup over the pane: a
                 // long list (one line per entry without a page) never moves the
@@ -329,7 +330,7 @@ Pane {
                                     Layout.fillWidth: true
                                     // The analysis's own words; edits made since are not reflected.
                                     text: qsTr("What the analysis reported:")
-                                    font.bold: true
+                                    font.weight: Theme.headingWeight
                                 }
                                 Label {
                                     Layout.fillWidth: true
@@ -355,7 +356,7 @@ Pane {
                             text: pane.inspector.contentsEditText
                             textFormat: Text.PlainText
                             wrapMode: Text.Wrap
-                            font.bold: pane.inspector.contentsNeedReconciliation
+                            font.weight: pane.inspector.contentsNeedReconciliation ? Theme.headingWeight : Font.Normal
                         }
                         Flow {
                             Layout.fillWidth: true
@@ -391,7 +392,7 @@ Pane {
                     text: pane.inspector.contentsError
                     textFormat: Text.PlainText
                     wrapMode: Text.Wrap
-                    color: "firebrick"
+                    color: Theme.critical
                 }
 
                 TreeView {
@@ -443,10 +444,21 @@ Pane {
                         implicitWidth: tree.width - 12
                         implicitHeight: rowContent.implicitHeight + 6
 
+                        // The current entry as the style shows a selected list row:
+                        // a subtle fill, an accent bar, and the text unchanged.
                         Rectangle {
                             anchors.fill: parent
                             visible: entry.current
-                            color: pane.palette.highlight
+                            radius: Theme.controlRadius
+                            color: Theme.selectedFill
+                            Rectangle {
+                                anchors.left: parent.left
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: Theme.selectionBarWidth
+                                height: Math.min(16, parent.height - 4)
+                                radius: width / 2
+                                color: pane.palette.accent
+                            }
                         }
                         RowLayout {
                             id: rowContent
@@ -457,7 +469,6 @@ Pane {
                             Label {
                                 Layout.preferredWidth: 12
                                 text: entry.hasChildren ? (entry.expanded ? "\u25BE" : "\u25B8") : ""
-                                color: entry.current ? pane.palette.highlightedText : pane.palette.windowText
                                 TapHandler {
                                     enabled: entry.hasChildren
                                     onTapped: entry.treeView.toggleExpanded(entry.row)
@@ -470,8 +481,7 @@ Pane {
                                 textFormat: Text.PlainText
                                 elide: Text.ElideRight
                                 font.strikeout: entry.removed
-                                opacity: entry.removed && !entry.current ? 0.5 : 1.0
-                                color: entry.current ? pane.palette.highlightedText : pane.palette.windowText
+                                color: entry.removed ? Theme.textSecondary : pane.palette.windowText
                             }
                             Label {
                                 objectName: "entryPage"
@@ -481,8 +491,8 @@ Pane {
                                 textFormat: Text.PlainText
                                 elide: Text.ElideRight
                                 font.italic: entry.uncertain
-                                color: entry.current ? pane.palette.highlightedText : pane.palette.windowText
-                                opacity: entry.uncertain || entry.current ? 1.0 : 0.6
+                                // An uncertain page stands out; a confirmed one is quieter.
+                                color: entry.uncertain ? Theme.caution : Theme.textSecondary
                             }
                         }
                         TapHandler {
@@ -494,11 +504,16 @@ Pane {
                 // The current entry's reasons.
                 Rectangle {
                     id: detailsFrame
-                    color: "transparent"
-                    border.color: pane.palette.mid
-                    radius: 2
-                    implicitHeight: detailsColumn.implicitHeight + 16
+                    objectName: "entryDetails"
+                    color: Theme.cardFill
+                    border.color: Theme.cardStroke
+                    radius: Theme.controlRadius
+                    implicitHeight: detailsColumn.implicitHeight + 2 * Theme.spacingS
                     Layout.fillWidth: true
+                    // At most half the tab (and at least room for a few lines):
+                    // a long list of reasons or many actions scroll inside the
+                    // card, never under the window's status bar.
+                    Layout.maximumHeight: Math.max(140, contentsTab.height / 2)
                     visible: tree.visible
                     // Rebuilding the tree (another book, a new contents run) clears the
                     // current index without a signal, so also depend on entryCount, whose
@@ -508,149 +523,155 @@ Pane {
                                         ? pane.inspector.contents.entryAt(tree.selectionModel.currentIndex) : ({})
                     property bool showTechnical: false
 
-                    ColumnLayout {
-                        id: detailsColumn
+                    ScrollView {
+                        id: detailsScroll
                         anchors.fill: parent
-                        anchors.margins: 8
-                        spacing: 2
-                        Label {
-                            objectName: "entryHeading"
-                            Layout.fillWidth: true
-                            text: detailsFrame.entry.title !== undefined
-                                  ? qsTr("%1 · %2").arg(detailsFrame.entry.title).arg(detailsFrame.entry.pageText)
-                                  : qsTr("Select an entry to see where it points and why.")
-                            textFormat: Text.PlainText
-                            wrapMode: Text.Wrap
-                            font.bold: detailsFrame.entry.title !== undefined
-                        }
-                        Label {
-                            Layout.fillWidth: true
-                            visible: detailsFrame.entry.stateText !== undefined
-                            text: detailsFrame.entry.stateText ?? ""
-                            textFormat: Text.PlainText
-                            opacity: 0.7
-                        }
-                        Label {
-                            Layout.fillWidth: true
-                            visible: (detailsFrame.entry.editedText ?? "").length > 0
-                            text: detailsFrame.entry.editedText ?? ""
-                            textFormat: Text.PlainText
-                            font.italic: true
-                        }
-                        Label {
-                            Layout.fillWidth: true
-                            visible: (detailsFrame.entry.detail ?? "").length > 0
-                            text: detailsFrame.entry.detail ?? ""
-                            textFormat: Text.PlainText
-                            wrapMode: Text.Wrap
-                        }
-                        // Two different actions: the chapter itself, or the page
-                        // where the contents list it (for entries without a page).
-                        RowLayout {
-                            spacing: 8
-                            Button {
-                                objectName: "openChapterButton"
-                                visible: (detailsFrame.entry.page ?? -1) > 0
-                                text: qsTr("Open chapter")
-                                onClicked: pane.openPageRequested(detailsFrame.entry.page)
-                                Accessible.description: qsTr("Open the book at this chapter's page")
+                        anchors.margins: Theme.spacingS
+                        contentWidth: availableWidth
+                        clip: true
+                        ColumnLayout {
+                            id: detailsColumn
+                            width: detailsScroll.availableWidth
+                            spacing: 2
+                            Label {
+                                objectName: "entryHeading"
+                                Layout.fillWidth: true
+                                text: detailsFrame.entry.title !== undefined
+                                      ? qsTr("%1 · %2").arg(detailsFrame.entry.title).arg(detailsFrame.entry.pageText)
+                                      : qsTr("Select an entry to see where it points and why.")
+                                textFormat: Text.PlainText
+                                wrapMode: Text.Wrap
+                                font.weight: detailsFrame.entry.title !== undefined ? Theme.headingWeight : Font.Normal
                             }
-                            Button {
-                                objectName: "showSourcePageButton"
-                                visible: (detailsFrame.entry.sourcePage ?? -1) > 0
-                                flat: (detailsFrame.entry.page ?? -1) > 0
-                                text: qsTr("Show contents page %1").arg(detailsFrame.entry.sourcePage ?? 0)
-                                onClicked: pane.openPageRequested(detailsFrame.entry.sourcePage)
-                                Accessible.description: qsTr("Open the page where the contents list this entry")
+                            Label {
+                                Layout.fillWidth: true
+                                visible: detailsFrame.entry.stateText !== undefined
+                                text: detailsFrame.entry.stateText ?? ""
+                                textFormat: Text.PlainText
+                                color: Theme.textSecondary
                             }
-                        }
-                        // Editing the entry: saved as a new version of the contents.
-                        Flow {
-                            id: entryActions
-                            Layout.fillWidth: true
-                            visible: detailsFrame.entry.entryId !== undefined
-                            spacing: 4
-                            readonly property string key: detailsFrame.entry.entryId ?? ""
-                            readonly property bool removed: detailsFrame.entry.removed ?? false
-                            Button {
-                                objectName: "renameEntryButton"
-                                visible: !entryActions.removed
-                                text: qsTr("Rename…")
-                                onClicked: pane.editEntry("rename", detailsFrame.entry)
+                            Label {
+                                Layout.fillWidth: true
+                                visible: (detailsFrame.entry.editedText ?? "").length > 0
+                                text: detailsFrame.entry.editedText ?? ""
+                                textFormat: Text.PlainText
+                                font.italic: true
                             }
-                            Button {
-                                objectName: "setPageButton"
-                                visible: !entryActions.removed
-                                text: (detailsFrame.entry.page ?? -1) > 0 ? qsTr("Change page…") : qsTr("Set page…")
-                                onClicked: pane.editEntry("page", detailsFrame.entry)
+                            Label {
+                                Layout.fillWidth: true
+                                visible: (detailsFrame.entry.detail ?? "").length > 0
+                                text: detailsFrame.entry.detail ?? ""
+                                textFormat: Text.PlainText
+                                wrapMode: Text.Wrap
                             }
-                            Button {
-                                objectName: "clearPageButton"
-                                visible: !entryActions.removed && (detailsFrame.entry.page ?? -1) > 0
-                                text: qsTr("No page")
-                                onClicked: {
-                                    pane.reselectKey = entryActions.key
-                                    pane.inspector.clearEntryPage(pane.inspector.bookId, entryActions.key)
+                            // Two different actions: the chapter itself, or the page
+                            // where the contents list it (for entries without a page).
+                            RowLayout {
+                                spacing: 8
+                                Button {
+                                    objectName: "openChapterButton"
+                                    visible: (detailsFrame.entry.page ?? -1) > 0
+                                    text: qsTr("Open chapter")
+                                    onClicked: pane.openPageRequested(detailsFrame.entry.page)
+                                    Accessible.description: qsTr("Open the book at this chapter's page")
+                                }
+                                Button {
+                                    objectName: "showSourcePageButton"
+                                    visible: (detailsFrame.entry.sourcePage ?? -1) > 0
+                                    flat: (detailsFrame.entry.page ?? -1) > 0
+                                    text: qsTr("Show contents page %1").arg(detailsFrame.entry.sourcePage ?? 0)
+                                    onClicked: pane.openPageRequested(detailsFrame.entry.sourcePage)
+                                    Accessible.description: qsTr("Open the page where the contents list this entry")
+                                }
+                            }
+                            // Editing the entry: saved as a new version of the contents.
+                            Flow {
+                                id: entryActions
+                                Layout.fillWidth: true
+                                visible: detailsFrame.entry.entryId !== undefined
+                                spacing: 4
+                                readonly property string key: detailsFrame.entry.entryId ?? ""
+                                readonly property bool removed: detailsFrame.entry.removed ?? false
+                                Button {
+                                    objectName: "renameEntryButton"
+                                    visible: !entryActions.removed
+                                    text: qsTr("Rename…")
+                                    onClicked: pane.editEntry("rename", detailsFrame.entry)
+                                }
+                                Button {
+                                    objectName: "setPageButton"
+                                    visible: !entryActions.removed
+                                    text: (detailsFrame.entry.page ?? -1) > 0 ? qsTr("Change page…") : qsTr("Set page…")
+                                    onClicked: pane.editEntry("page", detailsFrame.entry)
+                                }
+                                Button {
+                                    objectName: "clearPageButton"
+                                    visible: !entryActions.removed && (detailsFrame.entry.page ?? -1) > 0
+                                    text: qsTr("No page")
+                                    onClicked: {
+                                        pane.reselectKey = entryActions.key
+                                        pane.inspector.clearEntryPage(pane.inspector.bookId, entryActions.key)
+                                    }
+                                }
+                                Button {
+                                    objectName: "indentButton"
+                                    visible: !entryActions.removed
+                                    enabled: pane.inspector.contents.entryCount >= 0 && pane.inspector.canIndent(entryActions.key)
+                                    text: qsTr("Indent")
+                                    onClicked: {
+                                        pane.reselectKey = entryActions.key
+                                        pane.inspector.indentEntry(pane.inspector.bookId, entryActions.key)
+                                    }
+                                    Accessible.description: qsTr("Make it a sub-entry of the entry above it")
+                                }
+                                Button {
+                                    objectName: "outdentButton"
+                                    visible: !entryActions.removed
+                                    enabled: pane.inspector.contents.entryCount >= 0 && pane.inspector.canOutdent(entryActions.key)
+                                    text: qsTr("Outdent")
+                                    onClicked: {
+                                        pane.reselectKey = entryActions.key
+                                        pane.inspector.outdentEntry(pane.inspector.bookId, entryActions.key)
+                                    }
+                                    Accessible.description: qsTr("Move it up one level")
+                                }
+                                Button {
+                                    objectName: "addEntryButton"
+                                    visible: !entryActions.removed
+                                    text: qsTr("Add after…")
+                                    onClicked: pane.editEntry("add", detailsFrame.entry)
+                                    Accessible.description: qsTr("Add a new entry after this one, at the same level")
+                                }
+                                Button {
+                                    objectName: "removeEntryButton"
+                                    text: entryActions.removed ? qsTr("Restore") : qsTr("Remove")
+                                    onClicked: {
+                                        pane.reselectKey = entryActions.key
+                                        if (entryActions.removed)
+                                            pane.inspector.restoreEntry(pane.inspector.bookId, entryActions.key)
+                                        else
+                                            pane.inspector.removeEntry(pane.inspector.bookId, entryActions.key)
+                                    }
+                                    Accessible.description: entryActions.removed ? qsTr("Bring the entry back")
+                                                                           : qsTr("Remove the entry and its sub-entries from the contents and search")
                                 }
                             }
                             Button {
-                                objectName: "indentButton"
-                                visible: !entryActions.removed
-                                enabled: pane.inspector.contents.entryCount >= 0 && pane.inspector.canIndent(entryActions.key)
-                                text: qsTr("Indent")
-                                onClicked: {
-                                    pane.reselectKey = entryActions.key
-                                    pane.inspector.indentEntry(pane.inspector.bookId, entryActions.key)
-                                }
-                                Accessible.description: qsTr("Make it a sub-entry of the entry above it")
+                                visible: detailsFrame.entry.technical !== undefined
+                                flat: true
+                                text: detailsFrame.showTechnical ? qsTr("Hide technical details") : qsTr("Technical details")
+                                onClicked: detailsFrame.showTechnical = !detailsFrame.showTechnical
                             }
-                            Button {
-                                objectName: "outdentButton"
-                                visible: !entryActions.removed
-                                enabled: pane.inspector.contents.entryCount >= 0 && pane.inspector.canOutdent(entryActions.key)
-                                text: qsTr("Outdent")
-                                onClicked: {
-                                    pane.reselectKey = entryActions.key
-                                    pane.inspector.outdentEntry(pane.inspector.bookId, entryActions.key)
-                                }
-                                Accessible.description: qsTr("Move it up one level")
+                            Label {
+                                Layout.fillWidth: true
+                                visible: detailsFrame.showTechnical && detailsFrame.entry.technical !== undefined
+                                text: detailsFrame.entry.technical ?? ""
+                                textFormat: Text.PlainText
+                                wrapMode: Text.Wrap
+                                font.family: "monospace"
+                                font.pixelSize: Theme.captionSize
+                                color: Theme.textSecondary
                             }
-                            Button {
-                                objectName: "addEntryButton"
-                                visible: !entryActions.removed
-                                text: qsTr("Add after…")
-                                onClicked: pane.editEntry("add", detailsFrame.entry)
-                                Accessible.description: qsTr("Add a new entry after this one, at the same level")
-                            }
-                            Button {
-                                objectName: "removeEntryButton"
-                                text: entryActions.removed ? qsTr("Restore") : qsTr("Remove")
-                                onClicked: {
-                                    pane.reselectKey = entryActions.key
-                                    if (entryActions.removed)
-                                        pane.inspector.restoreEntry(pane.inspector.bookId, entryActions.key)
-                                    else
-                                        pane.inspector.removeEntry(pane.inspector.bookId, entryActions.key)
-                                }
-                                Accessible.description: entryActions.removed ? qsTr("Bring the entry back")
-                                                                       : qsTr("Remove the entry and its sub-entries from the contents and search")
-                            }
-                        }
-                        Button {
-                            visible: detailsFrame.entry.technical !== undefined
-                            flat: true
-                            text: detailsFrame.showTechnical ? qsTr("Hide technical details") : qsTr("Technical details")
-                            onClicked: detailsFrame.showTechnical = !detailsFrame.showTechnical
-                        }
-                        Label {
-                            Layout.fillWidth: true
-                            visible: detailsFrame.showTechnical && detailsFrame.entry.technical !== undefined
-                            text: detailsFrame.entry.technical ?? ""
-                            textFormat: Text.PlainText
-                            wrapMode: Text.Wrap
-                            font.family: "monospace"
-                            font.pixelSize: 11
-                            opacity: 0.7
                         }
                     }
                 }
@@ -738,7 +759,7 @@ Pane {
                 text: pane.inspector.contentsError
                 textFormat: Text.PlainText
                 wrapMode: Text.Wrap
-                color: "firebrick"
+                color: Theme.critical
             }
             RowLayout {
                 Button {

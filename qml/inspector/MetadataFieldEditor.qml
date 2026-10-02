@@ -129,7 +129,7 @@ ColumnLayout {
         text: qsTr("The document says: %1").arg(editor.fieldData.documentValue)
         textFormat: Text.PlainText
         wrapMode: Text.Wrap
-        opacity: 0.7
+        color: Theme.textSecondary
     }
 
     TextField {
@@ -151,7 +151,7 @@ ColumnLayout {
         spacing: 4
         Label {
             text: qsTr("In the order printed:")
-            opacity: 0.7
+            color: Theme.textSecondary
         }
         ScrollView {
             id: rowScroll
@@ -192,7 +192,7 @@ ColumnLayout {
         text: editor.inspector.correctionError
         textFormat: Text.PlainText
         wrapMode: Text.Wrap
-        color: "firebrick"
+        color: Theme.critical
     }
 
     RowLayout {

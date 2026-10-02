@@ -55,6 +55,7 @@ It holds the library's own **copy** of each PDF and a catalog of everything the 
 
 - **Toolbar:** the name of what the list shows and the library's folder (point at it to see the whole path); the **search** field and what to search in (**All**, **Titles**, **Authors**, **Contents**); the **Library** menu, to [open another library](#opening-another-library); **Import PDFs…**; and the **Backup** menu.
 - **The window's title** names the library, so two windows on two libraries can be told apart.
+- **Light or dark:** the window follows Windows' own setting (*Settings → Personalization → Colors*) and its accent colour.
 - **Sidebar:** the **Library** (all books), your **collections**, and **Trash**. The numbers are book counts.
 - **Book list:** each book's title and authors, and its processing state, such as "Analyzing contents…" or "Title uncertain".
 - **Book details** (on the right): the selected book. See [A book's details](#a-books-details).

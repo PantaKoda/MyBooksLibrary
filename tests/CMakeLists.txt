@@ -93,6 +93,12 @@ target_link_libraries(tst_booklistview PRIVATE mbl_presentation mbl_presentation
 target_compile_definitions(tst_booklistview PRIVATE MBL_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
                                                    MBL_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 
+# The views' Theme (UI overhaul PR 1): readable text colours in light and dark,
+# an ordered type ramp, and no fixed colours or sizes left in the views.
+mbl_add_test(tst_theme presentation/tst_theme.cpp)
+target_link_libraries(tst_theme PRIVATE mbl_presentation mbl_presentationplugin Qt6::Quick)
+target_compile_definitions(tst_theme PRIVATE MBL_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+
 # Loads the real library sidebar QML (offscreen) against the presentation module.
 mbl_add_test(tst_librarysidebar presentation/tst_librarysidebar.cpp)
 target_link_libraries(tst_librarysidebar PRIVATE mbl_presentation mbl_presentationplugin Qt6::Quick)

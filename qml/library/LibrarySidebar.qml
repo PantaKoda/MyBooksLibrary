@@ -33,7 +33,9 @@ Pane {
             Layout.topMargin: 8
             Layout.leftMargin: 8
             text: qsTr("Collections")
-            opacity: 0.7
+            font.pixelSize: Theme.captionSize
+            font.weight: Theme.headingWeight
+            color: Theme.textSecondary
         }
         ListView {
             id: collectionList
@@ -60,7 +62,7 @@ Pane {
                     text: collectionRow.text
                     textFormat: Text.PlainText
                     elide: Text.ElideRight
-                    color: collectionRow.highlighted ? collectionRow.palette.highlightedText : collectionRow.palette.windowText
+                    verticalAlignment: Text.AlignVCenter
                 }
                 highlighted: sidebar.library.viewCollectionId === collectionId
                 onClicked: sidebar.library.showCollection(collectionId)
@@ -106,7 +108,7 @@ Pane {
                 visible: collectionList.count === 0
                 text: qsTr("No collections yet.")
                 wrapMode: Text.Wrap
-                opacity: 0.6
+                color: Theme.textSecondary
             }
         }
         Button {
@@ -133,7 +135,7 @@ Pane {
             text: sidebar.library.organizeError
             textFormat: Text.PlainText
             wrapMode: Text.Wrap
-            color: "firebrick"
+            color: Theme.critical
         }
     }
 
@@ -209,7 +211,7 @@ Pane {
                 Layout.fillWidth: true
                 text: deleteDialog.collectionName
                 textFormat: Text.PlainText   // A user's name is never markup.
-                font.bold: true
+                font.weight: Theme.headingWeight
                 elide: Text.ElideRight
             }
             Label {

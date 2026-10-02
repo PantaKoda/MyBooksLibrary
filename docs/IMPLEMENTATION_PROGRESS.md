@@ -19,6 +19,53 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | M10 Windows release | Merged: part 1 [PR #24](https://github.com/PantaKoda/MyBooksLibrary/pull/24) (merge `0c682c3`); part 2 [PR #25](https://github.com/PantaKoda/MyBooksLibrary/pull/25) (merge `54ed8fc`); part 3 [PR #26](https://github.com/PantaKoda/MyBooksLibrary/pull/26). The owner's manual check of the package on a machine without Qt or Visual Studio remains | `feat/m10-a1-backup-restore`; `feat/m10-packaging`; `feat/m10-presentation-backup` | See "M10" |
 | M11 | NotStarted | | |
 
+## UI overhaul (after v0.1.0)
+
+**Asked by the owner (2026-10-02):** a better-looking window. The owner's choices after an audit of the running app:
+- the FluentWinUI3 style;
+- dark mode that follows Windows;
+- cover thumbnails later;
+- the order: PR 1 foundation, PR 1b English plurals, PR 2 window layout, PR 3 book rows, PR 4 inspector, PR 5 reader.
+
+### PR 1: the FluentWinUI3 style and a shared Theme (presentation)
+
+**Branch:** `feat/ui-01-presentation-foundation`. **Status:** LocallyVerified, then AwaitingReview once its PR is open.
+
+**Audit of `main`** (Release build, scratch library with the fixtures; `docs/images/ui1-before.png`):
+- with no style set, Qt uses its older "Windows" style;
+- 11 px captions, and secondary text dimmed with opacity;
+- `"firebrick"` errors;
+- selection text in `palette.highlightedText`.
+
+With `-style FluentWinUI3` alone (`docs/images/ui1-fluent-style-only.png`), the selected book turns white on light grey, and the contents details run under the status bar.
+
+**Change:**
+- `qtquickcontrols2.conf` (in the app's resources): `Style=FluentWinUI3`.
+- **`Theme`** (`qml/theme/Theme.qml`, a singleton in `MyBooksLibrary.Presentation`; UI.md, "Theme"):
+  - Fluent's type ramp, with Fluent's sizes as a floor;
+  - spacing and radii;
+  - secondary text;
+  - status colours (critical, success, caution), light and dark from `Application.styleHints.colorScheme`;
+  - a selected-row fill, card fill and stroke, and dividers.
+- **Every view** (`Main.qml`, `qml/**`) uses `Theme` instead of fixed pixel sizes, `"firebrick"`, text opacities and `palette.highlightedText`. Headings are DemiBold rather than bold.
+- **Selected rows** keep their text colour, as the style draws them. The contents tree's current row is a subtle fill with an accent bar.
+- **The contents entry's details:** a card that scrolls within at most half the Contents tab.
+- **The pane dividers:** a thin line with a 7 px grab area, an accent line on hover or drag.
+- **Window:** the default size is 1100×720, because Fluent's controls are larger.
+- **`main.cpp`:** `--color-scheme light|dark` (development) sets `QStyleHints::setColorScheme`.
+- **Docs:** UI.md ("Theme", with screenshots), BUILDING.md (the flag and `-style`), DECISIONS.md.
+
+**Tests:** `tst_theme` (new) checks three things:
+- the text and status colours keep at least 4.5:1 contrast in both schemes, on Fluent's window (`#f3f3f3` light, `#202020` dark), on a card and on a selected row;
+- the type ramp is ordered, and a caption is at least 11 px;
+- no handwritten view sets a fixed colour, a fixed font size or `highlightedText`.
+
+Its first run failed twice, rightly: WinUI's light caution `#9d5d00` reaches 4.36:1 on a selected row (now `#8a5000`), and a ramp scaled from Qt's 9 pt default gave 10 px captions (Fluent's sizes are now the floor). The existing QML tests run on the Basic style and pass unchanged.
+
+**Screenshots:** `docs/images/ui1-after-light.png` and `ui1-after-dark.png` (`--color-scheme`), at 1100×720.
+
+**Next:** PR 1b, English plurals.
+
 ## After M10: fixes from the owner's testing
 
 ### Remembering the last library (composition), issue #30 part 3

@@ -55,7 +55,7 @@ The folder is created on first use, except for the remembered library. Only one 
 
 `--existing-library` opens only an existing library there and never creates one: a missing folder, a folder without `library.sqlite`, or a backup fails with the reason in the window. `--remember` stores the library as `library/last` once it has opened, and never if it fails. **Library → Open library…**, **Open the default library** and **Open restored library** start the app with `--remember`; a shortcut with only `--library` leaves the remembered library alone. Scripts (`verify.ps1`, `package.ps1`) always pass `--library`, so they never read or change it.
 
-Development options: `--import <pdf>` (repeatable) queues files once the library is open, and `--screenshot <png>` saves the window when the app is idle and then quits. They are used for smoke runs and PR screenshots.
+Development options: `--import <pdf>` (repeatable) queues files once the library is open, and `--screenshot <png>` saves the window when the app is idle and then quits. They are used for smoke runs and PR screenshots. `--color-scheme light|dark` shows the window light or dark, whatever Windows is set to, and `-style <name>` (Qt's own option) tries another Qt Quick Controls style; the app's is FluentWinUI3 (UI.md, "Theme").
 
 ## SDK baseline check
 

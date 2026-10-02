@@ -68,13 +68,13 @@ Dialog {
             text: dialog.folder
             textFormat: Text.PlainText
             wrapMode: Text.WrapAnywhere
-            font.bold: true
+            font.weight: Theme.headingWeight
         }
         Label {
             Layout.fillWidth: true
             text: qsTr("In a new window, this library stays open beside it. Instead of this library, this window closes once its work has stopped.")
             wrapMode: Text.Wrap
-            opacity: 0.7
+            color: Theme.textSecondary
         }
         RowLayout {
             visible: dialog.switcher.checking
