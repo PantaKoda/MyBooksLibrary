@@ -1,10 +1,13 @@
 // appMyBooksLibrary
 //   appMyBooksLibrary [--library <dir>]      the window (Main.qml) on the library folder from
-//                                            --library, MYBOOKSLIBRARY_ROOT or the default
-//                                            (src/app/libraryroot.h).
+//                                            --library, MYBOOKSLIBRARY_ROOT, the library last opened
+//                                            from the app, or the default (src/app/libraryroot.h).
 //                     [--existing-library]   open only an existing library there, never create one
 //                                            (how Open library… and Open restored library start a
 //                                            window: a wrong or moved folder fails, visibly)
+//                     [--remember]           once the library has opened, remember it for the next
+//                                            start (src/app/librarymemory.h); the Library menu and
+//                                            Open restored library pass it, a shortcut does not
 //                     [--import <pdf>]...    development: import files once the library is open
 //                     [--screenshot <png>]   development: save the window when idle (imports and
 //                                            metadata jobs finished), then quit
@@ -36,6 +39,7 @@
 //                                            SDK worker times out.
 //                                            The exe is a GUI-subsystem app on Windows, so redirect
 //                                            or pipe stdout to see the output.
+#include "app/librarymemory.h"
 #include "app/libraryroot.h"
 #include "infrastructure/sqlitecapabilities.h"
 #include "processing/sdk/sdkbookexporter.h"
@@ -50,6 +54,7 @@
 #include <QQmlApplicationEngine>
 #include <QQmlExtensionPlugin>
 #include <QQuickWindow>
+#include <QSettings>
 #include <QTextStream>
 #include <QTimer>
 
@@ -180,6 +185,12 @@ int main(int argc, char *argv[])
     QCoreApplication::setApplicationName(QStringLiteral("MyBooksLibrary"));
     const QStringList args = QCoreApplication::arguments();
 
+    // The library last opened from the app (on Windows in
+    // HKCU\Software\MyBooksLibrary\MyBooksLibrary). Declared before the
+    // library session, which may write to it, so it outlives the session.
+    QSettings settings;
+    mbl::app::LibraryMemory memory(settings);
+
     // Composition root: the library session, its SDK extractor and its window.
     mbl::presentation::LibraryController library;
     library.setProcessors(std::make_shared<mbl::sdk::SdkMetadataExtractor>(),
@@ -197,9 +208,14 @@ int main(int argc, char *argv[])
     if (engine.rootObjects().isEmpty())
         return -1;
 
-    const mbl::app::LibraryRoot root = mbl::app::resolveLibraryRoot(args);
+    const mbl::app::LibraryRoot root = mbl::app::resolveLibraryRoot(args, memory.remembered());
     library.switcher()->setStartup(mbl::app::defaultLibraryRoot(), root.source);
-    if (args.contains(QLatin1String("--existing-library")))
+    // Chosen in the app: remembered once it has opened, never before.
+    if (args.contains(QLatin1String("--remember")))
+        mbl::app::rememberWhenOpened(library, memory, root.path);
+    // A remembered library is never made again where it used to be: if it was
+    // moved, the window says so and offers Open library… and the default one.
+    if (args.contains(QLatin1String("--existing-library")) || root.source == QLatin1String("remembered"))
         library.openExisting(root.path);
     else
         library.open(root.path);

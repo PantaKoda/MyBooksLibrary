@@ -582,3 +582,20 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - **Checked in this window, then again in the new one:** the check here gives the reason where the user chose the folder, and `--existing-library` makes the new process refuse the folder too if it changed in between.
   - **Remembering the last library** is part 3 of the issue (a separate PR). Until then, the app starts with the default library.
 - **Verified:** See IMPLEMENTATION_PROGRESS.md, "Open library…".
+
+## 2026-09-30 — The next start opens the library last opened from the app
+
+- **Change:**
+  - `app::LibraryMemory` keeps the library last opened from the app in `QSettings`: `library/last`, on Windows under `HKCU\Software\MyBooksLibrary\MyBooksLibrary`.
+  - `app::resolveLibraryRoot` takes it as a parameter, in the order `--library`, `MYBOOKSLIBRARY_ROOT`, the remembered library, the default.
+  - The in-app starts (Open library…, Open the default library, Open restored library) pass `--remember`, and `app::rememberWhenOpened` stores the library once it is Ready.
+  - A remembered library is opened with `ExistingOnly`.
+- **Why:** issue #30, part 3. Without it, a restored or other library had to be opened again at every start, and users thought it was lost.
+- **Assumptions:**
+  - **Only after it has opened:** writing the setting before the open would make one failed open (a lock, a newer catalog, a moved folder) the start-up library.
+  - **Only when chosen in the app:** a library opened through a `--library` shortcut is not remembered, so a test or occasional shortcut never replaces the everyday library. The in-app starts carry `--remember` because they are also `--library` starts.
+  - **Never made again:** a remembered library that cannot be opened any more fails with the reason and the way out from part 2 (Open library…, Open the default library). The app does not quietly fall back to the default library, which would recreate the confusion the issue describes, and it does not create an empty library in the old place.
+  - **The default stays the default:** remembering the default folder (Open the default library) resolves as "default", so it is made again on first use, as on a first start.
+  - **A parameter, not a lookup:** `resolveLibraryRoot` receives the remembered path instead of reading `QSettings`. Tests would otherwise depend on the machine's registry, which `QStandardPaths::setTestModeEnabled` does not redirect. The composition root owns the `QSettings`, declared before the library session, which writes to it.
+  - **Two windows:** the library opened last wins.
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, "Remembering the last library".

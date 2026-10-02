@@ -128,8 +128,10 @@ void TestLibrarySwitcher::anotherLibraryStartsInANewProcess()
     QCOMPARE(started.at(0).at(1).toString(), QDir::toNativeSeparators(m_other));
     QCOMPARE(m_launches.size(), 1);
     QCOMPARE(m_launches.at(0).program, QCoreApplication::applicationFilePath());
+    // Only an existing library, and remembered for the next start once it opens.
     QCOMPARE(m_launches.at(0).arguments,
-             (QStringList{QStringLiteral("--library"), QDir::toNativeSeparators(m_other), QStringLiteral("--existing-library")}));
+             (QStringList{QStringLiteral("--library"), QDir::toNativeSeparators(m_other), QStringLiteral("--existing-library"),
+                          QStringLiteral("--remember")}));
 
     // Instead of this library: the same start, then this window closes.
     QCOMPARE(openFolder(QDir::toNativeSeparators(m_other), false), QString());
@@ -188,8 +190,10 @@ void TestLibrarySwitcher::theDefaultLibrary()
     QCOMPARE(started.size(), 1);
     QCOMPARE(started.at(0).at(0).toBool(), false);
     // Created on first use, as on a first start: no --existing-library.
+    // Remembered, so the next start opens it rather than a library chosen before.
     QCOMPARE(m_launches.size(), 1);
-    QCOMPARE(m_launches.at(0).arguments, (QStringList{QStringLiteral("--library"), QDir::toNativeSeparators(defaultRoot)}));
+    QCOMPARE(m_launches.at(0).arguments, (QStringList{QStringLiteral("--library"), QDir::toNativeSeparators(defaultRoot),
+                                                      QStringLiteral("--remember")}));
 
     // A window on the default library does not start it again.
     switcher()->setStartup(m_current, QStringLiteral("default"));
@@ -209,6 +213,8 @@ void TestLibrarySwitcher::whatTheWindowShows()
     QCOMPARE(switcher()->sourceText(), QStringLiteral("your default library"));
     switcher()->setStartup(switcher()->defaultPath(), QStringLiteral("environment"));
     QCOMPARE(switcher()->sourceText(), QStringLiteral("set by MYBOOKSLIBRARY_ROOT"));
+    switcher()->setStartup(switcher()->defaultPath(), QStringLiteral("remembered"));
+    QCOMPARE(switcher()->sourceText(), QStringLiteral("the library you opened last"));
 }
 
 void TestLibrarySwitcher::openExistingFailsForAMissingLibrary()

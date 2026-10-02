@@ -1,5 +1,6 @@
 // Presentation: the library session opens, recovers and imports off the GUI
 // thread, runs metadata jobs, and updates its models only on the GUI thread.
+#include "app/librarymemory.h"
 #include "app/libraryroot.h"
 #include "catalog/catalog.h"
 #include "catalog/jobs.h"
@@ -23,6 +24,7 @@
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
+#include <QSettings>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
@@ -201,6 +203,8 @@ private slots:
     void secondSessionOnSameLibraryFails();
     void aBackupFolderIsNotOpened();
     void libraryRootResolution();
+    void theRememberedLibraryOpensNext();
+    void onlyAnOpenedLibraryIsRemembered();
     void filesAddedAsBatchEndsAreImported();
     void filesAddedWhileCancellingAreImported();
     void failedOpenReleasesQueuedFiles();
@@ -421,6 +425,71 @@ void TestLibraryController::libraryRootResolution()
     QCOMPARE(fallback.source, QStringLiteral("default"));
     QVERIFY(fallback.path.endsWith(QStringLiteral("/Library")));
     QVERIFY(fallback.path.contains(QStringLiteral("MyBooksLibrary")));
+    QCOMPARE(fallback.path, mbl::app::defaultLibraryRoot());
+}
+
+// Issue #30, part 3: the library last opened from the app comes after
+// --library and MYBOOKSLIBRARY_ROOT, and before the default. Passed in, so
+// this test never reads the real settings.
+void TestLibraryController::theRememberedLibraryOpensNext()
+{
+    QTemporaryDir dir;
+    QCoreApplication::setOrganizationName(QStringLiteral("MyBooksLibrary"));
+    QCoreApplication::setApplicationName(QStringLiteral("MyBooksLibrary"));
+    const QString remembered = dir.filePath(QStringLiteral("MyBooksLibrary restored 2026-09-29"));
+    const QString other = dir.filePath(QStringLiteral("Other"));
+
+    const auto fromMemory = mbl::app::resolveLibraryRoot({QStringLiteral("app")}, remembered);
+    QCOMPARE(fromMemory.source, QStringLiteral("remembered"));
+    QCOMPARE(fromMemory.path, QDir::cleanPath(remembered));
+    // A shortcut's --library, and the environment, still come first.
+    QCOMPARE(mbl::app::resolveLibraryRoot({QStringLiteral("app"), QStringLiteral("--library"), other}, remembered).source,
+             QStringLiteral("command line"));
+    qputenv("MYBOOKSLIBRARY_ROOT", other.toUtf8());
+    QCOMPARE(mbl::app::resolveLibraryRoot({QStringLiteral("app")}, remembered).source, QStringLiteral("environment"));
+    qunsetenv("MYBOOKSLIBRARY_ROOT");
+    // Remembering the default library is the default (made again if missing).
+    QCOMPARE(mbl::app::resolveLibraryRoot({QStringLiteral("app")}, QDir::toNativeSeparators(mbl::app::defaultLibraryRoot()))
+                 .source,
+             QStringLiteral("default"));
+    QCOMPARE(mbl::app::resolveLibraryRoot({QStringLiteral("app")}, QString()).source, QStringLiteral("default"));
+}
+
+// Issue #30, part 3: a library is remembered only once it has opened, so a
+// failed open never becomes the start-up library. Settings in a temporary
+// INI file, never the registry.
+void TestLibraryController::onlyAnOpenedLibraryIsRemembered()
+{
+    QTemporaryDir dir;
+    const QString ini = dir.filePath(QStringLiteral("settings.ini"));
+    QSettings settings(ini, QSettings::IniFormat);
+    mbl::app::LibraryMemory memory(settings);
+    QVERIFY(memory.remembered().isEmpty());
+
+    const QString restored = dir.filePath(QStringLiteral("MyBooksLibrary restored 2026-09-29"));
+    QVERIFY(mbl::catalog::Library::open(restored));  // Made, then closed again.
+    {
+        LibraryController c;
+        mbl::app::rememberWhenOpened(c, memory, restored);
+        c.openExisting(restored);
+        QVERIFY(memory.remembered().isEmpty());  // Not while it is opening.
+        QTRY_VERIFY_WITH_TIMEOUT(c.ready() && !c.busy(), 10000);
+        QCOMPARE(memory.remembered(), QDir::cleanPath(restored));
+    }
+    // A library that cannot be opened is not remembered: the last good one stays.
+    {
+        const QString moved = dir.filePath(QStringLiteral("Moved"));
+        LibraryController c;
+        mbl::app::rememberWhenOpened(c, memory, moved);
+        c.openExisting(moved);
+        QTRY_VERIFY_WITH_TIMEOUT(c.failed() && !c.busy(), 10000);
+        QCOMPARE(memory.remembered(), QDir::cleanPath(restored));
+    }
+    // It lasts: read again from the file, as at the next start.
+    QSettings again(ini, QSettings::IniFormat);
+    QCOMPARE(mbl::app::LibraryMemory(again).remembered(), QDir::cleanPath(restored));
+    memory.forget();
+    QVERIFY(memory.remembered().isEmpty());
 }
 
 // PR #7 review, finding 1: files added after the worker's last empty-queue

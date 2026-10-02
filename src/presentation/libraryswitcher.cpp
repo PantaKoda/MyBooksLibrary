@@ -88,6 +88,8 @@ QString LibrarySwitcher::sourceText() const
         return tr("opened with --library");
     if (m_source == QLatin1String("environment"))
         return tr("set by MYBOOKSLIBRARY_ROOT");
+    if (m_source == QLatin1String("remembered"))
+        return tr("the library you opened last");
     return {};
 }
 
@@ -155,8 +157,10 @@ void LibrarySwitcher::openFolder(const QString& folderOrUrl, bool newWindow)
                 refuse(reason);
                 return;
             }
+            // Remembered for the next start once it has opened (--remember).
             launch(folder,
-                   {QStringLiteral("--library"), QDir::toNativeSeparators(folder), QStringLiteral("--existing-library")},
+                   {QStringLiteral("--library"), QDir::toNativeSeparators(folder), QStringLiteral("--existing-library"),
+                    QStringLiteral("--remember")},
                    newWindow);
         }, Qt::QueuedConnection);
     });
@@ -174,8 +178,11 @@ void LibrarySwitcher::openDefault(bool newWindow)
         refuse(tr("The default library is already open in this window."));
         return;
     }
-    // Made there if it does not exist yet, as on a first start.
-    launch(m_defaultPath, {QStringLiteral("--library"), QDir::toNativeSeparators(m_defaultPath)}, newWindow);
+    // Made there if it does not exist yet, as on a first start; remembered,
+    // so the next start opens it again rather than the library chosen before.
+    launch(m_defaultPath,
+           {QStringLiteral("--library"), QDir::toNativeSeparators(m_defaultPath), QStringLiteral("--remember")},
+           newWindow);
 }
 
 void LibrarySwitcher::launch(const QString& folder, const QStringList& arguments, bool newWindow)
