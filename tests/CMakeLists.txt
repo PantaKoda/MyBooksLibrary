@@ -15,6 +15,19 @@ function(mbl_add_test name)
     endif()
 endfunction()
 
+# A test that calls the SDK needs its DLLs and OCR models next to it. The tests
+# are built into the app's folder (qt_standard_project_setup sets
+# CMAKE_RUNTIME_OUTPUT_DIRECTORY on Windows), so they wait for the app's one
+# deployment there instead of each running its own: several file(COPY) runs
+# into one folder at once raced, and the build failed copying pdfium.dll (CI on
+# PR #36) or models/rec/charset.txt (a local Debug build for PR #33).
+function(mbl_use_sdk_runtime name)
+    if(NOT CMAKE_RUNTIME_OUTPUT_DIRECTORY)
+        message(FATAL_ERROR "${name}: the tests must be built into the app's folder to use its SDK runtime.")
+    endif()
+    add_dependencies(${name} appMyBooksLibrary_pdfbookmark_runtime)
+endfunction()
+
 mbl_add_test(tst_sqlitecapabilities infrastructure/tst_sqlitecapabilities.cpp)
 mbl_add_test(tst_databaseexecutor infrastructure/tst_databaseexecutor.cpp)
 mbl_add_test(tst_ftsquery search/tst_ftsquery.cpp)
@@ -35,11 +48,10 @@ mbl_add_test(tst_librarycontroller presentation/tst_librarycontroller.cpp)
 target_link_libraries(tst_librarycontroller PRIVATE mbl_presentation)
 target_compile_definitions(tst_librarycontroller PRIVATE MBL_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 
-# Links the SDK: runs next to the app, whose build deploys the SDK runtime there;
-# deploying again for this target keeps it runnable on its own.
+# Links the SDK: runs next to the app, whose build deploys the SDK runtime there.
 mbl_add_test(tst_sdksnapshot processing/tst_sdksnapshot.cpp)
 target_link_libraries(tst_sdksnapshot PRIVATE mbl_sdk)
-pdfbookmark_deploy_runtime(tst_sdksnapshot)
+mbl_use_sdk_runtime(tst_sdksnapshot)
 target_compile_definitions(tst_sdksnapshot PRIVATE MBL_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 
 mbl_add_test(tst_processingcoordinator processing/tst_processingcoordinator.cpp)
@@ -50,17 +62,17 @@ target_compile_definitions(tst_exportjobs PRIVATE MBL_FIXTURES_DIR="${CMAKE_CURR
 
 mbl_add_test(tst_sdkmetadataextractor processing/tst_sdkmetadataextractor.cpp)
 target_link_libraries(tst_sdkmetadataextractor PRIVATE mbl_sdk)
-pdfbookmark_deploy_runtime(tst_sdkmetadataextractor)
+mbl_use_sdk_runtime(tst_sdkmetadataextractor)
 target_compile_definitions(tst_sdkmetadataextractor PRIVATE MBL_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 
 mbl_add_test(tst_sdkcontentsanalyzer processing/tst_sdkcontentsanalyzer.cpp)
 target_link_libraries(tst_sdkcontentsanalyzer PRIVATE mbl_sdk)
-pdfbookmark_deploy_runtime(tst_sdkcontentsanalyzer)
+mbl_use_sdk_runtime(tst_sdkcontentsanalyzer)
 target_compile_definitions(tst_sdkcontentsanalyzer PRIVATE MBL_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 
 mbl_add_test(tst_sdkbookexporter processing/tst_sdkbookexporter.cpp)
 target_link_libraries(tst_sdkbookexporter PRIVATE mbl_sdk)
-pdfbookmark_deploy_runtime(tst_sdkbookexporter)
+mbl_use_sdk_runtime(tst_sdkbookexporter)
 target_compile_definitions(tst_sdkbookexporter PRIVATE MBL_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 
 mbl_add_test(tst_toctreemodel presentation/tst_toctreemodel.cpp)
@@ -78,7 +90,7 @@ target_compile_definitions(tst_backupcontroller PRIVATE MBL_SOURCE_DIR="${PROJEC
 # ExportDialog.qml (offscreen).
 mbl_add_test(tst_exportcontroller presentation/tst_exportcontroller.cpp)
 target_link_libraries(tst_exportcontroller PRIVATE mbl_presentation mbl_presentationplugin mbl_sdk Qt6::Quick)
-pdfbookmark_deploy_runtime(tst_exportcontroller)
+mbl_use_sdk_runtime(tst_exportcontroller)
 target_compile_definitions(tst_exportcontroller PRIVATE MBL_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
                                                         MBL_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 
