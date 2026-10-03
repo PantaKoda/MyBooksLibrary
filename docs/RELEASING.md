@@ -52,5 +52,5 @@ If the workflow fails, nothing is published. To retry:
 A zip that runs where it is unpacked: `appMyBooksLibrary.exe`, with Qt, the pdfbookmark SDK, its OCR models, the Visual C++ runtime, `NOTICE.txt` and `licenses/` (docs/BUILDING.md, "Windows package").
 - **Installation:** there is no installer. Unpack the zip and run the executable.
 - **Code signing:** none, so Windows SmartScreen may warn the first time.
-- **Windows N editions:** they need the Media Feature Pack ([PantaKoda/PDFMegine#7](https://github.com/PantaKoda/PDFMegine/issues/7)).
+- **Windows N editions:** up to 0.2.0 they needed the Media Feature Pack ([PantaKoda/PDFMegine#7](https://github.com/PantaKoda/PDFMegine/issues/7)). With SDK 0.4.0 no shipped binary imports Media Foundation; `package.ps1` reports it, and `NOTICE.txt` says so, if one does again.
 - **The user's library** lives in their data folder, never next to the executable, so a new version can replace the old one.

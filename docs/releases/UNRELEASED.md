@@ -1,7 +1,7 @@
 <!--
 Notes for the next release, collected as pull requests are merged (docs/RELEASING.md).
 The release pull request renames this file to docs/releases/vX.Y.Z.md and replaces X.Y.Z.
-Merged since v0.2.0: none yet.
+Merged since v0.2.0: PR #39 (inspector reasons); chore/sdk-0.4.0 (engine 0.4.0).
 -->
 **MyBooksLibrary X.Y.Z**
 
@@ -14,7 +14,11 @@ Merged since v0.2.0: none yet.
 
 ## New
 
+- **New analysis engine:** pdfbookmark **0.4.0** (from 0.3.0). It reads books the same way as before; the app does not show ISBNs yet. The OCR models' licence now comes with the engine.
+
 ## Fixed
+
+- **Windows "N" editions no longer need the Media Feature Pack** (expected; not yet tried on an N edition). The text-recognition library in the new engine, pdfbookmark 0.4.0, no longer uses Windows Media Foundation.
 
 - **No more "Why?" buttons.** A field the analysis could not fill now says why, in one line under it. The buttons say what they show: **Show candidates (*n*)** or **Show evidence**, and there is none when there is nothing more to show. On the **Contents** tab, **Why? (*n*)** is now **Analysis notes (*n*)**. When contents pages were found but the analysis could not settle on a table of contents, the summary says so instead of "No contents entries."
 

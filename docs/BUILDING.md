@@ -6,7 +6,7 @@
 | --- | --- |
 | Qt | 6.11.2, kit **Desktop Qt 6.11.2 MSVC2022 64bit**. MinGW cannot use the SDK's C++ API. |
 | Compiler | MSVC x64 (Visual Studio 2026), C++17 |
-| pdfbookmark SDK | 0.3.x (`find_package(pdfbookmark 0.3)`), installed folder containing `include/`, `lib/cmake/pdfbookmark/`, `bin/`, `share/` |
+| pdfbookmark SDK | 0.4.x (`find_package(pdfbookmark 0.4)`), installed folder containing `include/`, `lib/cmake/pdfbookmark/`, `bin/`, `share/` |
 
 ## Telling CMake where the SDK is
 
@@ -19,7 +19,7 @@ Configuration fails with a clear message when neither is set. A nonempty cached 
 
 ## Switching SDK versions
 
-Install each SDK version in its own folder (for example `…\pdfbookmark-sdk\0.3.0\`) instead of overwriting the old one, so you can switch back. Then:
+Install each SDK version in its own folder (for example `…\pdfbookmark-sdk\0.4.0\`) instead of overwriting the old one, so you can switch back. Then:
 
 1. Point `PDFBOOKMARK_SDK` at the new folder. In an existing build folder, pass `-DPDFBOOKMARK_SDK=…` again, or change it under Qt Creator's **Projects → Build → CMake → Current Configuration** and run CMake.
 2. **Rebuild from clean**: delete the build folder, or use Qt Creator's **Build → Clear CMake Configuration** and then **Rebuild All**. The C++ API passes option structs by value, and its binary interface is not guaranteed between versions (0.2.0 changed the option structs' size). Objects compiled against older headers must not be linked with the new DLL.
@@ -96,7 +96,7 @@ On this Windows setup, the Qt Test plain-text logger prints nothing to a console
 It finds MSVC itself (through `vswhere`/`vcvars64` when `cl.exe` is not on `PATH`), along with CMake and Ninja (Qt's `Tools` folder or Visual Studio's). It prints the verified commit and exits 0 only if every step passed.
 
 ```powershell
-pwsh scripts/verify.ps1 -SdkDir C:\Dev\pdfbookmark-sdk\0.3.0              # Release, build\verify-release
+pwsh scripts/verify.ps1 -SdkDir C:\Dev\pdfbookmark-sdk\0.4.0              # Release, build\verify-release
 pwsh scripts/verify.ps1 -Configuration Debug -Clean                        # SDK from PDFBOOKMARK_SDK
 ```
 
@@ -107,10 +107,10 @@ pwsh scripts/verify.ps1 -Configuration Debug -Clean                        # SDK
 ## Windows package (`scripts/package.ps1`)
 
 ```powershell
-pwsh scripts/package.ps1 -SdkDir C:\Dev\pdfbookmark-sdk\0.3.0
+pwsh scripts/package.ps1 -SdkDir C:\Dev\pdfbookmark-sdk\0.4.0
 ```
 
-Qt's licence text and the OCR models' licence (PaddleOCR, Apache-2.0) come from pinned copies in `third_party/licenses/` (see its README). CI's Qt has no `Licenses` folder, and SDK 0.3.0 does not ship the models' licence ([PantaKoda/PDFMegine#6](https://github.com/PantaKoda/PDFMegine/issues/6)). `-QtLicenseFile` and `-ModelsLicenseFile` override them, and the script refuses to package the models without a licence.
+Qt's licence text comes from a pinned copy in `third_party/licenses/` (see its README), because CI's Qt has no `Licenses` folder; `-QtLicenseFile` overrides it. The OCR models' licence (PaddleOCR, Apache-2.0) comes from the SDK, which ships it since 0.4.0 ([PantaKoda/PDFMegine#6](https://github.com/PantaKoda/PDFMegine/issues/6)); the script refuses to package the models without it.
 
 It builds `appMyBooksLibrary` (Release, no tests) in `build\package-release`, then writes `build\package\MyBooksLibrary\` and `build\package\MyBooksLibrary-<version>-win64.zip`. The package holds:
 
@@ -124,7 +124,7 @@ It builds `appMyBooksLibrary` (Release, no tests) in `build\package-release`, th
 
 It then checks **what the package leaves to Windows**. It runs `dumpbin /dependents` on every shipped binary. An import that is neither shipped nor a known Windows component stops the script (delay-loaded imports only warn), which checks "runs on a clean machine" here, not only on a clean machine.
 
-**Windows N editions:** the SDK's `opencv_world500.dll` imports Media Foundation (`mf.dll`, `mfplat.dll`, `mfreadwrite.dll`) directly. The script reports this, and `NOTICE.txt` says it: on Windows "N" and "KN" editions the app needs the **Media Feature Pack**, or it does not start. This is reported upstream as [PantaKoda/PDFMegine#7](https://github.com/PantaKoda/PDFMegine/issues/7).
+**Windows N editions:** Media Foundation (`mf.dll`, `mfplat.dll`, `mfreadwrite.dll`) is missing from Windows "N" and "KN" editions unless the Media Feature Pack is installed. SDK 0.3.0's `opencv_world500.dll` imported it directly; SDK 0.4.0's `libopencv_world500.dll` is built without it ([PantaKoda/PDFMegine#7](https://github.com/PantaKoda/PDFMegine/issues/7)), and the scan finds no shipped binary that imports it. If one ever does again, the script reports it and `NOTICE.txt` says that N editions need the Media Feature Pack.
 
 Then it **checks the package from a copy outside the repository**, with `PATH` reduced to Windows' own folders, no Qt variables and the real platform, each run with a time limit:
 - `--sdk-check`, `--sqlite-check` (FTS5);

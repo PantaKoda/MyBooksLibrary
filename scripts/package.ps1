@@ -15,13 +15,14 @@
        - the Visual C++ runtime DLLs, app-local (vcruntime, msvcp).
     3. licenses\: NOTICE.txt (what is shipped, under which licence), Qt's
        licence text and the SBOM of every Qt module whose files are shipped,
-       the pdfbookmark SDK's third-party licences, and the OCR models' licence
-       (from the SDK, else the pinned copy in third_party\licenses). A shipped
+       the pdfbookmark SDK's third-party licences, including the OCR models'
+       licence (SDK 0.4.0 and later ship it). A shipped
        Qt or SDK file whose licence is not known, or a missing licence, stops
        the script, so no notice is silently missing.
        Then every shipped binary's imports (dumpbin): anything neither shipped
        nor a known Windows component stops the script. Media Foundation, which
-       Windows "N" editions lack without the Media Feature Pack, is reported.
+       Windows "N" editions lack without the Media Feature Pack, is reported,
+       and NOTICE.txt then says so (SDK 0.4.0's OpenCV no longer imports it).
     4. Smoke checks on a copy outside the repository, with PATH reduced to
        Windows' own folders, no Qt variables and the real platform, each with
        a time limit: --sdk-check, --sqlite-check,
@@ -31,7 +32,7 @@
     5. build\package\MyBooksLibrary-<version>-win64.zip (unless -SkipZip).
 
 .EXAMPLE
-    pwsh scripts/package.ps1 -SdkDir C:\Dev\pdfbookmark-sdk\0.3.0
+    pwsh scripts/package.ps1 -SdkDir C:\Dev\pdfbookmark-sdk\0.4.0
 #>
 [CmdletBinding()]
 param(
@@ -42,10 +43,6 @@ param(
     # Qt's licence text; defaults to the pinned copy in third_party\licenses
     # (CI's Qt, from aqtinstall, has no Licenses folder).
     [string]$QtLicenseFile = '',
-    # The PaddleOCR licence (Apache-2.0) for the OCR models in models\, used while
-    # the SDK does not ship it itself (its licenses\PaddleOCR-PP-OCR-models.txt);
-    # defaults to the pinned copy in third_party\licenses.
-    [string]$ModelsLicenseFile = '',
     [switch]$SkipZip
 )
 
@@ -60,7 +57,6 @@ $buildDir = Join-Path $repo 'build\package-release'
 $packageRoot = Join-Path $repo 'build\package'
 $stage = Join-Path $packageRoot 'MyBooksLibrary'
 if (-not $QtLicenseFile) { $QtLicenseFile = Join-Path $repo 'third_party\licenses\Qt-LICENSE.txt' }
-if (-not $ModelsLicenseFile) { $ModelsLicenseFile = Join-Path $repo 'third_party\licenses\PaddleOCR-LICENSE.txt' }
 
 # Which Qt module each shipped Qt file comes from, by its path in the package
 # (with forward slashes), for its SBOM and the notice. A file matching none of
@@ -103,13 +99,13 @@ function Invoke-App([string]$App, [string[]]$Arguments, [int]$TimeoutSeconds) {
 # shipped SDK component needs. A shipped SDK DLL not listed here, or a listed
 # licence that is missing, stops the script: no SDK notice goes missing either.
 $sdkNotices = [ordered]@{
-    'pdfbookmark.dll'     = @()  # The SDK itself.
-    'onnxruntime.dll'     = @('ONNX-Runtime.txt', 'ONNX-Runtime-third-party-notices.txt')
-    'opencv_world500.dll' = @('OpenCV.txt')
-    'pdfium.dll'          = @('PDFium.txt')
-    'qpdf30.dll'          = @('qpdf.txt')
-    'jpeg62.dll'          = @('libjpeg-turbo.txt')
-    'z.dll'               = @('zlib.txt')
+    'pdfbookmark.dll'        = @()  # The SDK itself.
+    'onnxruntime.dll'        = @('ONNX-Runtime.txt', 'ONNX-Runtime-third-party-notices.txt')
+    'libopencv_world500.dll' = @('OpenCV.txt')
+    'pdfium.dll'             = @('PDFium.txt')
+    'qpdf30.dll'             = @('qpdf.txt')
+    'jpeg62.dll'             = @('libjpeg-turbo.txt')
+    'z.dll'                  = @('zlib.txt')
 }
 $modelsNotice = 'PaddleOCR-PP-OCR-models.txt'  # The OCR models in models\ (PaddleOCR PP-OCR, Apache-2.0).
 
@@ -172,7 +168,11 @@ try {
     New-Item -ItemType Directory -Path $stage | Out-Null
     Copy-Item (Join-Path $buildDir 'appMyBooksLibrary.exe') $stage
     # What pdfbookmark_deploy_runtime placed next to the executable: the SDK's DLLs and models.
-    Get-ChildItem -Path $buildDir -Filter '*.dll' -File | Copy-Item -Destination $stage
+    # Only the DLLs this SDK ships: a build folder reused across SDK versions keeps
+    # the old ones (0.3.0's opencv_world500.dll is libopencv_world500.dll in 0.4.0).
+    $sdkDlls = @(Get-ChildItem -Path (Join-Path $SdkDir 'bin') -Filter '*.dll' -File | ForEach-Object Name)
+    Get-ChildItem -Path $buildDir -Filter '*.dll' -File | Where-Object { $sdkDlls -contains $_.Name } |
+        Copy-Item -Destination $stage
     Copy-Item -Recurse (Join-Path $buildDir 'models') (Join-Path $stage 'models')
     Invoke-Native $windeployqt @('--release', '--qmldir', (Join-Path $repo 'qml'), '--no-translations',
         '--no-opengl-sw', '--no-system-d3d-compiler', '--no-system-dxc-compiler', '--no-compiler-runtime',
@@ -187,7 +187,6 @@ try {
     Copy-Item -LiteralPath $QtLicenseFile (Join-Path $licenses 'qt\LICENSE.txt')
     Copy-Item -Recurse (Join-Path $SdkDir 'share\doc\pdfbookmark\licenses') (Join-Path $licenses 'pdfbookmark')
     # The Qt module of every shipped Qt file (DLLs anywhere in the package).
-    $sdkDlls = @(Get-ChildItem -Path (Join-Path $SdkDir 'bin') -Filter '*.dll' | ForEach-Object Name)
     $crtDlls = @(Get-ChildItem -Path $crtDir.FullName -Filter '*.dll' | ForEach-Object Name)
     $modules = [System.Collections.Generic.SortedSet[string]]::new()
     foreach ($dll in Get-ChildItem -Path $stage -Recurse -Filter '*.dll') {
@@ -206,11 +205,7 @@ try {
     # Every shipped SDK component with its licences, and the OCR models'.
     $sdkLicenses = Join-Path $licenses 'pdfbookmark'
     if (-not (Test-Path -LiteralPath (Join-Path $sdkLicenses $modelsNotice))) {
-        if (-not $ModelsLicenseFile -or -not (Test-Path -LiteralPath $ModelsLicenseFile -PathType Leaf)) {
-            throw "The SDK ships no licence for the OCR models in models\ ($modelsNotice). Pass the PaddleOCR licence " +
-                  "(Apache-2.0, the LICENSE file of github.com/PaddlePaddle/PaddleOCR) with -ModelsLicenseFile."
-        }
-        Copy-Item -LiteralPath $ModelsLicenseFile (Join-Path $sdkLicenses $modelsNotice)
+        throw "The SDK ships no licence for the OCR models in models\ ($modelsNotice); SDK 0.4.0 and later do."
     }
     foreach ($dll in Get-ChildItem -Path $stage -Filter '*.dll' -File | Where-Object { $sdkDlls -contains $_.Name }) {
         if (-not $sdkNotices.Contains($dll.Name)) {
@@ -246,9 +241,6 @@ OCR models in models\: PaddleOCR PP-OCR models (PaddlePaddle Authors)
 
 Microsoft Visual C++ runtime ($($crtDir.Name))
   Redistributed under the Microsoft Visual Studio license terms.
-
-Windows "N" and "KN" editions need the Media Feature Pack: the OCR library
-(OpenCV) uses Windows Media Foundation.
 "@
     Set-Content -LiteralPath (Join-Path $licenses 'NOTICE.txt') -Value $notice -Encoding utf8
     Copy-Item -LiteralPath (Join-Path $licenses 'NOTICE.txt') (Join-Path $stage 'NOTICE.txt')
@@ -274,6 +266,13 @@ Windows "N" and "KN" editions need the Media Feature Pack: the OCR library
     }
     foreach ($entry in $mediaFoundation) {
         Write-Host "note: $entry (Media Foundation: Windows N editions need the Media Feature Pack)"
+    }
+    if ($mediaFoundation.Count -gt 0) {
+        $mediaNote = "`nWindows `"N`" and `"KN`" editions need the Media Feature Pack: a shipped library`n" +
+                     "uses Windows Media Foundation.`n"
+        foreach ($file in (Join-Path $licenses 'NOTICE.txt'), (Join-Path $stage 'NOTICE.txt')) {
+            Add-Content -LiteralPath $file -Value $mediaNote -Encoding utf8
+        }
     }
 
     Write-Host '==> Smoke checks outside the repository'
