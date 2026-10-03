@@ -195,8 +195,7 @@ Pane {
                             id: fieldRow
                             required property var modelData
                             required property int index
-                            property bool showWhy: false
-                            readonly property bool hasWhy: modelData.evidence.length > 0 || modelData.alternatives.length > 0
+                            property bool showDetails: false
                             Layout.columnSpan: 2
                             Layout.fillWidth: true
                             spacing: 0
@@ -222,15 +221,19 @@ Pane {
                                     Layout.fillWidth: true
                                     text: fieldRow.modelData.sourceText
                                     textFormat: Text.PlainText
+                                    wrapMode: Text.Wrap  // Never runs under the buttons.
                                     font.italic: true
                                     color: Theme.textSecondary
                                 }
+                                // Named for what it shows ("Show candidates (2)",
+                                // "Show evidence"); absent when there is nothing.
                                 Button {
-                                    visible: fieldRow.hasWhy
+                                    objectName: "details_" + fieldRow.modelData.field
+                                    visible: fieldRow.modelData.detailsLabel.length > 0
                                     flat: true
                                     padding: 2
-                                    text: fieldRow.showWhy ? qsTr("Hide") : qsTr("Why?")
-                                    onClicked: fieldRow.showWhy = !fieldRow.showWhy
+                                    text: fieldRow.showDetails ? qsTr("Hide") : fieldRow.modelData.detailsLabel
+                                    onClicked: fieldRow.showDetails = !fieldRow.showDetails
                                     Accessible.description: qsTr("Show the evidence and candidates for this field")
                                 }
                                 Button {
@@ -252,10 +255,22 @@ Pane {
                                 color: Theme.textSecondary
                                 font.pixelSize: Theme.captionSize
                             }
+                            // Why the document gave no value, always shown.
+                            Label {
+                                objectName: "note_" + fieldRow.modelData.field
+                                Layout.leftMargin: 156
+                                Layout.fillWidth: true
+                                visible: fieldRow.modelData.note.length > 0
+                                text: fieldRow.modelData.note
+                                textFormat: Text.PlainText
+                                wrapMode: Text.Wrap
+                                color: Theme.textSecondary
+                                font.pixelSize: Theme.captionSize
+                            }
                             Label {
                                 Layout.leftMargin: 156
                                 Layout.fillWidth: true
-                                visible: fieldRow.showWhy && fieldRow.modelData.evidence.length > 0
+                                visible: fieldRow.showDetails && fieldRow.modelData.evidence.length > 0
                                 text: fieldRow.modelData.evidence.join("\n")
                                 textFormat: Text.PlainText
                                 wrapMode: Text.Wrap
@@ -265,7 +280,7 @@ Pane {
                             Label {
                                 Layout.leftMargin: 156
                                 Layout.fillWidth: true
-                                visible: fieldRow.showWhy && fieldRow.modelData.alternatives.length > 0
+                                visible: fieldRow.showDetails && fieldRow.modelData.alternatives.length > 0
                                 text: qsTr("Other candidates: %1").arg(fieldRow.modelData.alternatives.join("; "))
                                 textFormat: Text.PlainText
                                 wrapMode: Text.Wrap
@@ -304,7 +319,7 @@ Pane {
                     objectName: "contentsReasonsButton"
                     visible: pane.inspector.contentsReasons.length > 0
                     flat: true
-                    text: qsTr("Why? (%1)").arg(pane.inspector.contentsReasons.length)
+                    text: qsTr("Analysis notes (%1)").arg(pane.inspector.contentsReasons.length)
                     onClicked: reasonsPopup.opened ? reasonsPopup.close() : reasonsPopup.open()
                     Accessible.description: qsTr("Show what the analysis reported about these contents")
                     Connections {

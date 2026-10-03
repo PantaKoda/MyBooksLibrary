@@ -20,6 +20,7 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | Releases on GitHub; **v0.1.0** | Merged: [PR #28](https://github.com/PantaKoda/MyBooksLibrary/pull/28) (merge `4a7dda1`). **v0.1.0** tagged at `e142797` and published on the Releases page | `ci/m10-release-workflow` | See "Releases on GitHub" |
 | After M10: owner's testing | Merged. **In v0.1.0:** [PR #27](https://github.com/PantaKoda/MyBooksLibrary/pull/27) (merge `adcf7b2`), [PR #29](https://github.com/PantaKoda/MyBooksLibrary/pull/29) (merge `e142797`). **In v0.2.0:** [PR #32](https://github.com/PantaKoda/MyBooksLibrary/pull/32) (merge `e3539ed`), [PR #33](https://github.com/PantaKoda/MyBooksLibrary/pull/33) (merge `41e7dec`), [PR #34](https://github.com/PantaKoda/MyBooksLibrary/pull/34) (merge `307c8ad`), [PR #31](https://github.com/PantaKoda/MyBooksLibrary/pull/31) (merge `edad42c`). The owner's manual check of the remembered library remains | `fix/m05-contents-notes-visible`; `docs/user-guide`; `fix/m10-a2-refuse-backup-folder`; `feat/m10-presentation-open-library`; `feat/m10-app-remember-library`; `fix/m05-a4-page-label-sections` | See "After M10" |
 | UI overhaul; build fix; **v0.2.0** | Merged: [PR #37](https://github.com/PantaKoda/MyBooksLibrary/pull/37) (merge `9968194`, the SDK runtime deployed once), [PR #35](https://github.com/PantaKoda/MyBooksLibrary/pull/35) (merge `03859dc`, release notes), [PR #36](https://github.com/PantaKoda/MyBooksLibrary/pull/36) (merge `c100105`, UI PR 1). **v0.2.0** via the release PR `release/v0.2.0` | `fix/ci-sdk-runtime-deploy-race`; `docs/next-release-notes`; `feat/ui-01-presentation-foundation`; `release/v0.2.0` | See "UI overhaul" |
+| Owner's testing after v0.2.0 | AwaitingReview | `fix/inspector-plain-reasons` | See "Plain reasons instead of Why?" |
 | M11 | NotStarted | | |
 
 ## UI overhaul (after v0.1.0)
@@ -74,6 +75,31 @@ Its first run failed twice, rightly: WinUI's light caution `#9d5d00` reaches 4.3
 **Next:** PR 1b, English plurals.
 
 ## After M10: fixes from the owner's testing
+
+### Plain reasons instead of "Why?" (presentation)
+
+**Asked by the owner (2026-10-03):** with a scanned book (*Black Holes, White Dwarfs, and Neutron Stars*, 1983, 660 pages), the inspector showed "—" and a "Why?" button on almost every row, and "No contents entries." with "Why? (1)". The owner asked for "a better message or nothing, not 'why ?'". Before: `docs/images/inspector-why-before.png`, `docs/images/inspector-contents-why-before.png`.
+
+**Why the book shows so little** (SDK 0.3.0, read-only checks with the PDFMegine CLI; engine work, not this PR):
+- title and authors are ambiguous: two title blocks disagree, and the second page splits its subtitle over two lines;
+- the contents are blocked: the scan's section numbers are separate text regions, so one TOC page (physical index 12) falls below the SDK's row density, and the TOC splits into two candidates of nearly equal score (59.7 and 58.5) that the SDK refuses to choose between.
+
+**Change** (`BookInspector`, `BookInspectorPane.qml`):
+- a field without a value shows the analysis's reasons under it, always (`note`);
+- the button is named for what it reveals: "Show candidates (*n*)" or "Show evidence" (`detailsLabel`), and there is none when there is nothing to reveal;
+- the italic source line wraps, so a longer button never covers it (before, "Why?" already overlapped "none chosen");
+- Contents: "Why? (*n*)" is "Analysis notes (*n*)". With no entries and plan blockers, the summary is "Possible contents pages were found, but none could be read reliably.";
+- docs: USER_GUIDE.md, UI.md, DECISIONS.md, releases/UNRELEASED.md.
+
+**Tests:**
+- `tst_librarycontroller::inspectorShowsWhatWasPublished` checks the title's "Show candidates (7)", no button for authors without details, and the edition's reason as its `note`, with no evidence and no button;
+- `tst_inspectorpane::unreadableContentsSayWhatHappened` (new): a run with no entries and one blocker gives the new summary and "Analysis notes (1)".
+
+**Verified** (Windows, Qt 6.11.2 MSVC2022 64-bit, SDK 0.3.0, worktree on `origin/main` `e47e1b1`):
+- `pwsh scripts/verify.ps1 -Configuration Release` and `-Configuration Debug`: VERIFY PASSED, 34/34 tests each, smoke checks passed;
+- the same book in a scratch library (`--library <scratch> --import <book> --inspect-first --color-scheme light`), Release, before and after: `docs/images/inspector-plain-reasons-after.png`, `inspector-plain-reasons-candidates.png` (after "Show candidates (2)"), `inspector-contents-notes-after.png`.
+
+**Remaining:** the "Authors and contributors" label still runs into its value at the default width (unchanged by this PR). Reading this book properly needs PDFMegine changes (S2 density, S6 title and authors).
 
 ### Remembering the last library (composition), issue #30 part 3
 

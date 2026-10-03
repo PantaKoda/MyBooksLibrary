@@ -65,6 +65,7 @@ public:
     QString title = QStringLiteral("Extracted Title");
     std::optional<QString> edition;  // Reported as resolved when set.
     int alternatives = 0;  // Competing title candidates to report.
+    QStringList editionReasons;  // Why no edition was found, when not set.
 
     MetadataExtraction extract(const QString& path, const std::atomic_bool& cancel) override
     {
@@ -92,6 +93,12 @@ public:
         for (int i = 0; i < alternatives; ++i)
             detail.alternatives << mbl::domain::MetadataCandidate{QStringLiteral("Candidate %1").arg(i), 0.1, {}, {}};
         r.details << detail;
+        if (!edition && !editionReasons.isEmpty()) {
+            mbl::domain::MetadataFieldDetail none;
+            none.field = mbl::domain::MetadataField::Edition;
+            none.reasons = editionReasons;
+            r.details << none;
+        }
         r.reportJson = QByteArrayLiteral("{}");
         r.sdkVersion = QStringLiteral("fake");
         r.optionsJson = QStringLiteral("{}");
@@ -842,6 +849,7 @@ void TestLibraryController::inspectorShowsWhatWasPublished()
     QTemporaryDir dir;
     auto fake = std::make_shared<FakeExtractor>();
     fake->alternatives = 7;
+    fake->editionReasons = {QStringLiteral("No edition statement on the pages searched")};
     auto analyzer = std::make_shared<FakeAnalyzer>(fake);
     LibraryController c;
     c.setProcessors(fake, analyzer, true);
@@ -868,9 +876,20 @@ void TestLibraryController::inspectorShowsWhatWasPublished()
     const QStringList alternatives = title.value(QStringLiteral("alternatives")).toStringList();
     QCOMPARE(alternatives.size(), 6);  // The best five, then a count.
     QCOMPARE(alternatives.last(), QStringLiteral("and 2 more"));
+    // The button says what it shows, counting every candidate.
+    QCOMPARE(title.value(QStringLiteral("detailsLabel")).toString(), QStringLiteral("Show candidates (7)"));
+    QCOMPARE(title.value(QStringLiteral("note")).toString(), QString());
     const QVariantMap authors = fieldOf(inspector, QStringLiteral("contributors"));
     QCOMPARE(authors.value(QStringLiteral("value")).toString(), QStringLiteral("\u2014"));
     QCOMPARE(authors.value(QStringLiteral("sourceText")).toString(), QStringLiteral("Not found in the pages searched"));
+    QCOMPARE(authors.value(QStringLiteral("detailsLabel")).toString(), QString());  // Nothing to show: no button.
+    // A field without a value gives the analysis's reason at once, not behind a button.
+    const QVariantMap edition = fieldOf(inspector, QStringLiteral("edition"));
+    QCOMPARE(edition.value(QStringLiteral("value")).toString(), QStringLiteral("\u2014"));
+    QCOMPARE(edition.value(QStringLiteral("note")).toString(),
+             QStringLiteral("No edition statement on the pages searched"));
+    QVERIFY(edition.value(QStringLiteral("evidence")).toStringList().isEmpty());
+    QCOMPARE(edition.value(QStringLiteral("detailsLabel")).toString(), QString());
 
     QCOMPARE(inspector->contentsSummary(), QStringLiteral("2 contents entries, 1 with a confirmed page."));
     QVERIFY(inspector->contentsNotes().contains(QStringLiteral("No page found: 1 of 2.")));
