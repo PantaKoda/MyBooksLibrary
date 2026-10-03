@@ -638,3 +638,20 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - **Layout changes wait for PR 2:** this PR changes only what the style switch needs: selection colours, the details card, the pane dividers (Fusion's fallback handle is a thick bar) and the default size. The toolbar, the status bar and the sidebar are PR 2's.
   - **English plurals are their own PR (1b):** "(s)" strings need an English numerus translation (`qt_add_translations`, a plurals-only `.ts`), a build step that deserves its own review.
 - **Verified:** See IMPLEMENTATION_PROGRESS.md, "UI overhaul, PR 1".
+
+## 2026-10-03 — Plain reasons instead of "Why?" buttons in the inspector
+
+- **Change:**
+  - A metadata field without a value from the document shows the analysis's reasons under it, always (`note` in `BookInspector::metadataFields`). They are no longer behind a button.
+  - The button that reveals evidence and candidates is named for what it shows: "Show candidates (*n*)" when there are candidates (*n* counts all of them), otherwise "Show evidence" (`detailsLabel`). There is no button when there is nothing to reveal.
+  - The Contents tab's "Why? (*n*)" is "Analysis notes (*n*)".
+  - With no entries but plan blockers, the summary is "Possible contents pages were found, but the analysis could not settle on a table of contents." instead of "No contents entries.".
+- **Why:** the owner imported a scanned book (*Black Holes, White Dwarfs, and Neutron Stars*, 1983) that the SDK could not read well: title and authors ambiguous, and the contents blocked by two equally likely tables of contents. The inspector then showed "—" and a "Why?" button on nearly every row and "No contents entries." with "Why? (1)". The owner asked for "a better message or nothing, not 'why ?'".
+- **Assumptions:**
+  - **The SDK's reasons are readable as they are** ("No edition statement on the cover, title or copyright pages searched (many first editions state none)"), so they are shown verbatim and not reworded. They are English, like the rest of the app.
+  - **Only a missing value gets its reason inline.** A found value's reasons ("Single copyright year") stay with its evidence, behind "Show evidence", so filled rows stay short. "Missing" means the document gave no value (its status is not resolved), not that the row is empty: a field the user corrected or cleared keeps the document's reason as its note, rather than behind a "Show evidence" button that would reveal only that (review of PR #39).
+  - **The buttons move under the source line in a narrow inspector,** when the line would keep less than 140 px beside them. Beside them it was squeezed to nothing.
+  - **One reason per line.** The SDK's reasons can contain "; " themselves, so the note joins them with line breaks, like the evidence lines.
+  - **The blockers are not reworded either.** They name SDK candidate IDs and scores, so they stay behind "Analysis notes". The summary says only what the user needs: contents were seen but not trusted, and none are shown rather than wrong ones.
+  - **Why this book fails is the engine's to fix** (PDFMegine): the scan's section numbers are separate text regions, so one TOC page falls below S2's row density and the TOC splits in two. This PR changes only the wording.
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, "Plain reasons instead of Why?".

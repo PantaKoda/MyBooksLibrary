@@ -103,7 +103,9 @@ Each field shows its value and **where it came from**:
 - **Not found in the pages searched:** nothing reliable was found.
 - **Not read yet:** the analysis has not run yet.
 
-**Why?** shows the evidence: the page and the text the value was found in, and the other candidates.
+A field without a value also says why, in one line under it, for example "No edition statement on the cover, title or copyright pages searched (many first editions state none)".
+
+**Show candidates (*n*)** lists the possible values the analysis found but did not choose. **Show evidence** shows the page and the text a value was found in. A field with nothing more to show has neither button.
 
 **Correct** changes a field:
 - type your own value and **Save**; for authors, add, reorder (**Move up**, **Move down**) and remove people, each with a role;
@@ -114,7 +116,9 @@ Corrections are kept for good, even when the book is analyzed again, and search 
 
 ### Contents
 
-The top shows a short summary, such as "221 contents entries, 204 with a confirmed page", and notes such as "No page found: 17 of 221". **Why? (*n*)** opens what the analysis reported about these contents.
+The top shows a short summary, such as "221 contents entries, 204 with a confirmed page", and notes such as "No page found: 17 of 221". **Analysis notes (*n*)** opens what the analysis reported about these contents.
+
+"Possible contents pages were found, but the analysis could not settle on a table of contents." means the analysis saw pages that look like a table of contents but could not decide what they say, for example because they looked like two different tables of equal weight. It shows no entries rather than wrong ones.
 
 Below is the **contents as a tree**: parts, chapters and sections, each with its page.
 - **"Page 27"** is the page as the reader counts it: the first page of the PDF is page 1. It is not the number printed on the page, which may be "xv" or "1".
@@ -256,7 +260,7 @@ You can close the app at any time.
 
 **Most contents entries say "Page not found".** The printed page numbers may skip pages: many publishers' PDFs leave out the blank pages of the printed book. The app handles this when the PDF records its page numbering (page labels), but version 0.1.0 did not. For a book added with 0.1.0, use **Analyze contents again** (More menu). Entries still without a page can be set with **Change page…**.
 
-**The title shows the file name.** The analysis found several possible titles and did not choose one. Use **Correct** on the **Title and authors** tab; **Why?** shows the candidates.
+**The title shows the file name.** The analysis found several possible titles and did not choose one. Use **Correct** on the **Title and authors** tab; **Show candidates** lists them.
 
 **A chapter opens at the wrong page.** Select the entry in **Contents** and use **Change page…**. Type the page as the reader shows it: 1 is the first page of the PDF.
 

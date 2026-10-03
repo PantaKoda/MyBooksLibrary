@@ -48,10 +48,12 @@ class BookInspector : public QObject {
     Q_PROPERTY(QString fileText READ fileText NOTIFY detailsChanged)
     Q_PROPERTY(bool inTrash READ inTrash NOTIFY detailsChanged)  // The shown book is in Trash.
     // One map per field: field (code), kind ("text", "year" or "contributors"),
-    // label, value, mode ("auto", "value" or "cleared"), sourceText,
-    // documentValue (what the document gives, when not shown), editText or
-    // editContributors (the current value, to edit), evidence (lines),
-    // alternatives (lines).
+    // label, value, mode ("auto", "value" or "cleared"), sourceText, note
+    // (why the document gave no value; empty otherwise), detailsLabel (the
+    // button that shows evidence and alternatives; empty when there are
+    // none), documentValue (what the document gives, when not shown),
+    // editText or editContributors (the current value, to edit), evidence
+    // (lines), alternatives (lines).
     Q_PROPERTY(QVariantList metadataFields READ metadataFields NOTIFY detailsChanged)
     // Contributor roles for an editor: {code, text}.
     Q_PROPERTY(QVariantList contributorRoles READ contributorRoles CONSTANT)

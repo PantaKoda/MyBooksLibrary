@@ -108,10 +108,17 @@ QVariantMap field(const FieldView& v, const EffectiveMetadata& m, bool extracted
 {
     QStringList evidence;
     QStringList alternatives;
+    // When the document gave no value, the analysis's reasons say why at once,
+    // one per line (a reason may itself contain "; "), also beside a
+    // correction; a found value's reasons stay with its evidence, on request.
+    QString note;
+    QString detailsLabel;
     if (detail) {
         evidence = evidenceLines(detail->evidence);
-        for (const QString& reason : detail->reasons)
-            evidence << reason;
+        if (extracted && v.status != FieldStatus::Resolved)
+            note = detail->reasons.join(QLatin1Char('\n'));
+        else
+            evidence << detail->reasons;
         // The strongest few candidates (the SDK lists them best first); the
         // rest are only counted, so a noisy title page stays readable.
         constexpr int kShown = 5;
@@ -124,6 +131,11 @@ QVariantMap field(const FieldView& v, const EffectiveMetadata& m, bool extracted
         }
         if (detail->alternatives.size() > kShown)
             alternatives << trn("and %n more", int(detail->alternatives.size() - kShown));
+        // The button names what it shows; with nothing to show there is none.
+        if (!detail->alternatives.isEmpty())
+            detailsLabel = tr("Show candidates (%1)").arg(detail->alternatives.size());
+        else if (!evidence.isEmpty())
+            detailsLabel = tr("Show evidence");
     }
     // The editor starts from the value shown (nothing when cleared or absent).
     QString editText;
@@ -145,6 +157,8 @@ QVariantMap field(const FieldView& v, const EffectiveMetadata& m, bool extracted
                        {QStringLiteral("value"), v.value.isEmpty() ? QStringLiteral("—") : v.value},
                        {QStringLiteral("mode"), toCode(v.mode)},
                        {QStringLiteral("sourceText"), sourceText(v.source, v.status, extracted)},
+                       {QStringLiteral("note"), note},
+                       {QStringLiteral("detailsLabel"), detailsLabel},
                        {QStringLiteral("documentValue"), v.documentValue},
                        {QStringLiteral("editText"), editText},
                        {QStringLiteral("editContributors"), editContributors},
@@ -180,6 +194,8 @@ QString contentsSummaryOf(const std::optional<TocAnalysis>& toc)
         ++shown;
         resolved += e.destinationState == DestinationState::Resolved ? 1 : 0;
     }
+    if (shown == 0 && n == 0 && !toc->planBlockers.isEmpty())
+        return tr("Possible contents pages were found, but the analysis could not settle on a table of contents.");
     if (shown == 0)
         return n == 0 ? tr("No contents entries.") : tr("Every contents entry was removed.");
     const int m = shown;

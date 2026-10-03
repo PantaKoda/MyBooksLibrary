@@ -2,6 +2,7 @@
 // with a LibraryController. Guards what only the view can get wrong, such as
 // details of a previous book's entry staying on screen.
 #include "catalog/catalog.h"
+#include "catalog/jobs.h"
 #include "catalog/library.h"
 #include "presentation/bookinspector.h"
 #include "presentation/collectionlistmodel.h"
@@ -125,6 +126,8 @@ private slots:
     void contentsEditingInThePane();
     void addToCollectionMenuFollowsTheCollections();
     void manyReasonsLeaveTheTreeInView();
+    void unreadableContentsSayWhatHappened();
+    void fieldsWithoutValueSayWhy();
     void uncertainPagesLeaveTheTitleInView();
 };
 
@@ -512,6 +515,200 @@ void TestInspectorPane::manyReasonsLeaveTheTreeInView()
         QTRY_VERIFY_WITH_TIMEOUT(!popup->property("visible").toBool(), 5000);
     }
     QTRY_VERIFY2_WITH_TIMEOUT(treeInView(), qPrintable(QDebug::toString(sceneRect(tree))), 5000);
+}
+
+// Contents pages were found but none could be read (as for a scanned book
+// whose table of contents gave two equally likely candidates): the summary
+// says so in plain words, and the analysis's own note is one click away
+// under a name that says what it is.
+void TestInspectorPane::unreadableContentsSayWhatHappened()
+{
+    QTemporaryDir dir;
+    BookId book;
+    {
+        auto library = mbl::catalog::Library::open(dir.path());
+        QVERIFY(library);
+        book = library.value()
+                   ->run([](QSqlDatabase& db) {
+                       NewBook b;
+                       b.asset.id = AssetId::create();
+                       b.asset.sha256 = QString(64, u'e');
+                       b.asset.byteSize = 1;
+                       b.asset.pageCount = 660;
+                       b.asset.managedPath = QStringLiteral("files/%1/source.pdf").arg(b.asset.id.toString());
+                       b.originalFileName = QStringLiteral("scan.pdf");
+                       b.originalPath = b.originalFileName;
+                       const BookId id = mbl::catalog::registerBook(db, b).value();
+                       const PublishTicket ticket = mbl::catalog::requestTocRun(db, id).value();
+                       TocAnalysis toc;
+                       toc.outcome = QStringLiteral("analysis_partial");
+                       toc.planBlockers << QStringLiteral("Candidates toc-p10-r11 (score 59.7) and toc-p13-r14 "
+                                                          "(score 58.5) are too close; explicit selection required");
+                       RunIdentity run;
+                       run.sourceSha256 = b.asset.sha256;
+                       run.sdkVersion = QStringLiteral("test");
+                       run.optionsJson = QStringLiteral("{}");
+                       run.outcome = toc.outcome;
+                       mbl::catalog::publishToc(db, ticket, run, toc).value();
+                       return id;
+                   })
+                   .result();
+    }
+    LibraryController controller;
+    controller.open(dir.path());
+    QTRY_VERIFY_WITH_TIMEOUT(controller.ready() && !controller.busy(), 10000);
+
+    QQmlEngine engine;
+    QQmlComponent component(&engine, QUrl::fromLocalFile(QStringLiteral(MBL_SOURCE_DIR "/qml/inspector/BookInspectorPane.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    QQuickWindow window;
+    window.resize(640, 640);
+    std::unique_ptr<QObject> object(component.createWithInitialProperties(
+        {{QStringLiteral("inspector"), QVariant::fromValue<QObject*>(controller.inspector())},
+         {QStringLiteral("selectFirstEntry"), true}}));  // Contents tab.
+    auto* pane = qobject_cast<QQuickItem*>(object.get());
+    QVERIFY2(pane, qPrintable(component.errorString()));
+    pane->setParentItem(window.contentItem());
+    pane->setSize(QSizeF(640, 640));
+    window.show();
+
+    QSignalSpy loaded(controller.inspector(), &BookInspector::loaded);
+    controller.inspector()->select(book.toString());
+    QTRY_COMPARE_WITH_TIMEOUT(loaded.size(), 1, 5000);
+    QCOMPARE(controller.inspector()->contents()->entryCount(), 0);
+    QCOMPARE(controller.inspector()->contentsSummary(),
+             QStringLiteral("Possible contents pages were found, but the analysis could not settle on a table of contents."));
+    QQuickItem* notes = findItem(pane, QStringLiteral("contentsReasonsButton"));
+    QVERIFY(notes);
+    QTRY_VERIFY_WITH_TIMEOUT(notes->isVisible(), 5000);
+    QCOMPARE(notes->property("text").toString(), QStringLiteral("Analysis notes (1)"));
+}
+
+// The metadata rows as rendered: a field the document gave no value says why
+// under it, one reason per line, with no button; a field with candidates has
+// a button named for them that toggles them, beside a source line that wraps
+// instead of running under it.
+void TestInspectorPane::fieldsWithoutValueSayWhy()
+{
+    QTemporaryDir dir;
+    BookId book;
+    {
+        auto library = mbl::catalog::Library::open(dir.path());
+        QVERIFY(library);
+        book = library.value()
+                   ->run([](QSqlDatabase& db) {
+                       NewBook b;
+                       b.asset.id = AssetId::create();
+                       b.asset.sha256 = QString(64, u'f');
+                       b.asset.byteSize = 1;
+                       b.asset.pageCount = 10;
+                       b.asset.managedPath = QStringLiteral("files/%1/source.pdf").arg(b.asset.id.toString());
+                       b.originalFileName = QStringLiteral("scan.pdf");
+                       b.originalPath = b.originalFileName;
+                       const BookId id = mbl::catalog::registerBook(db, b).value();
+                       mbl::catalog::enqueueJob(db, id, JobKind::Metadata).value();
+                       const std::optional<JobRecord> job = mbl::catalog::claimNextJob(db).value();
+                       Q_ASSERT(job && job->kind == JobKind::Metadata);
+                       ExtractedMetadata m;
+                       m.titleStatus = FieldStatus::Ambiguous;
+                       QList<MetadataFieldDetail> details;
+                       MetadataFieldDetail title;
+                       title.field = MetadataField::Title;
+                       title.alternatives << MetadataCandidate{QStringLiteral("Black Holes"), 0.5, {}, {}}
+                                          << MetadataCandidate{QStringLiteral("White Dwarfs"), 0.4, {}, {}};
+                       title.reasons << QStringLiteral("Two title blocks disagree");
+                       details << title;
+                       MetadataFieldDetail edition;
+                       edition.field = MetadataField::Edition;
+                       // An SDK reason may contain "; " itself.
+                       edition.reasons << QStringLiteral("No edition statement; none on the cover")
+                                       << QStringLiteral("Many first editions state none");
+                       details << edition;
+                       const RunIdentity run{b.asset.sha256, QStringLiteral("test"), QString(), QStringLiteral("{}"),
+                                             QStringLiteral("completed"), std::nullopt};
+                       mbl::catalog::completeMetadataJob(db, *job, RunId::create(), run, m, details, 10).value();
+                       return id;
+                   })
+                   .result();
+    }
+    LibraryController controller;
+    controller.open(dir.path());
+    QTRY_VERIFY_WITH_TIMEOUT(controller.ready() && !controller.busy(), 10000);
+
+    QQmlEngine engine;
+    QQmlComponent component(&engine, QUrl::fromLocalFile(QStringLiteral(MBL_SOURCE_DIR "/qml/inspector/BookInspectorPane.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    QQuickWindow window;
+    window.resize(480, 640);  // Other widths below.
+    std::unique_ptr<QObject> object(component.createWithInitialProperties(
+        {{QStringLiteral("inspector"), QVariant::fromValue<QObject*>(controller.inspector())}}));
+    auto* pane = qobject_cast<QQuickItem*>(object.get());
+    QVERIFY2(pane, qPrintable(component.errorString()));
+    pane->setParentItem(window.contentItem());
+    pane->setSize(QSizeF(480, 640));
+    window.show();
+
+    QSignalSpy loaded(controller.inspector(), &BookInspector::loaded);
+    controller.inspector()->select(book.toString());
+    QTRY_COMPARE_WITH_TIMEOUT(loaded.size(), 1, 5000);
+
+    // Edition: the reasons at once, one per line; no button.
+    QQuickItem* note = nullptr;
+    QTRY_VERIFY_WITH_TIMEOUT((note = findItem(pane, QStringLiteral("note_edition"))), 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(note->isVisible(), 5000);
+    QCOMPARE(note->property("text").toString(),
+             QStringLiteral("No edition statement; none on the cover\nMany first editions state none"));
+    QQuickItem* editionDetails = findItem(pane, QStringLiteral("details_edition"));
+    QVERIFY(editionDetails);
+    QVERIFY(!editionDetails->isVisible());
+    // A field without reasons has no note.
+    QQuickItem* yearNote = findItem(pane, QStringLiteral("note_publication_year"));
+    QVERIFY(yearNote);
+    QVERIFY(!yearNote->isVisible());
+
+    // Title: the button names the candidates and toggles them.
+    QQuickItem* titleDetails = findItem(pane, QStringLiteral("details_title"));
+    QQuickItem* candidates = findItem(pane, QStringLiteral("candidates_title"));
+    QVERIFY(titleDetails && candidates);
+    QTRY_VERIFY_WITH_TIMEOUT(titleDetails->isVisible(), 5000);
+    QCOMPARE(titleDetails->property("text").toString(), QStringLiteral("Show candidates (2)"));
+    QVERIFY(!candidates->isVisible());
+    click(titleDetails);
+    QTRY_VERIFY_WITH_TIMEOUT(candidates->isVisible(), 5000);
+    QCOMPARE(titleDetails->property("text").toString(), QStringLiteral("Hide"));
+    click(titleDetails);
+    QTRY_VERIFY_WITH_TIMEOUT(!candidates->isVisible(), 5000);
+    QCOMPARE(titleDetails->property("text").toString(), QStringLiteral("Show candidates (2)"));
+
+    // The source line never runs under the buttons and is never squeezed out:
+    // beside them in a wide pane, above them in a narrow one (the inspector
+    // can be 280 px wide).
+    QQuickItem* source = findItem(pane, QStringLiteral("source_title"));
+    QVERIFY(source);
+    QCOMPARE(source->property("text").toString(), QStringLiteral("Uncertain: several candidates, none chosen"));
+    const auto sceneRect = [](QQuickItem* item) {
+        return item->mapRectToScene(QRectF(0, 0, item->width(), item->height()));
+    };
+    QQuickItem* row = source->parentItem();
+    for (const qreal width : {900.0, 480.0, 300.0}) {
+        const qreal before = row->width();
+        window.resize(int(width), 640);
+        pane->setWidth(width);
+        // At 300 px the row may already be as narrow as its buttons allow.
+        QTest::qWaitFor([&] { return row->width() != before; }, 2000);
+        QTest::qWait(100);  // The row may then move its buttons.
+        const QRectF sourceRect = sceneRect(source);
+        const QRectF buttonRect = sceneRect(titleDetails);
+        const QString where = QStringLiteral("at %1 px: source %2,%3 %4x%5, button %6,%7 %8x%9")
+                                  .arg(width)
+                                  .arg(sourceRect.x()).arg(sourceRect.y()).arg(sourceRect.width()).arg(sourceRect.height())
+                                  .arg(buttonRect.x()).arg(buttonRect.y()).arg(buttonRect.width()).arg(buttonRect.height());
+        QVERIFY2(!sourceRect.intersects(buttonRect), qPrintable(where));
+        QVERIFY2(source->width() >= 100, qPrintable(where));
+        QVERIFY2(source->property("contentWidth").toReal() <= source->width() + 0.5, qPrintable(where));
+        if (width == 900.0)  // Room for both: on one line.
+            QVERIFY2(sourceRect.right() <= buttonRect.left() && sourceRect.top() < buttonRect.bottom(), qPrintable(where));
+    }
 }
 
 void TestInspectorPane::uncertainPagesLeaveTheTitleInView()
