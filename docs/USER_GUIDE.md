@@ -118,7 +118,7 @@ Corrections are kept for good, even when the book is analyzed again, and search 
 
 The top shows a short summary, such as "221 contents entries, 204 with a confirmed page", and notes such as "No page found: 17 of 221". **Analysis notes (*n*)** opens what the analysis reported about these contents.
 
-"Possible contents pages were found, but none could be read reliably." means the analysis saw pages that look like a table of contents but did not trust what it read, for example because they looked like two different tables of equal weight. It shows no entries rather than wrong ones.
+"Possible contents pages were found, but the analysis could not settle on a table of contents." means the analysis saw pages that look like a table of contents but could not decide what they say, for example because they looked like two different tables of equal weight. It shows no entries rather than wrong ones.
 
 Below is the **contents as a tree**: parts, chapters and sections, each with its page.
 - **"Page 27"** is the page as the reader counts it: the first page of the PDF is page 1. It is not the number printed on the page, which may be "xv" or "1".

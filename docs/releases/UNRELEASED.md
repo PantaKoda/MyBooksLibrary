@@ -16,6 +16,6 @@ Merged since v0.2.0: none yet.
 
 ## Fixed
 
-- **No more "Why?" buttons.** A field the analysis could not fill now says why, in one line under it. The buttons say what they show: **Show candidates (*n*)** or **Show evidence**, and there is none when there is nothing more to show. On the **Contents** tab, **Why? (*n*)** is now **Analysis notes (*n*)**. When contents pages were found but could not be read, the summary says so instead of "No contents entries."
+- **No more "Why?" buttons.** A field the analysis could not fill now says why, in one line under it. The buttons say what they show: **Show candidates (*n*)** or **Show evidence**, and there is none when there is nothing more to show. On the **Contents** tab, **Why? (*n*)** is now **Analysis notes (*n*)**. When contents pages were found but the analysis could not settle on a table of contents, the summary says so instead of "No contents entries."
 
 ## Known limits

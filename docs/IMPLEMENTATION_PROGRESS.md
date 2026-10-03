@@ -88,7 +88,7 @@ Its first run failed twice, rightly: WinUI's light caution `#9d5d00` reaches 4.3
 - a field without a value shows the analysis's reasons under it, always (`note`);
 - the button is named for what it reveals: "Show candidates (*n*)" or "Show evidence" (`detailsLabel`), and there is none when there is nothing to reveal;
 - the italic source line wraps, so a longer button never covers it (before, "Why?" already overlapped "none chosen");
-- Contents: "Why? (*n*)" is "Analysis notes (*n*)". With no entries and plan blockers, the summary is "Possible contents pages were found, but none could be read reliably.";
+- Contents: "Why? (*n*)" is "Analysis notes (*n*)". With no entries and plan blockers, the summary is "Possible contents pages were found, but the analysis could not settle on a table of contents.";
 - docs: USER_GUIDE.md, UI.md, DECISIONS.md, releases/UNRELEASED.md.
 
 **Tests:**
@@ -98,6 +98,13 @@ Its first run failed twice, rightly: WinUI's light caution `#9d5d00` reaches 4.3
 **Verified** (Windows, Qt 6.11.2 MSVC2022 64-bit, SDK 0.3.0, worktree on `origin/main` `e47e1b1`):
 - `pwsh scripts/verify.ps1 -Configuration Release` and `-Configuration Debug`: VERIFY PASSED, 34/34 tests each, smoke checks passed;
 - the same book in a scratch library (`--library <scratch> --import <book> --inspect-first --color-scheme light`), Release, before and after: `docs/images/inspector-plain-reasons-after.png`, `inspector-plain-reasons-candidates.png` (after "Show candidates (2)"), `inspector-contents-notes-after.png`.
+
+**Review follow-up** (owner's review at `8a148f7`, four minor points):
+- the note is decided by whether the *document* gave a value (status not resolved), so a corrected or cleared field keeps the reason as its note and gets no "Show evidence" button revealing only that reason;
+- reasons are joined with line breaks, since SDK reasons contain "; ";
+- the contents summary is "Possible contents pages were found, but the analysis could not settle on a table of contents.", true for all three blockers that reach it (two close candidates, no parsed entries, a requested candidate not detected), not only for poor scans;
+- the new pane test found that the source line was squeezed to nothing when the two buttons filled its row (480 px pane; the inspector can be 280 px wide). The row is now a grid that moves the buttons under the source line when the line would have less than 140 px;
+- tests: `inspectorShowsWhatWasPublished` now corrects and then clears the edition and checks the note stays with no button; `tst_inspectorpane::fieldsWithoutValueSayWhy` (new) renders the field rows in a 480 px pane: the edition's note is visible with one reason per line and no button, a field without reasons has no note, "Show candidates (2)" toggles the candidates and "Hide", and at 900, 480 and 300 px the source line keeps at least 100 px, fits its text and never overlaps the button (on one line with it at 900 px).
 
 **Remaining:** the "Authors and contributors" label still runs into its value at the default width (unchanged by this PR). Reading this book properly needs PDFMegine changes (S2 density, S6 title and authors).
 

@@ -890,7 +890,6 @@ void TestLibraryController::inspectorShowsWhatWasPublished()
              QStringLiteral("No edition statement on the pages searched"));
     QVERIFY(edition.value(QStringLiteral("evidence")).toStringList().isEmpty());
     QCOMPARE(edition.value(QStringLiteral("detailsLabel")).toString(), QString());
-
     QCOMPARE(inspector->contentsSummary(), QStringLiteral("2 contents entries, 1 with a confirmed page."));
     QVERIFY(inspector->contentsNotes().contains(QStringLiteral("No page found: 1 of 2.")));
     QVERIFY(inspector->contentsReasons().isEmpty());  // This analysis reported none.
@@ -909,9 +908,33 @@ void TestLibraryController::inspectorShowsWhatWasPublished()
     QTRY_COMPARE_WITH_TIMEOUT(loaded.size(), 2, 5000);
     QCOMPARE(resets.size(), 1);
 
+    // Corrected or cleared, the field still says why the document had no
+    // value, and still offers no button: there is nothing more to reveal.
+    QSignalSpy corrected(inspector, &BookInspector::corrected);
+    const QString book = c.books()->bookIdAt(0);
+    for (const bool clear : {false, true}) {
+        if (clear)
+            inspector->clearField(book, QStringLiteral("edition"));
+        else
+            inspector->setText(book, QStringLiteral("edition"), QStringLiteral("2nd edition"));
+        QTRY_COMPARE_WITH_TIMEOUT(corrected.size(), clear ? 2 : 1, 5000);
+        const QString source = clear ? QStringLiteral("Cleared by you") : QStringLiteral("Your correction");
+        QTRY_COMPARE_WITH_TIMEOUT(fieldOf(inspector, QStringLiteral("edition")).value(QStringLiteral("sourceText")).toString(),
+                                  source, 5000);
+        const QVariantMap e = fieldOf(inspector, QStringLiteral("edition"));
+        QCOMPARE(e.value(QStringLiteral("note")).toString(), QStringLiteral("No edition statement on the pages searched"));
+        QVERIFY(e.value(QStringLiteral("evidence")).toStringList().isEmpty());
+        QCOMPARE(e.value(QStringLiteral("detailsLabel")).toString(), QString());
+    }
+    inspector->useDocumentValue(book, QStringLiteral("edition"));
+    QTRY_COMPARE_WITH_TIMEOUT(corrected.size(), 3, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(fieldOf(inspector, QStringLiteral("edition")).value(QStringLiteral("sourceText")).toString(),
+                              QStringLiteral("Not found in the pages searched"), 5000);
+
     // A book that is gone.
+    const qsizetype before = loaded.size();
     inspector->select(mbl::domain::BookId::create().toString());
-    QTRY_COMPARE_WITH_TIMEOUT(loaded.size(), 3, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(loaded.size(), before + 1, 5000);
     QCOMPARE(inspector->error(), QStringLiteral("This book is no longer in the library."));
     QCOMPARE(inspector->contents()->entryCount(), 0);
 }

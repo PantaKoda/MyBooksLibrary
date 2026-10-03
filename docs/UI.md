@@ -95,7 +95,7 @@ Screenshots of PR 1, at the default size (1100×720) on a scratch library with t
   - Search covers titles, authors and contents entries, not the full text; the field's accessible description says so.
 - **Inspector:** selecting a book shows it beside the list.
   - Metadata values say where they came from: "From the document", "Your correction", "Cleared by you", "Uncertain: several candidates, none chosen" or "Not found in the pages searched". Without a value, the analysis's reason follows on its own line.
-  - The contents tab summarizes coverage ("5 contents entries, every page confirmed."; "Possible contents pages were found, but none could be read reliably." when the analysis reported blockers and no entries), lists what is uncertain ("No page found: 1 of 5."), and says whether a bookmarked copy could be made, with the plan's blockers.
+  - The contents tab summarizes coverage ("5 contents entries, every page confirmed."; "Possible contents pages were found, but the analysis could not settle on a table of contents." when the analysis reported blockers and no entries), lists what is uncertain ("No page found: 1 of 5."), and says whether a bookmarked copy could be made, with the plan's blockers.
   - Tree rows show the physical page ("Page 4", although it is printed "1"), "Page 5 or 10?" for ambiguous entries, or "Page not found". Nothing is guessed.
   - The selected entry's reasons are in plain language ("Listed on page 3 of the PDF", "Left out of the bookmarks: …"), with technical details on request.
   - The selected entry offers **Open chapter** (its physical page) and **Show contents page *n*** (the page where the contents list it). They are two different actions; an unresolved entry offers only the second.

@@ -108,14 +108,15 @@ QVariantMap field(const FieldView& v, const EffectiveMetadata& m, bool extracted
 {
     QStringList evidence;
     QStringList alternatives;
-    // A field without a value says why at once, in the analysis's own words;
-    // a value's reasons stay with its evidence, shown on request.
+    // When the document gave no value, the analysis's reasons say why at once,
+    // one per line (a reason may itself contain "; "), also beside a
+    // correction; a found value's reasons stay with its evidence, on request.
     QString note;
     QString detailsLabel;
     if (detail) {
         evidence = evidenceLines(detail->evidence);
-        if (v.source == ValueSource::None && extracted)
-            note = detail->reasons.join(QStringLiteral("; "));
+        if (extracted && v.status != FieldStatus::Resolved)
+            note = detail->reasons.join(QLatin1Char('\n'));
         else
             evidence << detail->reasons;
         // The strongest few candidates (the SDK lists them best first); the
@@ -194,7 +195,7 @@ QString contentsSummaryOf(const std::optional<TocAnalysis>& toc)
         resolved += e.destinationState == DestinationState::Resolved ? 1 : 0;
     }
     if (shown == 0 && n == 0 && !toc->planBlockers.isEmpty())
-        return tr("Possible contents pages were found, but none could be read reliably.");
+        return tr("Possible contents pages were found, but the analysis could not settle on a table of contents.");
     if (shown == 0)
         return n == 0 ? tr("No contents entries.") : tr("Every contents entry was removed.");
     const int m = shown;

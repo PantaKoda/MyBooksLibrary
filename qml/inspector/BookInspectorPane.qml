@@ -214,35 +214,45 @@ Pane {
                                     wrapMode: Text.Wrap
                                 }
                             }
-                            RowLayout {
+                            // The source line, then the buttons beside it, or under
+                            // it when they would leave the line too little room
+                            // (a narrow inspector): it wraps, never under a button.
+                            GridLayout {
+                                id: sourceRow
                                 Layout.leftMargin: 156
                                 Layout.fillWidth: true
+                                columns: width - fieldButtons.implicitWidth - columnSpacing >= 140 ? 2 : 1
+                                rowSpacing: 0
                                 Label {
+                                    objectName: "source_" + fieldRow.modelData.field
                                     Layout.fillWidth: true
                                     text: fieldRow.modelData.sourceText
                                     textFormat: Text.PlainText
-                                    wrapMode: Text.Wrap  // Never runs under the buttons.
+                                    wrapMode: Text.Wrap
                                     font.italic: true
                                     color: Theme.textSecondary
                                 }
-                                // Named for what it shows ("Show candidates (2)",
-                                // "Show evidence"); absent when there is nothing.
-                                Button {
-                                    objectName: "details_" + fieldRow.modelData.field
-                                    visible: fieldRow.modelData.detailsLabel.length > 0
-                                    flat: true
-                                    padding: 2
-                                    text: fieldRow.showDetails ? qsTr("Hide") : fieldRow.modelData.detailsLabel
-                                    onClicked: fieldRow.showDetails = !fieldRow.showDetails
-                                    Accessible.description: qsTr("Show the evidence and candidates for this field")
-                                }
-                                Button {
-                                    objectName: "correct_" + fieldRow.modelData.field
-                                    flat: true
-                                    padding: 2
-                                    text: qsTr("Correct")
-                                    onClicked: pane.correct(fieldRow.modelData)
-                                    Accessible.description: qsTr("Correct %1").arg(fieldRow.modelData.label)
+                                RowLayout {
+                                    id: fieldButtons
+                                    // Named for what it shows ("Show candidates (2)",
+                                    // "Show evidence"); absent when there is nothing.
+                                    Button {
+                                        objectName: "details_" + fieldRow.modelData.field
+                                        visible: fieldRow.modelData.detailsLabel.length > 0
+                                        flat: true
+                                        padding: 2
+                                        text: fieldRow.showDetails ? qsTr("Hide") : fieldRow.modelData.detailsLabel
+                                        onClicked: fieldRow.showDetails = !fieldRow.showDetails
+                                        Accessible.description: qsTr("Show the evidence and candidates for this field")
+                                    }
+                                    Button {
+                                        objectName: "correct_" + fieldRow.modelData.field
+                                        flat: true
+                                        padding: 2
+                                        text: qsTr("Correct")
+                                        onClicked: pane.correct(fieldRow.modelData)
+                                        Accessible.description: qsTr("Correct %1").arg(fieldRow.modelData.label)
+                                    }
                                 }
                             }
                             Label {
@@ -278,6 +288,7 @@ Pane {
                                 font.pixelSize: Theme.captionSize
                             }
                             Label {
+                                objectName: "candidates_" + fieldRow.modelData.field
                                 Layout.leftMargin: 156
                                 Layout.fillWidth: true
                                 visible: fieldRow.showDetails && fieldRow.modelData.alternatives.length > 0
