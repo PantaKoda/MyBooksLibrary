@@ -40,16 +40,16 @@ Before changing code:
 
 This instruction file supplies the application requirements. Installed headers determine actual SDK signatures. If an SDK version differs from the baseline, document the difference; do not invent an API or silently drop a product requirement.
 
-Reviewed baseline, 24 September 2026; SDK baseline updated to 0.2.0 on 25 September 2026 and to 0.3.0 on 27 September 2026 (see `docs/IMPLEMENTATION_PROGRESS.md`, "SDK 0.2.0 update" and "SDK 0.3.0 update"):
+Reviewed baseline, 24 September 2026; SDK baseline updated to 0.2.0 on 25 September 2026, to 0.3.0 on 27 September 2026 and to 0.4.0 on 3 October 2026 (see `docs/IMPLEMENTATION_PROGRESS.md`, "SDK 0.2.0 update", "SDK 0.3.0 update" and "SDK 0.4.0 update"):
 
 | Item | Existing value |
 | --- | --- |
 | Desktop repository / reviewed commit | `PantaKoda/MyBooksLibrary` / `bd48f85cd85cf16e9590d7820e449a4a07bc666c` |
-| Engine repository / SDK source | `PantaKoda/PDFMegine`, release tag `v0.3.0` = `bd46d90d538c1308de38d02fc26b243e7d550f9f` (`analyze_book()`, pages read and OCR'd once for metadata plus TOC: PR #4, merge `dfcd6f8381270b07155a6a712eab729e3d101981`, issue #3). Earlier: `v0.2.0` = `93d91280e4177e61c5d8cef32c47f1a5b9a2ce1c` (OCR memory/throughput fix: PR #2, merge `eeb977c18dfa09c74edd57e3539f211b56ec395d`). The 24 September review was against `4499b719d7adb71e5cc372bde88d47f66d8ffebf` (SDK 0.1.0). |
+| Engine repository / SDK source | `PantaKoda/PDFMegine`, release tag `v0.4.0` = `cd46ea811887977bd6a34adc165a253a23520d9a` (every printed ISBN in the metadata result: PR #8, merge `b9f153c40a4d7152535c196ddf0fdf10e82d454e`; version 0.4.0 for that layout change: PR #12; the OCR models' licence shipped: PR #10, issue #6; OpenCV without Media Foundation: PR #11, issue #7). Earlier: `v0.3.0` = `bd46d90d538c1308de38d02fc26b243e7d550f9f` (`analyze_book()`, pages read and OCR'd once for metadata plus TOC: PR #4, merge `dfcd6f8381270b07155a6a712eab729e3d101981`, issue #3). Earlier: `v0.2.0` = `93d91280e4177e61c5d8cef32c47f1a5b9a2ce1c` (OCR memory/throughput fix: PR #2, merge `eeb977c18dfa09c74edd57e3539f211b56ec395d`). The 24 September review was against `4499b719d7adb71e5cc372bde88d47f66d8ffebf` (SDK 0.1.0). |
 | Desktop state at review | Initial QML screen and working SDK CMake integration; catalog, search and processing UI not implemented |
 | Executable / QML URI | `appMyBooksLibrary` / `MyBooksLibrary` |
 | Language / documented kit | C++17 / Qt 6.11.2, Desktop MSVC2022 64bit, MSVC toolchain |
-| SDK package | `find_package(pdfbookmark 0.3 CONFIG REQUIRED)`: SDK **0.3.0**, which adds `analyze_book()` (additive; other headers unchanged from 0.2.0). SDK 0.2.0 added `ocr_threads` to the metadata, analysis and text options, which changed their size. The C++ binary interface is not guaranteed between versions, so switching SDKs requires a clean rebuild. |
+| SDK package | `find_package(pdfbookmark 0.4 CONFIG REQUIRED)`: SDK **0.4.0**, which adds `isbns` to `metadata::MetadataResult` (a C++ layout change; other headers unchanged from 0.3.0). SDK 0.3.0 added `analyze_book()`. SDK 0.2.0 added `ocr_threads` to the metadata, analysis and text options, which changed their size. The C++ binary interface is not guaranteed between versions, so switching SDKs requires a clean rebuild. |
 | Imported link target | `pdfbookmark::pdfbookmark` |
 | Public facade header | `<pdfbookmark/pdfbookmark.hpp>` |
 | Runtime deployment helper | `pdfbookmark_deploy_runtime(appMyBooksLibrary)` |

@@ -246,7 +246,6 @@ You can close the app at any time.
 - **No permanent deletion:** books in Trash stay in the library (and take disk space).
 - **One library per window.** Another library opens in its own window ([Opening another library](#opening-another-library)), and the app starts with the library you last opened from the app.
 - **Windows 10 and 11 (64-bit) only.** macOS and Linux need native builds of the text-recognition library.
-- **Windows "N" and "KN" editions** need the **Media Feature Pack**; without it the app does not start. Install it from Windows' *Optional features*: on Windows 11, *Settings → System → Optional features*; on Windows 10, *Settings → Apps → Optional features*.
 - **Not code-signed**, so SmartScreen may warn the first time.
 - **The reader is simple:** previous and next page, and a page number. It has **no zoom** and **no search inside a book**; for those, open the PDF in another reader.
 - **No cloud sync**, no online lookup of book data, and no annotations.
@@ -266,7 +265,7 @@ You can close the app at any time.
 
 **Processing seems stuck.** Look at **Activity**: scanned books take a long time, and the page counter shows progress. **Cancel** and **Retry** are there if needed.
 
-**The app does not start.** On a Windows "N" edition, install the Media Feature Pack (Windows 11: *Settings → System → Optional features*; Windows 10: *Settings → Apps → Optional features*). Otherwise, check that the whole unpacked folder is there: the executable needs the files next to it.
+**The app does not start.** Check that the whole unpacked folder is there: the executable needs the files next to it. (Up to version 0.2.0, Windows "N" editions also needed the Media Feature Pack; later versions should not.)
 
 **A library is gone after restarting the app.** It is not gone: the app opened the library you last opened *from the app*. A library opened through a `--library` shortcut is not remembered. Use **Library → Open library…** and choose its folder; from then on, it opens at each start.
 

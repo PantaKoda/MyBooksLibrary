@@ -285,6 +285,25 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - All open jobs are held in the activity model. That is bounded by the library size, and finished rows are still capped at 200.
 - **Verified:** `tst_catalog::latestJobsPicksTheNewestPerBookAndKind`, `tst_librarycontroller::pendingCountIncludesTheWholeBacklog` and `refreshesAreCoalesced`. Each fails with its fix reverted: the old query took 8.0 s against a 3 s guard in Debug; without the open jobs `pendingCount` is 100 instead of 150; without coalescing, 20 reloads ran instead of 2.
 
+## 2026-10-03 — SDK baseline moves to pdfbookmark 0.4.0
+
+- **Change:**
+  - `find_package(pdfbookmark 0.4 CONFIG REQUIRED)`.
+  - CI downloads `pdfbookmark-sdk-0.4.0-win64.zip`, checked against SHA-256 `cfe9df4e…6816577c`.
+  - AGENTS.md records tag `v0.4.0` = `cd46ea8`; CLAUDE.md imports the 0.4.0 SDK brief.
+  - `package.ps1`: OpenCV's DLL is `libopencv_world500.dll`; only DLLs the SDK ships are staged; the models' licence must come from the SDK (`-ModelsLicenseFile` and the pinned copy are gone); the Media Feature Pack note in `NOTICE.txt` appears only when a shipped binary imports Media Foundation.
+- **Why:**
+  - The owner asked for the new engine in the app.
+  - 0.4.0 adds `isbns` to `metadata::MetadataResult`, which changes its C++ layout. Requiring 0.4 keeps a build from compiling against 0.3.0 headers and then loading the 0.4.0 DLL, or the reverse; `find_package(… 0.3)` would accept 0.4.0 (`SameMajorVersion` with major 0).
+  - 0.4.0 ships the OCR models' licence (PDFMegine issue #6) and builds OpenCV without Media Foundation (issue #7), which closes two gaps the package worked around.
+  - The package's build folder still held 0.3.0's `opencv_world500.dll` and staged it; copying only the SDK's own DLLs prevents that for every later SDK change.
+- **Assumptions:**
+  - **ISBNs are not used yet.** Storing and showing them needs a catalog migration and inspector work: a separate change. `SdkMetadataExtractor` ignores the new member.
+  - **N editions should start without the Media Feature Pack:** the package's import scan finds no Media Foundation import, but the app has not been tried on an N edition.
+  - SDK 0.3.0 stays installed next to 0.4.0 for comparison.
+- **Removed:** `third_party/licenses/PaddleOCR-LICENSE.txt` and `package.ps1 -ModelsLicenseFile` (the SDK's copy has the same text).
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, "SDK 0.4.0 update".
+
 ## 2026-09-27 — SDK baseline moves to pdfbookmark 0.3.0
 
 - **Change:**

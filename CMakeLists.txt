@@ -22,7 +22,7 @@ if(NOT PDFBOOKMARK_SDK)
         "or set the PDFBOOKMARK_SDK environment variable (see docs/BUILDING.md).")
 endif()
 list(APPEND CMAKE_PREFIX_PATH "${PDFBOOKMARK_SDK}")
-find_package(pdfbookmark 0.3 CONFIG REQUIRED)
+find_package(pdfbookmark 0.4 CONFIG REQUIRED)
 
 qt_standard_project_setup(REQUIRES 6.10)
 

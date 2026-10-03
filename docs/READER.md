@@ -125,6 +125,10 @@ In one package run (text PDF, no OCR), the process ended with `0xC0000005` on a 
 
 The check now destroys the view before its document (a `Loader` in `ReaderCheckView.qml`), but that is not a proven fix. **M06 must own document lifetime explicitly and stress-test opening and closing books in a visible window.**
 
+## SDK 0.4.0 re-verification (2026-10-03)
+
+All `--reader-check` checks pass against SDK 0.4.0 in Release and Debug (clean builds, `verify.ps1`), and in the package from a copy outside the repository, including the OCR run on the scanned fixture (`--require-ocr`; 58 s alone, peak 2.4 GB). 0.4.0 changes only the metadata result (ISBNs) and how OpenCV is built. See IMPLEMENTATION_PROGRESS.md, "SDK 0.4.0 update".
+
 ## SDK 0.3.0 re-verification (2026-09-27)
 
 All `--reader-check` checks pass against SDK 0.3.0 in Release and Debug (clean builds): render, SDK alone, concurrent viewing, cancel while viewing, shutdown during analysis, QML PDF module and non-ASCII path. 0.3.0 adds only `analyze_book()`; the other headers are unchanged. See IMPLEMENTATION_PROGRESS.md, "SDK 0.3.0 update".

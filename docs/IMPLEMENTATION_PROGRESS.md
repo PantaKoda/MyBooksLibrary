@@ -20,7 +20,8 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | Releases on GitHub; **v0.1.0** | Merged: [PR #28](https://github.com/PantaKoda/MyBooksLibrary/pull/28) (merge `4a7dda1`). **v0.1.0** tagged at `e142797` and published on the Releases page | `ci/m10-release-workflow` | See "Releases on GitHub" |
 | After M10: owner's testing | Merged. **In v0.1.0:** [PR #27](https://github.com/PantaKoda/MyBooksLibrary/pull/27) (merge `adcf7b2`), [PR #29](https://github.com/PantaKoda/MyBooksLibrary/pull/29) (merge `e142797`). **In v0.2.0:** [PR #32](https://github.com/PantaKoda/MyBooksLibrary/pull/32) (merge `e3539ed`), [PR #33](https://github.com/PantaKoda/MyBooksLibrary/pull/33) (merge `41e7dec`), [PR #34](https://github.com/PantaKoda/MyBooksLibrary/pull/34) (merge `307c8ad`), [PR #31](https://github.com/PantaKoda/MyBooksLibrary/pull/31) (merge `edad42c`). The owner's manual check of the remembered library remains | `fix/m05-contents-notes-visible`; `docs/user-guide`; `fix/m10-a2-refuse-backup-folder`; `feat/m10-presentation-open-library`; `feat/m10-app-remember-library`; `fix/m05-a4-page-label-sections` | See "After M10" |
 | UI overhaul; build fix; **v0.2.0** | Merged: [PR #37](https://github.com/PantaKoda/MyBooksLibrary/pull/37) (merge `9968194`, the SDK runtime deployed once), [PR #35](https://github.com/PantaKoda/MyBooksLibrary/pull/35) (merge `03859dc`, release notes), [PR #36](https://github.com/PantaKoda/MyBooksLibrary/pull/36) (merge `c100105`, UI PR 1). **v0.2.0** via the release PR `release/v0.2.0` | `fix/ci-sdk-runtime-deploy-race`; `docs/next-release-notes`; `feat/ui-01-presentation-foundation`; `release/v0.2.0` | See "UI overhaul" |
-| Owner's testing after v0.2.0 | AwaitingReview: [PR #39](https://github.com/PantaKoda/MyBooksLibrary/pull/39) | `fix/inspector-plain-reasons` | See "Plain reasons instead of Why?" |
+| Owner's testing after v0.2.0 | Merged: [PR #39](https://github.com/PantaKoda/MyBooksLibrary/pull/39) (merge `5848097`), after the owner's review and CI on `cb19d50` | `fix/inspector-plain-reasons` | See "Plain reasons instead of Why?" |
+| SDK 0.4.0 update | InProgress | `chore/sdk-0.4.0` | See "SDK 0.4.0 update" |
 | M11 | NotStarted | | |
 
 ## UI overhaul (after v0.1.0)
@@ -960,6 +961,32 @@ M07 is split in three:
 - Stage names are not shown.
 
 **Next action:** M05 part 2. A book inspector with the contents tree (two-pass, so a parent may come after its child, with cycle checks), per-entry states and reasons, and metadata evidence.
+
+## SDK 0.4.0 update (2026-10-03)
+
+**Why:** the owner asked for the new engine in the app. PDFMegine released SDK **0.4.0** (tag `v0.4.0` = `cd46ea8`): every printed ISBN in the metadata result (PR #8), version 0.4.0 for that C++ layout change (PR #12), the OCR models' licence in every package (PR #10, issue #6), OpenCV built without Media Foundation (PR #11, issue #7), and documentation of `analyze_book()` report fields (PR #9, issue #5).
+
+| Item | Value |
+| --- | --- |
+| Release asset | `pdfbookmark-sdk-0.4.0-win64.zip`, SHA-256 `cfe9df4eb470b1ac34347e3672982bffa905195b0ac858e5985d4d2d6816577c` (matches the release's digest), unpacked to `…\Dev\pdfbookmark-sdk\0.4.0\`; 0.3.0 kept |
+| Header changes from 0.3.0 | `metadata/metadata.hpp`: `IsbnForm`, `IsbnFormat`, `IsbnValue`, `MetadataResult::isbns`, `form_name`, `format_name`; comments in `pdfbookmark.hpp` and `pdfbookmark.h`; `version.hpp`. All other headers byte-identical |
+| Runtime changes | `opencv_world500.dll` is now `libopencv_world500.dll` (Release and Debug); `pdfbookmark.dll`, `qpdf30.dll`, `jpeg62.dll`, `z.dll` rebuilt; `licenses/PaddleOCR-PP-OCR-models.txt` added. SDK folder 292 MB instead of 430 MB |
+| Header / loaded version | `0.4.0` / `0.4.0` (Debug, Release and the package) |
+
+**Changes:** `find_package(pdfbookmark 0.4)`; the CI SDK version and digest (`.github/actions/setup/action.yml`); the AGENTS.md baseline; the CLAUDE.md SDK brief path; `package.ps1` (OpenCV's DLL name, only the SDK's DLLs staged, the models' licence from the SDK, the Media Feature Pack note only when needed); `third_party/licenses` without the PaddleOCR copy; BUILDING.md, READER.md, RELEASING.md, USER_GUIDE.md, the `verify.ps1` example, DECISIONS.md, releases/UNRELEASED.md. No application code changes: the app does not read `isbns` yet.
+
+**Verification** (Windows 11, Qt 6.11.2 MSVC2022 64-bit, Visual Studio 2026, SDK 0.4.0):
+
+| Command | Result |
+| --- | --- |
+| `pwsh scripts/verify.ps1 -Configuration Release -Clean -SdkDir <sdk 0.4.0>` | VERIFY PASSED: 34/34 tests, app smoke checks; `sdk.header_version=0.4.0`, `sdk.loaded_version=0.4.0` |
+| `pwsh scripts/verify.ps1 -Configuration Debug -Clean -SdkDir <sdk 0.4.0>` | VERIFY PASSED: 34/34 tests, app smoke checks; header and loaded version 0.4.0 |
+| `pwsh scripts/package.ps1 -SdkDir <sdk 0.4.0> -SkipZip` | First run **failed**: the reused `build\package-release` still held 0.3.0's `opencv_world500.dll`, which was staged and had no known licence. After staging only the SDK's DLLs: PACKAGE PASSED (270.6 MB). No Media Foundation import reported; `NOTICE.txt` names the models' licence from the SDK and has no Media Feature Pack note. Outside the repository: `--sdk-check` (0.4.0), `--sqlite-check`, `--reader-check` on the text PDF, `--reader-check --require-ocr` on the scanned fixture (4 pages OCR'd, 58.4 s alone, peak 2.4 GB, viewer and SDK concurrently with 0 differing pages, cancel while viewing), and the window: import, read, export, close (bookmarked copy written) |
+| `cmake … -DPDFBOOKMARK_SDK=<sdk 0.3.0>` on this branch | Refused at configure: the version found (0.3.0) is not compatible with the requested "0.4" |
+
+**Not verified:** the app on a Windows N edition without the Media Feature Pack; reading real books again (only the fixtures were analysed; 0.4.0 changes no TOC code). `PDFBOOKMARK_SDK` in the owner's user environment still points at 0.3.0, and the Qt Creator build folders cache an older SDK path (0.2.0): with `find_package(… 0.4)` they now stop at configure until they point at the 0.4.0 folder.
+
+**Next:** storing and showing ISBNs (catalog migration, `SdkMetadataExtractor`, inspector), as a separate PR if wanted.
 
 ## SDK 0.3.0 update (2026-09-27)
 
