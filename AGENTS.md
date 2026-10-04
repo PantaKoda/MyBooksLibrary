@@ -100,6 +100,7 @@ Supporting components:
 - `src/processing/sdk/`: the production SDK boundary; SDK headers/types stay here where practical.
 - `src/presentation/`: QObject controllers and GUI-owned Qt models.
 - `src/reader/`, `qml/reader/`: viewer adapter and reading/navigation UI.
+- `src/update/`, `qml/update/`: checking this repository's GitHub releases and installing a newer one when the user asks (docs/UPDATES.md). This is the app's only network access. It is anonymous, never touches the library, and is disabled in development modes.
 - `qml/`: handwritten views. Keep generated `importedcontent/` separate from logic.
 
 QML invokes presentation commands. Presentation uses catalog/search/coordinator contracts and the reader adapter. A4 coordinates the other subsystems and invokes the SDK. A2 owns authoritative data; A3 owns derived index logic. Neither acquires PDF text.

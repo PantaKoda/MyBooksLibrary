@@ -691,3 +691,35 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - **The scheme is asserted only where it applies:** the offscreen platform ignores colour-scheme requests, so CI (offscreen) checks storage and the dialog, and the scheme is checked with `QT_QPA_PLATFORM=windows` locally.
   - **A ring and a dot, not an icon file:** the toolbar button draws the accent itself, so no SVG plugin or icon licence is needed.
 - **Verified:** See IMPLEMENTATION_PROGRESS.md, "Themes and accents".
+
+## 2026-10-04 — In-app updates from GitHub releases
+
+- **Change:** the app checks this repository's GitHub releases (daily, and from **Library → Check for updates…**), shows an **Update to X.Y.Z** button and the notes of every newer release, and installs the newest when the user clicks **Install update**:
+  - it downloads the zip and `.sha256` and verifies the hash;
+  - it unpacks the zip with Windows' `tar.exe`;
+  - the window closes;
+  - the new copy swaps the app's folder (keeping `<folder>.previous`) and starts the new version on the same library.
+
+  `package.ps1` puts a `release.json` marker in the zip. New code: `src/update/` (`mbl_update`, Qt Network), `UpdateController`, `UpdateDialog.qml`, and the `--apply-update` and `--tls-check` modes. Full description: docs/UPDATES.md.
+- **Why:** the owner asked for "a similar release cycle as well. An update button that checks for new releases on github and installs locally in the spirit of" repo-watch's commit fdfe02f. The release cycle (tag → workflow → zip and `.sha256` on the Releases page) already matched repo-watch's. What was missing was the app side.
+- **Assumptions:**
+  - **repo-watch's design, adapted to Qt:**
+    - anonymous checks;
+    - only the repository's release URLs;
+    - a SHA-256 check;
+    - a marker that keeps builds from source from replacing themselves;
+    - a hand-over to the new copy, which swaps the folder with `.previous` and restores it on failure;
+    - a refusal when the data is inside the app's folder;
+    - plain-text notes;
+    - a 30 s stall timeout and Cancel.
+
+    The notes come from the release body, which is `docs/releases/vX.Y.Z.md` plus GitHub's PR list, rather than a CHANGELOG section.
+  - **Qt Network is a new module, from the installed kit:** an update check needs HTTP. The owner's request authorizes that; nothing is downloaded or installed in the toolchain. HTTPS uses Windows' Schannel through Qt's `qschannelbackend`. The OpenSSL backend is excluded from the package, so no OpenSSL DLLs are needed.
+  - **Unpacking with Windows' `tar.exe`, not a zip library:** Qt has no public zip API, and the private `QZipReader` is not used, per the rule against private APIs. `tar.exe` (bsdtar) has shipped with Windows 10 since 1803, refuses absolute and `..` paths, and runs as a separate process, so the GUI never blocks.
+  - **The hand-over runs after the event loop:** the window closes through its normal flow, so running SDK work stops and the reading position is saved. Only then does `main.cpp` start the new copy, which waits for this process to exit.
+  - **The restart reopens the window's library** (`--library <folder> --existing-library`), so a window on a restored library does not reopen the default one.
+  - **A file in use means nothing changes:** the folder rename fails when any file in it is open, for example in another MyBooksLibrary window. The rename is retried for 5 s, then the old version restarts with the reason.
+  - **No automatic check in development modes**, so smoke runs and screenshots never use the network, and CI never depends on github.com. One opt-in test (`MBL_ONLINE_TESTS=1`) downloads the real 0.3.0 package.
+  - **Not a code signature:** the checksum and HTTPS prove the file is the one published on GitHub, not who built it. Authenticode signing remains future work, as in repo-watch.
+  - **0.3.0 and earlier cannot update themselves.** Their users replace the folder once by hand; the release notes and the user guide say so.
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, "In-app updates".

@@ -54,3 +54,4 @@ A zip that runs where it is unpacked: `appMyBooksLibrary.exe`, with Qt, the pdfb
 - **Code signing:** none, so Windows SmartScreen may warn the first time.
 - **Windows N editions:** up to 0.2.0 they needed the Media Feature Pack ([PantaKoda/PDFMegine#7](https://github.com/PantaKoda/PDFMegine/issues/7)). With SDK 0.4.0 no shipped binary imports Media Foundation; `package.ps1` reports it, and `NOTICE.txt` says so, if one does again.
 - **The user's library** lives in their data folder, never next to the executable, so a new version can replace the old one.
+- **Updates:** from 0.4.0 on, the app checks this repository's releases daily and installs a newer one when the user asks (docs/UPDATES.md). It needs the zip, its `.sha256` and the `release.json` marker inside the zip, which the workflow and `package.ps1` provide. The release notes are what the update window shows, so write them for users.

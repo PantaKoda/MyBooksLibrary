@@ -12,7 +12,10 @@
        - Qt, through windeployqt: the QML imports found in qml\, only the
          SQLite SQL driver, no software OpenGL, D3D or DXC compiler, no QML
          debugging plugins, no translations;
-       - the Visual C++ runtime DLLs, app-local (vcruntime, msvcp).
+       - the Visual C++ runtime DLLs, app-local (vcruntime, msvcp);
+       - release.json, the marker that lets this copy update itself
+         (docs/UPDATES.md). HTTPS for update checks uses Windows' own TLS
+         (Schannel): the OpenSSL and certificate-only backends are left out.
     3. licenses\: NOTICE.txt (what is shipped, under which licence), Qt's
        licence text and the SBOM of every Qt module whose files are shipped,
        the pdfbookmark SDK's third-party licences, including the OCR models'
@@ -28,7 +31,11 @@
        a time limit: --sdk-check, --sqlite-check,
        --reader-check on a text PDF and on a scanned one with the OCR models,
        and the window itself (real platform): import, read, save a copy with
-       bookmarks through the Export dialog's session, close.
+       bookmarks through the Export dialog's session, close. --tls-check
+       (HTTPS through Schannel). Then the update
+       hand-over: a copy marked as the next version replaces the trial
+       folder (--apply-update), keeps the old one as .previous and starts
+       the new version, which is then stopped.
     5. build\package\MyBooksLibrary-<version>-win64.zip (unless -SkipZip).
 
 .EXAMPLE
@@ -177,9 +184,13 @@ try {
     Invoke-Native $windeployqt @('--release', '--qmldir', (Join-Path $repo 'qml'), '--no-translations',
         '--no-opengl-sw', '--no-system-d3d-compiler', '--no-system-dxc-compiler', '--no-compiler-runtime',
         '--skip-plugin-types', 'qmltooling',
-        '--exclude-plugins', 'qsqlodbc,qsqlpsql,qsqlmysql,qsqlibase,qsqloci,qsqlmimer',
+        '--exclude-plugins', 'qsqlodbc,qsqlpsql,qsqlmysql,qsqlibase,qsqloci,qsqlmimer,qopensslbackend,qcertonlybackend',
         (Join-Path $stage 'appMyBooksLibrary.exe'))
     Get-ChildItem -Path $crtDir.FullName -Filter '*.dll' | Copy-Item -Destination $stage
+    # The release marker (src/update/installinfo.h): only a copy unpacked from
+    # a release zip may replace itself with a newer release.
+    $marker = [ordered]@{ product = 'MyBooksLibrary'; version = $version } | ConvertTo-Json
+    [IO.File]::WriteAllText((Join-Path $stage 'release.json'), $marker, [Text.UTF8Encoding]::new($false))
 
     Write-Host '==> Notices'
     $licenses = Join-Path $stage 'licenses'
@@ -318,6 +329,49 @@ Microsoft Visual C++ runtime ($($crtDir.Name))
         if ($run.Code -ne 0) { throw "the window check failed (exit $($run.Code))" }
         if (-not (Test-Path -LiteralPath $copy -PathType Leaf)) { throw "the bookmarked copy was not written at $copy" }
         Write-Host "bookmarked copy: $((Get-Item -LiteralPath $copy).Length) bytes"
+        $tls = Invoke-App $app @('--tls-check') 60
+        if ($tls.Output -notmatch 'tls.active=schannel') { throw "HTTPS for update checks does not use Schannel: $($tls.Output)" }
+
+        # The update hand-over (src/update/updateapplier.h), with the packaged
+        # binaries: a copy marked as the next version, run from a staging
+        # folder, replaces the trial folder and starts the new version on the
+        # trial library.
+        $install = Join-Path $trial 'MyBooksLibrary'
+        $staged = Join-Path $trial 'updates\unpacked\MyBooksLibrary'
+        New-Item -ItemType Directory -Path (Split-Path -Parent $staged) | Out-Null
+        Copy-Item -Recurse $stage $staged
+        $parts = $version.Split('.')
+        $next = "$($parts[0]).$($parts[1]).$([int]$parts[2] + 1)"
+        $nextMarker = [ordered]@{ product = 'MyBooksLibrary'; version = $next } | ConvertTo-Json
+        [IO.File]::WriteAllText((Join-Path $staged 'release.json'), $nextMarker, [Text.UTF8Encoding]::new($false))
+        # A process that has already exited stands in for the old app.
+        $exited = Start-Process -FilePath "$env:SystemRoot\System32\cmd.exe" -ArgumentList '/c', 'exit' -PassThru -WindowStyle Hidden
+        $exited.WaitForExit()
+        $updateLog = Join-Path $trial 'update.log'
+        # Started as the app starts it: no redirected output, which the
+        # restarted app would inherit and hold open. The log has every step.
+        $updater = Start-Process -FilePath (Join-Path $staged 'appMyBooksLibrary.exe') -PassThru -ArgumentList @(
+            '--apply-update', "`"$install`"", '--wait-pid', "$($exited.Id)", '--from-version', $version,
+            '--log', "`"$updateLog`"", '--restart-library', "`"$library`"")
+        $code = if ($updater.WaitForExit(120000)) { $updater.ExitCode } else { $updater.Kill(); 'timeout' }
+        $run = [pscustomobject]@{ Code = $code }
+        $logText = if (Test-Path -LiteralPath $updateLog) { Get-Content -Raw -LiteralPath $updateLog } else { '' }
+        Write-Host "---- update hand-over (exit $($run.Code))"
+        Write-Host $logText
+        # Stop the restarted app: only a process running from the trial folder.
+        $restarted = Join-Path $install 'appMyBooksLibrary.exe'
+        Start-Sleep -Seconds 3
+        $started = @(Get-Process -Name 'appMyBooksLibrary' -ErrorAction SilentlyContinue |
+            Where-Object { $_.Path -and $_.Path -ieq $restarted })
+        $started | ForEach-Object { $_.Kill(); $_.WaitForExit(10000) | Out-Null }
+        if ($run.Code -ne 0) { throw "the update hand-over failed (exit $($run.Code))" }
+        $installed = Get-Content -Raw -LiteralPath (Join-Path $install 'release.json') | ConvertFrom-Json
+        $kept = Get-Content -Raw -LiteralPath (Join-Path "$install.previous" 'release.json') | ConvertFrom-Json
+        if ($installed.version -ne $next) { throw "after the hand-over the app folder holds $($installed.version), not $next" }
+        if ($kept.version -ne $version) { throw "the previous version kept is $($kept.version), not $version" }
+        if ($logText -notmatch 'started ') { throw 'the hand-over did not start the new version' }
+        if ($started.Count -ne 1) { throw "the new version was not running after the hand-over ($($started.Count) found)" }
+        Write-Host "update hand-over: $version -> $next, previous kept, new version started"
     } finally {
         foreach ($entry in $saved.GetEnumerator()) {
             [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, 'Process')

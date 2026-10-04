@@ -5,7 +5,7 @@ project(MyBooksLibrary VERSION 0.3.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Quick Sql Pdf)
+find_package(Qt6 REQUIRED COMPONENTS Quick Sql Pdf Network)
 
 # --- pdfbookmark SDK ---
 # Set PDFBOOKMARK_SDK as a cache variable (-DPDFBOOKMARK_SDK=..., a CMakeUserPresets.json,
@@ -106,6 +106,21 @@ if(WIN32)
     target_link_libraries(mbl_core PRIVATE psapi)
 endif()
 
+# Updates (docs/UPDATES.md): GitHub releases, the verified download and the
+# hand-over that puts a new release in place of the app's folder.
+set(MBL_UPDATE_REPOSITORY "PantaKoda/MyBooksLibrary" CACHE STRING "GitHub repository whose releases update the app")
+qt_add_library(mbl_update STATIC
+    src/update/releases.h
+    src/update/releases.cpp
+    src/update/installinfo.h
+    src/update/installinfo.cpp
+    src/update/updateapplier.h
+    src/update/updateapplier.cpp
+    src/update/updatedownloader.h
+    src/update/updatedownloader.cpp
+)
+target_link_libraries(mbl_update PUBLIC mbl_core Qt6::Core Qt6::Network)
+
 # Presentation (GUI-owned models and controllers) and the composition helpers.
 qt_add_library(mbl_presentation STATIC
     src/app/librarymemory.h
@@ -128,6 +143,8 @@ qt_add_library(mbl_presentation STATIC
     src/presentation/joblistmodel.cpp
     src/presentation/toctreemodel.h
     src/presentation/toctreemodel.cpp
+    src/presentation/updatecontroller.h
+    src/presentation/updatecontroller.cpp
     src/presentation/librarycontroller.h
     src/presentation/librarycontroller.cpp
     src/presentation/libraryswitcher.h
@@ -152,7 +169,7 @@ qt_add_qml_module(mbl_presentation
     QML_FILES
         qml/theme/Theme.qml
 )
-target_link_libraries(mbl_presentation PUBLIC mbl_core Qt6::Core Qt6::Qml Qt6::Quick)
+target_link_libraries(mbl_presentation PUBLIC mbl_core mbl_update Qt6::Core Qt6::Qml Qt6::Quick)
 # qmltyperegistrar includes registered headers by bare file name.
 target_include_directories(mbl_presentation PRIVATE src/presentation)
 
@@ -200,6 +217,7 @@ qt_add_qml_module(appMyBooksLibrary
         qml/export/ExportDialog.qml
         qml/backup/BackupDialog.qml
         qml/theme/AppearanceDialog.qml
+        qml/update/UpdateDialog.qml
 )
 
 # The window's Qt Quick Controls style: FluentWinUI3 (docs/UI.md, "Theme").
@@ -217,7 +235,11 @@ set_target_properties(appMyBooksLibrary PROPERTIES
 )
 
 target_link_libraries(appMyBooksLibrary
-    PRIVATE Qt6::Quick Qt6::Pdf mbl_core mbl_presentation mbl_presentationplugin mbl_sdk
+    PRIVATE Qt6::Quick Qt6::Pdf Qt6::Network mbl_core mbl_update mbl_presentation mbl_presentationplugin mbl_sdk
+)
+target_compile_definitions(appMyBooksLibrary PRIVATE
+    MBL_VERSION="${PROJECT_VERSION}"
+    MBL_UPDATE_REPOSITORY="${MBL_UPDATE_REPOSITORY}"
 )
 
 # Copies pdfbookmark.dll, its dependency DLLs and the OCR models next to the .exe
