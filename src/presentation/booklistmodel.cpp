@@ -115,6 +115,8 @@ QVariant BookListModel::data(const QModelIndex& index, int role) const
     }
     case ProcessingStateRole:
         return stateOf(book);
+    case SuggestedTitleRole:
+        return book.suggestedTitle;
     }
     return {};
 }
@@ -127,6 +129,7 @@ QHash<int, QByteArray> BookListModel::roleNames() const
         {TitleFromFileNameRole, "titleFromFileName"},
         {ContributorsRole, "contributors"},
         {ProcessingStateRole, "processingState"},
+        {SuggestedTitleRole, "suggestedTitle"},
     };
 }
 

@@ -86,7 +86,8 @@ Every new book is **analyzed automatically in the background**. You can keep wor
 - A **scanned** book, whose pages are pictures, needs OCR (text recognition). That takes **several seconds per page** and up to about **2.5 GB of memory**, so a batch of scanned books can take hours.
 - **If you close the app**, unfinished work continues the next time you open it; nothing is lost.
 
-**Nothing is guessed.** When the app is not sure (two possible titles, or a chapter whose page cannot be confirmed), it says so rather than invent an answer, and you can decide.
+**Nothing is decided for you.** When the app is not sure (two possible titles, or a chapter whose page cannot be confirmed), it says so rather than invent an answer, and you can decide.
+- **An uncertain title:** the book list shows the most likely title, marked **Best guess, not confirmed**, instead of the file name. In the book's **Title and authors** tab, the candidates are listed, each with **Use this**. One click saves your choice as your correction, with the subtitle if the candidate has one. You can still **Correct** it afterwards. Until you choose, the guess is only shown: it is not the book's title, and search does not find the book by it.
 
 ## A book's details
 

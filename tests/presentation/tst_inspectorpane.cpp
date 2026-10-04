@@ -5,9 +5,11 @@
 #include "catalog/jobs.h"
 #include "catalog/library.h"
 #include "presentation/bookinspector.h"
+#include "presentation/booklistmodel.h"
 #include "presentation/collectionlistmodel.h"
 #include "presentation/librarycontroller.h"
 
+#include <QDir>
 #include <QFont>
 #include <QGuiApplication>
 #include <QItemSelectionModel>
@@ -586,8 +588,10 @@ void TestInspectorPane::unreadableContentsSayWhatHappened()
 
 // The metadata rows as rendered: a field the document gave no value says why
 // under it, one reason per line, with no button; a field with candidates has
-// a button named for them that toggles them, beside a source line that wraps
-// instead of running under it.
+// a button named for them, beside a source line that wraps instead of running
+// under it. An uncertain title offers its candidates at once, each with Use
+// this; the book list shows the strongest as a guess until one is chosen
+// (shapiro1983.pdf: two close candidates, the file name shown).
 void TestInspectorPane::fieldsWithoutValueSayWhy()
 {
     QTemporaryDir dir;
@@ -614,8 +618,11 @@ void TestInspectorPane::fieldsWithoutValueSayWhy()
                        QList<MetadataFieldDetail> details;
                        MetadataFieldDetail title;
                        title.field = MetadataField::Title;
-                       title.alternatives << MetadataCandidate{QStringLiteral("Black Holes"), 0.5, {}, {}}
-                                          << MetadataCandidate{QStringLiteral("White Dwarfs"), 0.4, {}, {}};
+                       // The first as stored before title and subtitle were kept
+                       // apart ("title: subtitle"); the second as stored now.
+                       title.alternatives << MetadataCandidate{QStringLiteral("Black Holes: The Physics of Compact Objects"),
+                                                               0.5, {}, {QStringLiteral("Title block on 1 page(s)")}}
+                                          << MetadataCandidate{QStringLiteral("White Dwarfs"), 0.4, {}, {}, QStringLiteral("White Dwarfs"), {}};
                        title.reasons << QStringLiteral("Two title blocks disagree");
                        details << title;
                        MetadataFieldDetail edition;
@@ -666,19 +673,36 @@ void TestInspectorPane::fieldsWithoutValueSayWhy()
     QVERIFY(yearNote);
     QVERIFY(!yearNote->isVisible());
 
-    // Title: the button names the candidates and toggles them.
+    // Title: the candidates are offered at once, each with Use this; the
+    // plain-text list of other fields' candidates is not used for them.
     QQuickItem* titleDetails = findItem(pane, QStringLiteral("details_title"));
     QQuickItem* candidates = findItem(pane, QStringLiteral("candidates_title"));
-    QVERIFY(titleDetails && candidates);
+    QQuickItem* offered = findItem(pane, QStringLiteral("titleCandidates"));
+    QVERIFY(titleDetails && candidates && offered);
     QTRY_VERIFY_WITH_TIMEOUT(titleDetails->isVisible(), 5000);
     QCOMPARE(titleDetails->property("text").toString(), QStringLiteral("Show candidates (2)"));
+    QTRY_VERIFY_WITH_TIMEOUT(offered->isVisible(), 5000);
     QVERIFY(!candidates->isVisible());
-    click(titleDetails);
-    QTRY_VERIFY_WITH_TIMEOUT(candidates->isVisible(), 5000);
-    QCOMPARE(titleDetails->property("text").toString(), QStringLiteral("Hide"));
-    click(titleDetails);
-    QTRY_VERIFY_WITH_TIMEOUT(!candidates->isVisible(), 5000);
-    QCOMPARE(titleDetails->property("text").toString(), QStringLiteral("Show candidates (2)"));
+    QTRY_VERIFY(findItem(pane, QStringLiteral("useCandidate_0")) && findItem(pane, QStringLiteral("useCandidate_1")));
+    const QVariantMap titleField = controller.inspector()->property("metadataFields").toList().first().toMap();
+    const QVariantList offeredList = titleField.value(QStringLiteral("candidates")).toList();
+    QCOMPARE(offeredList.size(), 2);
+    // A candidate stored as "title: subtitle" is split for use.
+    QCOMPARE(offeredList.at(0).toMap().value(QStringLiteral("title")).toString(), QStringLiteral("Black Holes"));
+    QCOMPARE(offeredList.at(0).toMap().value(QStringLiteral("subtitle")).toString(),
+             QStringLiteral("The Physics of Compact Objects"));
+    QCOMPARE(offeredList.at(1).toMap().value(QStringLiteral("title")).toString(), QStringLiteral("White Dwarfs"));
+    QVERIFY(titleField.value(QStringLiteral("offerCandidates")).toBool());
+
+    // The book list shows the strongest candidate as a guess, not as the title.
+    auto* books = controller.books();
+    const int bookRow = books->rowOfBook(book.toString());
+    QVERIFY(bookRow >= 0);
+    using mbl::presentation::BookListModel;
+    QTRY_COMPARE_WITH_TIMEOUT(books->data(books->index(bookRow), BookListModel::SuggestedTitleRole).toString(),
+                              QStringLiteral("Black Holes"), 5000);
+    QVERIFY(books->data(books->index(bookRow), BookListModel::TitleFromFileNameRole).toBool());
+    QCOMPARE(books->data(books->index(bookRow), BookListModel::TitleRole).toString(), QStringLiteral("scan"));
 
     // The source line never runs under the buttons and is never squeezed out:
     // beside them in a wide pane, above them in a narrow one (the inspector
@@ -709,6 +733,48 @@ void TestInspectorPane::fieldsWithoutValueSayWhy()
         if (width == 900.0)  // Room for both: on one line.
             QVERIFY2(sourceRect.right() <= buttonRect.left() && sourceRect.top() < buttonRect.bottom(), qPrintable(where));
     }
+
+    // For the PR: MBL_SCREENSHOT_DIR=<folder> saves the offered candidates.
+    if (const QString shots = qEnvironmentVariable("MBL_SCREENSHOT_DIR"); !shots.isEmpty()) {
+        window.resize(640, 640);
+        pane->setWidth(640);
+        QTest::qWait(300);
+        window.grabWindow().save(QDir(shots).filePath(QStringLiteral("title-candidates.png")));
+    }
+
+    // Use this: the title and the subtitle become the user's correction; the
+    // guess and the offer go, and the list shows the title.
+    QSignalSpy corrected(controller.inspector(), &BookInspector::corrected);
+    click(findItem(pane, QStringLiteral("useCandidate_0")));
+    QTRY_COMPARE_WITH_TIMEOUT(corrected.size(), 2, 5000);  // Title, then subtitle.
+    // The rows are rebuilt on reload: look the items up again.
+    const auto item = [&](const char* name) { return findItem(pane, QString::fromLatin1(name)); };
+    QTRY_VERIFY_WITH_TIMEOUT(item("titleCandidates") && !item("titleCandidates")->isVisible(), 5000);
+    const QVariantList fields = controller.inspector()->property("metadataFields").toList();
+    QCOMPARE(fields.at(0).toMap().value(QStringLiteral("value")).toString(), QStringLiteral("Black Holes"));
+    QCOMPARE(fields.at(0).toMap().value(QStringLiteral("sourceText")).toString(), QStringLiteral("Your correction"));
+    QCOMPARE(fields.at(1).toMap().value(QStringLiteral("value")).toString(), QStringLiteral("The Physics of Compact Objects"));
+    QTRY_COMPARE_WITH_TIMEOUT(books->data(books->index(books->rowOfBook(book.toString())), BookListModel::TitleRole).toString(),
+                              QStringLiteral("Black Holes"), 5000);
+    QCOMPARE(books->data(books->index(books->rowOfBook(book.toString())), BookListModel::SuggestedTitleRole).toString(),
+             QString());
+    // The candidates stay available on request, for another choice.
+    click(item("details_title"));
+    QTRY_VERIFY_WITH_TIMEOUT(item("titleCandidates")->isVisible(), 5000);
+    // A stale choice (another book shown) is refused.
+    controller.inspector()->useTitleCandidate(BookId::create().toString(), 0);
+    QVERIFY(!controller.inspector()->property("correctionError").toString().isEmpty());
+
+    // A title cleared on purpose stays cleared: no guess comes back.
+    controller.inspector()->clearField(book.toString(), QStringLiteral("title"));
+    QTRY_COMPARE_WITH_TIMEOUT(corrected.size(), 3, 5000);
+    const auto bookRowNow = [&] { return books->index(books->rowOfBook(book.toString())); };
+    QTRY_VERIFY_WITH_TIMEOUT(books->data(bookRowNow(), BookListModel::TitleFromFileNameRole).toBool(), 5000);
+    QCOMPARE(books->data(bookRowNow(), BookListModel::SuggestedTitleRole).toString(), QString());
+    // Back to the document's (uncertain) title: the guess returns.
+    controller.inspector()->useDocumentValue(book.toString(), QStringLiteral("title"));
+    QTRY_COMPARE_WITH_TIMEOUT(books->data(bookRowNow(), BookListModel::SuggestedTitleRole).toString(),
+                              QStringLiteral("Black Holes"), 5000);
 }
 
 void TestInspectorPane::uncertainPagesLeaveTheTitleInView()

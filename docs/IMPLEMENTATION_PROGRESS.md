@@ -23,7 +23,8 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | Owner's testing after v0.2.0 | Merged: [PR #39](https://github.com/PantaKoda/MyBooksLibrary/pull/39) (merge `5848097`), after the owner's review and CI on `cb19d50` | `fix/inspector-plain-reasons` | See "Plain reasons instead of Why?" |
 | SDK 0.4.0 update; **v0.3.0** | Merged: [PR #40](https://github.com/PantaKoda/MyBooksLibrary/pull/40) (merge `b6501da`), after CI on `f72e14d`. **v0.3.0** (PRs #39, #40) via the release PR `release/v0.3.0` | `chore/sdk-0.4.0`; `release/v0.3.0` | See "SDK 0.4.0 update" |
 | Themes and accents | Merged: [PR #42](https://github.com/PantaKoda/MyBooksLibrary/pull/42) (merge `9665924`), after review and CI on `6d0ed71` | `feat/ui-themes-accents` | See "Themes and accents" |
-| In-app updates | AwaitingReview: [PR #43](https://github.com/PantaKoda/MyBooksLibrary/pull/43) | `feat/app-updates` | See "In-app updates" |
+| In-app updates | Merged: [PR #43](https://github.com/PantaKoda/MyBooksLibrary/pull/43) (merge `110d726`), after review and CI on `d65b1f8` | `feat/app-updates` | See "In-app updates" |
+| Uncertain titles: best guess and one-click candidates | AwaitingReview (PR to be linked) | `feat/metadata-title-candidates` | See "Uncertain titles" |
 | M11 | NotStarted | | |
 
 ## UI overhaul (after v0.1.0)
@@ -116,7 +117,7 @@ Its first run failed twice, rightly: WinUI's light caution `#9d5d00` reaches 4.3
 
 **Asked by the owner (2026-10-04):** "a similar release cycle as well. An update button that checks for new releases on github and installs locally in the spirit of" repo-watch's commit fdfe02f.
 
-**Branch:** `feat/app-updates`. **Status:** AwaitingReview: [PR #43](https://github.com/PantaKoda/MyBooksLibrary/pull/43).
+**Branch:** `feat/app-updates`. **Status:** Merged: [PR #43](https://github.com/PantaKoda/MyBooksLibrary/pull/43), merge `110d726` (2026-10-04), after review and CI on the head `d65b1f8`. The owner's copy in `Downloads\MyBooksLibrary-0.3.0-win64\MyBooksLibrary` was replaced by a package of `110d726` (old copy kept beside it as `MyBooksLibrary.0.3.0-original`), so the next release reaches it through the Update button.
 
 **Change:** see docs/UPDATES.md and DECISIONS.md (2026-10-04, "In-app updates").
 - `src/update/` (new, `mbl_update`, Qt Network):
@@ -148,6 +149,34 @@ Its first run failed twice, rightly: WinUI's light caution `#9d5d00` reaches 4.3
 - **Test gap, fixed:** the package's layout and its marker now give two different messages. The online test asserts the marker message, which proves that the real `Compress-Archive` zip unpacks into `MyBooksLibrary\appMyBooksLibrary.exe`. `otherLayoutIsRefused` (new) checks the layout message.
 
 **Remaining:** the first real update can only happen from the release that ships this code (0.4.0) to a later one. Until then, the hand-over is verified by `package.ps1` with the packaged binaries, not by a download from github.com.
+
+### Uncertain titles: best guess and one-click candidates (catalog, presentation)
+
+**Asked by the owner (2026-10-04):** "D:\Books\shapiro1983.pdf finds no metadata. Or found something but not sure to show any."
+- **Diagnosis:** the SDK read the book's embedded text in about a second. It found the title as two close candidates and chose neither: "Black Holes, White Dwarfs, and Neutron Stars The Physics of Compact Objects" (score 140) and the same title with the subtitle "THE PHYSICS OF" (131). The contributors were also ambiguous and wrong, which is an SDK matter. The copyright year (2004) and the ISBN were found.
+- **Owner's choice:** "Show best guess + pick".
+
+**Branch:** `feat/metadata-title-candidates`. **Status:** AwaitingReview.
+
+**Change:** see DECISIONS.md (2026-10-04, "Uncertain titles").
+- `domain`: `MetadataCandidate.title` and `.subtitle`, `titleParts()`, `BookSummary.suggestedTitle`.
+- `sdk/metadatanormalize`: title candidates keep their title and subtitle.
+- `catalog/jobs`: stored in `alternatives_json` and read back.
+- `catalog/catalog`: the summary's `suggestedTitle`.
+- `BookListModel`: `SuggestedTitleRole`. `BookListView.qml`: the guess, with "Best guess, not confirmed".
+- `BookInspector`: `candidates`, `offerCandidates`, `useTitleCandidate`. `BookInspectorPane.qml`: candidate cards with **Use this**.
+- Docs: UI.md, USER_GUIDE.md, DECISIONS.md, `releases/UNRELEASED.md`.
+
+**Tests:** `tst_inspectorpane.fieldsWithoutValueSayWhy`, extended. It checks:
+- the candidates are offered at once;
+- a candidate stored as "title: subtitle" is split, and one stored now is not;
+- the list shows the guess while the title stays the file name;
+- **Use this** saves the title and subtitle as corrections, the offer and the guess go, and the list shows the title;
+- the candidates stay available on request;
+- a stale choice is refused;
+- a cleared title shows no guess, and the guess returns after "use the document's value".
+
+The owner's PDF was checked in a scratch library: the list showed the guess.
 
 ## After M10: fixes from the owner's testing
 

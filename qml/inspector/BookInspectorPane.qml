@@ -288,11 +288,87 @@ Pane {
                                 color: Theme.textSecondary
                                 font.pixelSize: Theme.captionSize
                             }
+                            // Title candidates, each usable in one click: offered at
+                            // once while the title is uncertain, else on request.
+                            ColumnLayout {
+                                objectName: "titleCandidates"
+                                Layout.leftMargin: 156
+                                Layout.fillWidth: true
+                                Layout.topMargin: Theme.spacingXS
+                                spacing: Theme.spacingXS
+                                visible: fieldRow.modelData.candidates.length > 0
+                                         && (fieldRow.modelData.offerCandidates || fieldRow.showDetails)
+                                Label {
+                                    Layout.fillWidth: true
+                                    text: fieldRow.modelData.offerCandidates
+                                          ? qsTr("Which is the title? Your choice is saved as your correction.")
+                                          : qsTr("Candidates the document offered:")
+                                    wrapMode: Text.Wrap
+                                    color: Theme.textSecondary
+                                    font.pixelSize: Theme.captionSize
+                                }
+                                Repeater {
+                                    model: fieldRow.modelData.candidates
+                                    delegate: Rectangle {
+                                        id: candidate
+                                        required property var modelData
+                                        Layout.fillWidth: true
+                                        implicitHeight: candidateRow.implicitHeight + 2 * Theme.spacingS
+                                        radius: Theme.controlRadius
+                                        color: Theme.cardFill
+                                        border.color: Theme.cardStroke
+                                        RowLayout {
+                                            id: candidateRow
+                                            anchors.fill: parent
+                                            anchors.margins: Theme.spacingS
+                                            spacing: Theme.spacingS
+                                            ColumnLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 0
+                                                Label {
+                                                    Layout.fillWidth: true
+                                                    text: candidate.modelData.title
+                                                    textFormat: Text.PlainText
+                                                    wrapMode: Text.Wrap
+                                                    font.weight: Theme.headingWeight
+                                                }
+                                                Label {
+                                                    Layout.fillWidth: true
+                                                    visible: text.length > 0
+                                                    text: candidate.modelData.subtitle
+                                                    textFormat: Text.PlainText
+                                                    wrapMode: Text.Wrap
+                                                }
+                                                Label {
+                                                    Layout.fillWidth: true
+                                                    visible: text.length > 0
+                                                    text: candidate.modelData.reasons
+                                                    textFormat: Text.PlainText
+                                                    wrapMode: Text.Wrap
+                                                    color: Theme.textSecondary
+                                                    font.pixelSize: Theme.captionSize
+                                                }
+                                            }
+                                            Button {
+                                                objectName: "useCandidate_" + candidate.modelData.index
+                                                text: qsTr("Use this")
+                                                highlighted: fieldRow.modelData.offerCandidates && candidate.modelData.index === 0
+                                                enabled: !pane.inspector.saving
+                                                onClicked: pane.inspector.useTitleCandidate(pane.inspector.bookId,
+                                                                                            candidate.modelData.index)
+                                                Accessible.description: qsTr("Use “%1” as the title").arg(candidate.modelData.title)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                             Label {
                                 objectName: "candidates_" + fieldRow.modelData.field
                                 Layout.leftMargin: 156
                                 Layout.fillWidth: true
+                                // Title candidates are listed above, with Use this.
                                 visible: fieldRow.showDetails && fieldRow.modelData.alternatives.length > 0
+                                         && fieldRow.modelData.candidates.length === 0
                                 text: qsTr("Other candidates: %1").arg(fieldRow.modelData.alternatives.join("; "))
                                 textFormat: Text.PlainText
                                 wrapMode: Text.Wrap

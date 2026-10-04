@@ -7,6 +7,7 @@
 #include <QStringList>
 
 #include <optional>
+#include <utility>
 
 namespace mbl::domain {
 
@@ -63,7 +64,24 @@ struct MetadataCandidate {
     double score = 0;
     QList<MetadataEvidence> evidence;
     QStringList reasons;
+    // Title candidates: the title and subtitle apart, so one can be used as
+    // a correction. Empty for other fields, and for title candidates stored
+    // before they were kept (then `value` is "title: subtitle").
+    QString title;
+    QString subtitle;
 };
+
+// The title and subtitle of a title candidate: as stored, or, for one stored
+// before they were kept apart, `value` split at its first ": ".
+inline std::pair<QString, QString> titleParts(const MetadataCandidate& c)
+{
+    if (!c.title.isEmpty())
+        return {c.title, c.subtitle};
+    const qsizetype colon = c.value.indexOf(QLatin1String(": "));
+    if (colon > 0)
+        return {c.value.left(colon), c.value.mid(colon + 2)};
+    return {c.value, QString()};
+}
 
 struct MetadataFieldDetail {
     MetadataField field = MetadataField::Title;  // Title covers title and subtitle.

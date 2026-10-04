@@ -57,6 +57,10 @@ struct BookSummary {
     EffectiveMetadata metadata;
     QString displayTitle;            // Effective title, else the original file name.
     bool displayTitleFromFileName = false;
+    // When the title is uncertain (several candidates, none chosen, no
+    // correction): the strongest candidate's title, shown as a guess and
+    // never stored as the book's title. Empty otherwise.
+    QString suggestedTitle;
     bool hasMetadataRun = false;
     std::optional<FieldStatus> extractedTitleStatus;  // Of the active metadata run, if any.
     bool hasTocRun = false;

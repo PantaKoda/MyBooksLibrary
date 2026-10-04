@@ -71,6 +71,10 @@ void TestSdkMetadataExtractor::normalizationKeepsStatusesAndOrder()
     QCOMPARE(details.size(), 5);
     QCOMPARE(details.first().field, MetadataField::Title);
     QCOMPARE(details.first().alternatives.first().value, QStringLiteral("Option B: Sub"));
+    // Kept apart too, so the candidate can be used as a correction as read.
+    QCOMPARE(details.first().alternatives.first().title, QStringLiteral("Option B"));
+    QCOMPARE(details.first().alternatives.first().subtitle, QStringLiteral("Sub"));
+    QVERIFY(details.at(1).alternatives.isEmpty() || details.at(1).alternatives.first().title.isEmpty());
     QCOMPARE(details.first().reasons.first(), QStringLiteral("two candidates of equal prominence"));
 }
 

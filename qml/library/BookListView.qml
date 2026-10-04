@@ -39,6 +39,10 @@ ListView {
         required property bool titleFromFileName
         required property string contributors
         required property string processingState
+        // An uncertain title's best candidate: shown instead of the file
+        // name, and said to be a guess. Never the book's title until chosen.
+        required property string suggestedTitle
+        readonly property bool guessed: titleFromFileName && suggestedTitle.length > 0
 
         objectName: "bookRow_" + index
         width: ListView.view.width
@@ -50,7 +54,8 @@ ListView {
             spacing: 2
             Label {
                 Layout.fillWidth: true
-                text: row.title
+                objectName: "bookTitle_" + row.index
+                text: row.guessed ? row.suggestedTitle : row.title
                 textFormat: Text.PlainText   // Extracted text is never markup.
                 // The style draws the selection (Fluent: a subtle fill and an
                 // accent bar) and keeps the text colour.
@@ -60,7 +65,9 @@ ListView {
             Label {
                 Layout.fillWidth: true
                 textFormat: Text.PlainText
-                text: row.titleFromFileName
+                text: row.guessed
+                      ? qsTr("Best guess, not confirmed · %1").arg(row.processingState)
+                      : row.titleFromFileName
                       ? qsTr("From the file name · %1").arg(row.processingState)
                       : (row.contributors.length > 0 ? row.contributors + " · " + row.processingState
                                                      : row.processingState)

@@ -108,7 +108,8 @@ Status transition(QSqlDatabase& db, const JobId& id, std::initializer_list<JobSt
     return Done{};
 }
 
-// JSON shape: evidence [{page, text, reason}], alternatives [{value, score, evidence, reasons}], reasons [..].
+// JSON shape: evidence [{page, text, reason}], alternatives [{value, score, evidence, reasons, title?,
+// subtitle?}] (title and subtitle for title candidates), reasons [..].
 QJsonArray evidenceJson(const QList<MetadataEvidence>& evidence)
 {
     QJsonArray out;
@@ -308,11 +309,18 @@ Result<RunId> completeMetadataJob(QSqlDatabase& db, const JobRecord& job, const 
         if (d.field == MetadataField::Subtitle)
             continue;  // Part of the title field.
         QJsonArray alternatives;
-        for (const MetadataCandidate& c : d.alternatives)
-            alternatives.append(QJsonObject{{QStringLiteral("value"), c.value},
-                                            {QStringLiteral("score"), c.score},
-                                            {QStringLiteral("evidence"), evidenceJson(c.evidence)},
-                                            {QStringLiteral("reasons"), QJsonArray::fromStringList(c.reasons)}});
+        for (const MetadataCandidate& c : d.alternatives) {
+            QJsonObject candidate{{QStringLiteral("value"), c.value},
+                                  {QStringLiteral("score"), c.score},
+                                  {QStringLiteral("evidence"), evidenceJson(c.evidence)},
+                                  {QStringLiteral("reasons"), QJsonArray::fromStringList(c.reasons)}};
+            if (!c.title.isEmpty()) {
+                candidate.insert(QStringLiteral("title"), c.title);
+                if (!c.subtitle.isEmpty())
+                    candidate.insert(QStringLiteral("subtitle"), c.subtitle);
+            }
+            alternatives.append(candidate);
+        }
         q.addBindValue(runId.toString());
         q.addBindValue(toCode(d.field));
         q.addBindValue(compact(evidenceJson(d.evidence)));
@@ -556,6 +564,8 @@ Result<QList<MetadataFieldDetail>> metadataDetails(QSqlDatabase& db, const RunId
             c.evidence = evidenceFromJson(o.value(QStringLiteral("evidence")).toArray());
             for (const QJsonValue& r : o.value(QStringLiteral("reasons")).toArray())
                 c.reasons << r.toString();
+            c.title = o.value(QStringLiteral("title")).toString();
+            c.subtitle = o.value(QStringLiteral("subtitle")).toString();
             d.alternatives << c;
         }
         for (const QJsonValue& r : QJsonDocument::fromJson(q.value(3).toString().toUtf8()).array())

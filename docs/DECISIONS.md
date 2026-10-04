@@ -729,3 +729,20 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - **Not a code signature:** the checksum and HTTPS prove the file is the one published on GitHub, not who built it. Authenticode signing remains future work, as in repo-watch.
   - **0.3.0 and earlier cannot update themselves.** Their users replace the folder once by hand; the release notes and the user guide say so.
 - **Verified:** See IMPLEMENTATION_PROGRESS.md, "In-app updates".
+
+## 2026-10-04 — Uncertain titles: a shown best guess and one-click candidates
+
+- **Change:**
+  - **The book list:** when the title is uncertain (the SDK's title status is ambiguous, there is no correction, and the title was not cleared), the row shows the strongest candidate's title instead of the file name, labelled "Best guess, not confirmed" (`BookSummary::suggestedTitle`, `SuggestedTitleRole`).
+  - **The inspector:** the Title field offers its candidates at once while the title is uncertain, each with **Use this** (`BookInspector::useTitleCandidate`). One click saves the candidate's title, and its subtitle when it has one, as the user's correction (Value). The candidates stay available behind "Show candidates" for another choice.
+  - **Title candidates keep their title and subtitle apart:** in `MetadataCandidate`, filled from the SDK's `TitleValue`, and stored in `alternatives_json` (no migration). Candidates stored before this change are split at their first ": ".
+- **Why:** the owner imported `shapiro1983.pdf` (*Black Holes, White Dwarfs, and Neutron Stars*). The SDK found the right title as two close candidates (scores 140 and 131): with and without the subtitle "The Physics of Compact Objects". Because they were so close, it chose neither. The app then showed the file name, with the candidates as plain text behind a button and no way to pick one. The owner chose "show best guess + pick" over auto-accepting.
+- **Assumptions:**
+  - **Not an automatic acceptance (AGENTS.md: "Do not turn ambiguity into an accepted title automatically"):**
+    - the guess is never stored as the title, never fills the inspector's Title value, and is labelled in the list;
+    - only the user's click makes it the title, as a correction that survives reanalysis;
+    - a cleared title stays cleared, with no guess.
+  - **Search does not index the guess.** The search projection still indexes the file name for an untitled book (A3 indexes effective fields). After **Use this**, the correction is indexed as usual.
+  - **One click saves the subtitle too**, when the candidate has one. Otherwise an existing subtitle correction is left alone rather than cleared silently.
+  - **The author list for this book is the SDK's to fix** ("COMPACT OBJECTS", "Stuart L. Shapiro" and a garbled publisher name, with the second author missing). It is not addressed here.
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, "Uncertain titles".

@@ -28,6 +28,7 @@ public:
         TitleFromFileNameRole, // True when no title is known yet.
         ContributorsRole,      // Effective contributor names joined for display.
         ProcessingStateRole,   // Plain-language processing state.
+        SuggestedTitleRole,    // The best title candidate when the title is uncertain; else "".
     };
 
     explicit BookListModel(QObject* parent = nullptr);
