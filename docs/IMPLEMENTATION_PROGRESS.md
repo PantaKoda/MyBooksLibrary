@@ -23,7 +23,7 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | Owner's testing after v0.2.0 | Merged: [PR #39](https://github.com/PantaKoda/MyBooksLibrary/pull/39) (merge `5848097`), after the owner's review and CI on `cb19d50` | `fix/inspector-plain-reasons` | See "Plain reasons instead of Why?" |
 | SDK 0.4.0 update; **v0.3.0** | Merged: [PR #40](https://github.com/PantaKoda/MyBooksLibrary/pull/40) (merge `b6501da`), after CI on `f72e14d`. **v0.3.0** (PRs #39, #40) via the release PR `release/v0.3.0` | `chore/sdk-0.4.0`; `release/v0.3.0` | See "SDK 0.4.0 update" |
 | Themes and accents | Merged: [PR #42](https://github.com/PantaKoda/MyBooksLibrary/pull/42) (merge `9665924`), after review and CI on `6d0ed71` | `feat/ui-themes-accents` | See "Themes and accents" |
-| In-app updates | AwaitingReview (PR to be linked) | `feat/app-updates` | See "In-app updates" |
+| In-app updates | AwaitingReview: [PR #43](https://github.com/PantaKoda/MyBooksLibrary/pull/43) | `feat/app-updates` | See "In-app updates" |
 | M11 | NotStarted | | |
 
 ## UI overhaul (after v0.1.0)
@@ -116,7 +116,7 @@ Its first run failed twice, rightly: WinUI's light caution `#9d5d00` reaches 4.3
 
 **Asked by the owner (2026-10-04):** "a similar release cycle as well. An update button that checks for new releases on github and installs locally in the spirit of" repo-watch's commit fdfe02f.
 
-**Branch:** `feat/app-updates`. **Status:** AwaitingReview.
+**Branch:** `feat/app-updates`. **Status:** AwaitingReview: [PR #43](https://github.com/PantaKoda/MyBooksLibrary/pull/43).
 
 **Change:** see docs/UPDATES.md and DECISIONS.md (2026-10-04, "In-app updates").
 - `src/update/` (new, `mbl_update`, Qt Network):
@@ -135,7 +135,7 @@ Its first run failed twice, rightly: WinUI's light caution `#9d5d00` reaches 4.3
 
 **Tests** (new: `tst_releases`, `tst_updateinstall`, `tst_updatedownloader`, `tst_updatecontroller`): see UPDATES.md, "Tests". `MBL_ONLINE_TESTS=1 tst_updatedownloader` ran against github.com: it found 3 usable releases (newest 0.3.0) and downloaded `MyBooksLibrary-0.3.0-win64.zip` through GitHub's redirects in about 9 s. The checksum matched and the zip unpacked, then the install was refused because 0.3.0 has no marker, as intended.
 
-**Verification:** see the PR for `verify.ps1` and `package.ps1` on the tested head.
+**Verification (local, Windows 11, Qt 6.11.2 MSVC 2022, SDK 0.4.0):** `verify.ps1` (Release) passed with 39/39 tests and the smoke checks; `package.ps1 -SkipZip` passed, including Schannel and the update hand-over (0.3.0 to 0.3.1 with the packaged binaries), on the code of `4e4aa1e`. Debug not run.
 
 **Remaining:** the first real update can only happen from the release that ships this code (0.4.0) to a later one. Until then, the hand-over is verified by `package.ps1` with the packaged binaries, not by a download from github.com.
 
