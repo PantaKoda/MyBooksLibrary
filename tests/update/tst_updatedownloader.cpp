@@ -53,6 +53,7 @@ private slots:
     void downloadsVerifiesAndUnpacks();
     void checksumMismatchInstallsNothing();
     void packageOfAnotherVersionIsRefused();
+    void otherLayoutIsRefused();
     void onlyGitHubAddresses();
     void cancelRemovesTheFolder();
     void onlineGitHubRelease();
@@ -150,9 +151,41 @@ void TestUpdateDownloader::packageOfAnotherVersionIsRefused()
     QSignalSpy failed(&downloader, &UpdateDownloader::failed);
     downloader.start(release, staging);
     QTRY_VERIFY_WITH_TIMEOUT(!failed.isEmpty(), 60000);
-    QVERIFY2(failed.first().at(0).toString().contains(QLatin1String("does not hold MyBooksLibrary 0.4.2")),
+    QVERIFY2(failed.first().at(0).toString().contains(QLatin1String("not marked as MyBooksLibrary 0.4.2")),
              qPrintable(failed.first().at(0).toString()));
     QVERIFY(!QFileInfo::exists(QDir(staging).filePath(QStringLiteral("0.4.2"))));
+}
+
+void TestUpdateDownloader::otherLayoutIsRefused()
+{
+    // The app's files at the top of the zip, not in MyBooksLibrary\.
+    const Version version{0, 4, 5};
+    const QString source = m_dir.filePath(QStringLiteral("flat/MyBooksLibrary"));
+    write(QDir(source).filePath(QStringLiteral("appMyBooksLibrary.exe")), "exe");
+    write(QDir(source).filePath(QStringLiteral("release.json")), releaseMarker(version));
+    const QString zip = m_dir.filePath(QStringLiteral("flat/") + zipAssetName(version));
+    QProcess pack;
+    pack.start(tar(), {QStringLiteral("-a"), QStringLiteral("-c"), QStringLiteral("-f"), QDir::toNativeSeparators(zip),
+                       QStringLiteral("-C"), QDir::toNativeSeparators(source), QStringLiteral("appMyBooksLibrary.exe"),
+                       QStringLiteral("release.json")});
+    QVERIFY(pack.waitForFinished(60000) && pack.exitCode() == 0);
+    QFile file(zip);
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    write(zip + QStringLiteral(".sha256"),
+          QCryptographicHash::hash(file.readAll(), QCryptographicHash::Sha256).toHex() + "  "
+              + zipAssetName(version).toUtf8());
+    Release release;
+    release.version = version;
+    release.zip = QUrl::fromLocalFile(zip);
+    release.sha256 = QUrl::fromLocalFile(zip + QStringLiteral(".sha256"));
+
+    UpdateDownloader downloader(&m_network);
+    downloader.setAllowLocalUrls(true);
+    QSignalSpy failed(&downloader, &UpdateDownloader::failed);
+    downloader.start(release, m_dir.filePath(QStringLiteral("updates-flat")));
+    QTRY_VERIFY_WITH_TIMEOUT(!failed.isEmpty(), 60000);
+    QVERIFY2(failed.first().at(0).toString().contains(QLatin1String("expected layout")),
+             qPrintable(failed.first().at(0).toString()));
 }
 
 void TestUpdateDownloader::onlyGitHubAddresses()
@@ -219,9 +252,11 @@ void TestUpdateDownloader::onlineGitHubRelease()
     QStringList seen;
     for (const QList<QVariant>& stage : stages)
         seen << stage.first().toString();
-    // Downloaded, the checksum matched, unpacked, and refused for the missing marker.
+    // Downloaded, the checksum matched, unpacked into the expected layout
+    // (Compress-Archive's MyBooksLibrary\appMyBooksLibrary.exe), and refused
+    // only for the missing marker.
     QCOMPARE(seen.last(), QStringLiteral("unpack"));
-    QVERIFY2(failed.first().at(0).toString().contains(QLatin1String("does not hold MyBooksLibrary 0.3.0")),
+    QVERIFY2(failed.first().at(0).toString().contains(QLatin1String("not marked as MyBooksLibrary 0.3.0")),
              qPrintable(failed.first().at(0).toString()));
     QVERIFY(!QFileInfo::exists(QDir(staging).filePath(QStringLiteral("0.3.0"))));
 }

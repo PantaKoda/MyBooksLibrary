@@ -30,13 +30,26 @@ std::optional<Version> readReleaseMarker(const QString& folder);
 // The marker's content for `version` (what package.ps1 writes).
 QByteArray releaseMarker(const Version& version);
 
+// The app's executable and a release marker: a folder an update may replace.
+bool holdsRelease(const QString& folder);
+
+// A MyBooksLibrary library (its library.sqlite) at any depth in `folder`.
+// An update never moves or deletes a folder that holds one.
+bool containsLibrary(const QString& folder);
+
+// May an update replace <app>.previous? Yes when there is none, or when it
+// holds only a previous release (no library, nothing else of the user's).
+bool previousMayBeReplaced(const QString& previousFolder);
+
 struct InstallCheck {
     bool canInstall = false;
     QString reason;  // Why not, for the user; empty when it can.
 };
 
 // `appFolder`: the running executable's folder. `keptFolders`: folders that
-// must survive the swap (the library in use, the staging folder).
+// must survive the swap (the library in use, the staging folder). Also
+// refused: any library inside the app's folder (open or not), and an
+// <app>.previous that is not only a previous release.
 InstallCheck checkInstall(const QString& appFolder, const Version& running, const QStringList& keptFolders);
 
 } // namespace mbl::update

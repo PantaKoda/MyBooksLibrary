@@ -242,7 +242,8 @@ MyBooksLibrary checks once a day whether a newer version has been published on i
 - **Install update** downloads the new version, checks it against the published checksum, then closes the app and starts the new version. Running work stops first and continues after the restart, as with any closing. Your libraries and settings are kept.
 - **If it cannot be installed,** for example because another MyBooksLibrary window was still open, nothing changes. The app starts again and says why.
 - **To go back** to the version before, close the app, delete its folder, and rename the folder `<name>.previous` next to it back to the original name.
-- **Some copies cannot update themselves.** This is the case for a copy built from source, a copy that holds a library inside its own folder, or one in a folder you cannot write to (such as `C:\Program Files`). The Updates window then says why and offers **Open release page**, to download the new version by hand.
+- **Some copies cannot update themselves.** This is the case for a copy built from source, a copy that holds any library inside its own folder (open or not), or one in a folder you cannot write to (such as `C:\Program Files`). The Updates window then says why and offers **Open release page**, to download the new version by hand. An update never moves or deletes a library.
+- **Keep nothing of your own in the app's folder.** An update replaces the whole folder. Your libraries and settings are kept elsewhere.
 - **To stop the daily check,** clear **Check for updates once a day** in the Updates window. Checking only asks GitHub which versions exist. It sends nothing about you or your books.
 
 **Coming from 0.3.0 or earlier:** those versions cannot update themselves. Download the new zip once, close the app, and replace the app's folder with the new one. From then on the app updates itself.

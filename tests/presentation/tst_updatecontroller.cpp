@@ -91,6 +91,7 @@ private slots:
     void libraryInsideTheAppFolderIsRefused();
     void autoCheckIsRemembered();
     void noticesAfterAnUpdate();
+    void handOverBeforeClosing();
     void theDialog();
 
 private:
@@ -235,8 +236,44 @@ void TestUpdateController::noticesAfterAnUpdate()
     auto plain = make(Version{0, 3, 0}, QStringLiteral("feed.json"));
     plain->handleStartArguments({QStringLiteral("app")});
     QVERIFY(plain->notice().isEmpty());
-    QVERIFY(!plain->handoverPending());
-    QVERIFY(!plain->startHandover(1));
+}
+
+// The verified copy is started while the window is still open; only then is
+// the window asked to close. A copy that cannot start is reported, and the
+// window stays (review of PR #43: it used to start after the window closed,
+// so a failure left no trace).
+void TestUpdateController::handOverBeforeClosing()
+{
+    auto updates = make(Version{0, 3, 0}, QStringLiteral("feed.json"));
+    QSignalSpy restart(updates.get(), &UpdateController::restartRequested);
+    const QString staged = m_dir->filePath(QStringLiteral("Data/updates/0.5.0/unpacked/MyBooksLibrary"));
+
+    QString program;
+    QStringList args;
+    updates->setStarter([&](const QString& p, const QStringList& a, const QString&) {
+        program = p;
+        args = a;
+        return false;  // For example quarantined by an antivirus.
+    });
+    QVERIFY(QMetaObject::invokeMethod(updates.get(), "onDownloaded", Q_ARG(QString, staged)));
+    QCOMPARE(updates->state(), UpdateController::InstallFailed);
+    QVERIFY(updates->statusText().contains(QLatin1String("could not be started")));
+    QCOMPARE(restart.size(), 0);
+
+    updates->setStarter([&](const QString& p, const QStringList& a, const QString&) {
+        program = p;
+        args = a;
+        return true;
+    });
+    QVERIFY(QMetaObject::invokeMethod(updates.get(), "onDownloaded", Q_ARG(QString, staged)));
+    QCOMPARE(updates->state(), UpdateController::ReadyToRestart);
+    QCOMPARE(restart.size(), 1);
+    QCOMPARE(QDir::cleanPath(program), QDir::cleanPath(staged + QStringLiteral("/appMyBooksLibrary.exe")));
+    QCOMPARE(args.at(0), QStringLiteral("--apply-update"));
+    QCOMPARE(QDir::cleanPath(QDir::fromNativeSeparators(args.at(1))), QDir::cleanPath(m_app));
+    QCOMPARE(args.at(args.indexOf(QStringLiteral("--wait-pid")) + 1), QString::number(QCoreApplication::applicationPid()));
+    QCOMPARE(args.at(args.indexOf(QStringLiteral("--from-version")) + 1), QStringLiteral("0.3.0"));
+    QVERIFY(!args.contains(QStringLiteral("--restart-library")));  // No currentLibrary in this config.
 }
 
 void TestUpdateController::theDialog()

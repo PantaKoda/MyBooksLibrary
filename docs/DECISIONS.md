@@ -716,9 +716,15 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
     The notes come from the release body, which is `docs/releases/vX.Y.Z.md` plus GitHub's PR list, rather than a CHANGELOG section.
   - **Qt Network is a new module, from the installed kit:** an update check needs HTTP. The owner's request authorizes that; nothing is downloaded or installed in the toolchain. HTTPS uses Windows' Schannel through Qt's `qschannelbackend`. The OpenSSL backend is excluded from the package, so no OpenSSL DLLs are needed.
   - **Unpacking with Windows' `tar.exe`, not a zip library:** Qt has no public zip API, and the private `QZipReader` is not used, per the rule against private APIs. `tar.exe` (bsdtar) has shipped with Windows 10 since 1803, refuses absolute and `..` paths, and runs as a separate process, so the GUI never blocks.
-  - **The hand-over runs after the event loop:** the window closes through its normal flow, so running SDK work stops and the reading position is saved. Only then does `main.cpp` start the new copy, which waits for this process to exit.
-  - **The restart reopens the window's library** (`--library <folder> --existing-library`), so a window on a restored library does not reopen the default one.
+  - **The new copy is started before the window closes** (review of PR #43). It waits up to 10 minutes for this process to exit. Starting it first means a copy that cannot start is reported in the window. Before this fix, the app could disappear with only an invisible stdout line. The window then closes through its normal flow, so running SDK work stops and the reading position is saved.
+  - **The restart reopens the window's library** (`--library <folder> --existing-library`), so a window on a restored library does not reopen the default one. It does so only when a plain start would open another library; otherwise the library keeps its "default" or "remembered" label (review of PR #43).
   - **A file in use means nothing changes:** the folder rename fails when any file in it is open, for example in another MyBooksLibrary window. The rename is retried for 5 s, then the old version restarts with the reason.
+  - **An update never moves or deletes a library** (review of PR #43, blocking). The first version deleted `<folder>.previous` without looking inside it, and checked only the library that was open. A library kept inside the app's folder could therefore be moved to `.previous` by one update and deleted by the next. Now:
+    - `checkInstall` and `applyUpdate` both refuse when the app's folder holds a `library.sqlite` at any depth;
+    - they refuse when `.previous` holds anything but a release;
+    - the older `.previous` is set aside and deleted only after the new copy is in place, so "nothing changes" is true when the folder is in use, and a failed copy puts both back.
+
+    Other files of the user's inside the app's folder are not detected; the docs say to keep nothing there.
   - **No automatic check in development modes**, so smoke runs and screenshots never use the network, and CI never depends on github.com. One opt-in test (`MBL_ONLINE_TESTS=1`) downloads the real 0.3.0 package.
   - **Not a code signature:** the checksum and HTTPS prove the file is the one published on GitHub, not who built it. Authenticode signing remains future work, as in repo-watch.
   - **0.3.0 and earlier cannot update themselves.** Their users replace the folder once by hand; the release notes and the user guide say so.

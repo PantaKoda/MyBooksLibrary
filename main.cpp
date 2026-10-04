@@ -68,6 +68,8 @@
 #include "update/updateapplier.h"
 
 #include <QCoreApplication>
+#include <QDir>
+#include <QFileInfo>
 #include <QGuiApplication>
 #include <QNetworkAccessManager>
 #include <QQmlApplicationEngine>
@@ -264,7 +266,16 @@ int main(int argc, char *argv[])
     updateConfig.appFolder = QCoreApplication::applicationDirPath();
     updateConfig.dataFolder = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
     updateConfig.keptFolders = [&library] { return QStringList{library.libraryPath()}; };
-    updateConfig.currentLibrary = [&library] { return library.failed() ? QString() : library.libraryPath(); };
+    // Reopened after the update only when a plain start would open another
+    // library: otherwise its source stays "default" or "remembered".
+    updateConfig.currentLibrary = [&library, &memory, exe = args.value(0)] {
+        if (library.failed())
+            return QString();
+        const QString plain = mbl::app::resolveLibraryRoot({exe}, memory.remembered()).path;
+        const auto clean = [](const QString& path) { return QDir::cleanPath(QFileInfo(path).absoluteFilePath()); };
+        return clean(plain).compare(clean(library.libraryPath()), Qt::CaseInsensitive) == 0 ? QString()
+                                                                                             : library.libraryPath();
+    };
     mbl::presentation::UpdateController updates(updateConfig, &settings, &network);
     updates.handleStartArguments(args);
     const QStringList developmentOptions{
@@ -404,11 +415,9 @@ int main(int argc, char *argv[])
         QTimer::singleShot(300, *trySave);
     }
 
+    // An update's new copy, if one was started, waits for this process to
+    // exit, then replaces the app's folder and starts the new version.
     const int code = QGuiApplication::exec();
-    // An update is ready: its new copy waits for this process to exit, then
-    // replaces the app's folder and starts the new version.
-    if (updates.handoverPending() && !updates.startHandover(QCoreApplication::applicationPid()))
-        QTextStream(stdout) << "warning=the update's new copy could not be started" << Qt::endl;
     if (*exportFailed)
         return 1;
     if (closeWhenIdle) {

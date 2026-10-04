@@ -22,12 +22,6 @@ namespace mbl::update {
 
 namespace {
 
-bool hasApp(const QString& folder)
-{
-    return QFileInfo(QDir(folder).filePath(QString::fromLatin1(appExecutableName))).isFile()
-           && readReleaseMarker(folder).has_value();
-}
-
 // Waits until the process `pid` has exited, at most `timeoutMs`.
 bool waitForExit(qint64 pid, int timeoutMs)
 {
@@ -81,25 +75,41 @@ ApplyResult applyUpdate(const QString& installFolder, const QString& stagedFolde
     const QString install = QDir::cleanPath(QFileInfo(installFolder).absoluteFilePath());
     const QString staged = QDir::cleanPath(QFileInfo(stagedFolder).absoluteFilePath());
     const QString previous = install + QStringLiteral(".previous");
+    // The older .previous, set aside (not deleted) until the new copy is in place.
+    const QString older = install + QStringLiteral(".previous-%1").arg(QDateTime::currentMSecsSinceEpoch());
+    const auto native = [](const QString& path) { return QDir::toNativeSeparators(path); };
     const auto fail = [&](const QString& error, bool restored = true) {
         log(QStringLiteral("failed: %1").arg(error));
         return ApplyResult{false, restored, error};
     };
 
-    if (!hasApp(install))
-        return fail(QStringLiteral("%1 does not hold a MyBooksLibrary release").arg(QDir::toNativeSeparators(install)));
-    if (!hasApp(staged))
-        return fail(QStringLiteral("%1 does not hold a MyBooksLibrary release").arg(QDir::toNativeSeparators(staged)));
+    if (!holdsRelease(install))
+        return fail(QStringLiteral("%1 does not hold a MyBooksLibrary release").arg(native(install)));
+    if (!holdsRelease(staged))
+        return fail(QStringLiteral("%1 does not hold a MyBooksLibrary release").arg(native(staged)));
     if (staged.compare(install, Qt::CaseInsensitive) == 0
         || staged.startsWith(install + u'/', Qt::CaseInsensitive))
         return fail(QStringLiteral("the new copy is inside the app's folder"));
+    // Never move or delete a library (checkInstall refuses these too).
+    if (containsLibrary(install))
+        return fail(QStringLiteral("a library is inside %1; nothing was changed").arg(native(install)));
+    if (!previousMayBeReplaced(previous))
+        return fail(QStringLiteral("%1 holds more than a previous version of the app; nothing was changed")
+                        .arg(native(previous)));
 
-    if (QFileInfo::exists(previous)) {
-        log(QStringLiteral("removing the previous version kept at %1").arg(QDir::toNativeSeparators(previous)));
-        if (!QDir(previous).removeRecursively())
-            return fail(QStringLiteral("could not remove %1").arg(QDir::toNativeSeparators(previous)));
+    const bool hadOlder = QFileInfo::exists(previous);
+    if (hadOlder) {
+        log(QStringLiteral("setting the older version aside: %1 to %2").arg(native(previous), native(older)));
+        if (!QDir().rename(previous, older))
+            return fail(QCoreApplication::translate(
+                "Updates", "the previous version's folder is in use; close every MyBooksLibrary window and try again"));
     }
-    log(QStringLiteral("moving %1 to %2").arg(QDir::toNativeSeparators(install), QDir::toNativeSeparators(previous)));
+    const auto putOlderBack = [&] {
+        if (hadOlder && !QDir().rename(older, previous))
+            log(QStringLiteral("could not rename %1 back to %2").arg(native(older), native(previous)));
+    };
+
+    log(QStringLiteral("moving %1 to %2").arg(native(install), native(previous)));
     // Retried briefly: the old app's files may stay locked a moment after it exits.
     bool moved = false;
     for (int attempt = 0; attempt < 10 && !moved; ++attempt) {
@@ -107,23 +117,31 @@ ApplyResult applyUpdate(const QString& installFolder, const QString& stagedFolde
         if (!moved)
             QThread::msleep(500);
     }
-    if (!moved)
+    if (!moved) {
+        putOlderBack();
         return fail(QCoreApplication::translate(
             "Updates", "the app's folder is in use; close every MyBooksLibrary window and try again"));
+    }
 
-    log(QStringLiteral("copying %1 to %2").arg(QDir::toNativeSeparators(staged), QDir::toNativeSeparators(install)));
+    log(QStringLiteral("copying %1 to %2").arg(native(staged), native(install)));
     QString copyError;
-    if (copyFolder(staged, install, &copyError) && hasApp(install)) {
+    if (copyFolder(staged, install, &copyError) && holdsRelease(install)) {
+        // Only now is the older version no longer needed. It holds nothing
+        // but a release (previousMayBeReplaced).
+        if (hadOlder && !QDir(older).removeRecursively())
+            log(QStringLiteral("could not remove %1; it can be deleted by hand").arg(native(older)));
         log(QStringLiteral("done"));
         return ApplyResult{true, false, {}};
     }
     log(QStringLiteral("copy failed (%1); restoring the previous version").arg(copyError));
+    // The partial copy holds only files copied from the staged release.
     const bool cleared = !QFileInfo::exists(install) || QDir(install).removeRecursively();
     const bool restored = cleared && QDir().rename(previous, install);
     if (!restored)
         return fail(QStringLiteral("%1, and the previous version could not be put back; it is at %2")
-                        .arg(copyError, QDir::toNativeSeparators(previous)),
+                        .arg(copyError, native(previous)),
                     false);
+    putOlderBack();
     return fail(copyError.isEmpty() ? QStringLiteral("the copied app is incomplete") : copyError);
 }
 
@@ -153,9 +171,10 @@ int runUpdater(const QStringList& args)
         log(QStringLiteral("failed: missing arguments"));
         return 2;
     }
-    if (!waitForExit(pid, 120000)) {
+    // Closing waits for running work (an OCR page in progress) to stop.
+    if (!waitForExit(pid, 10 * 60 * 1000)) {
         // The old app is still running: nothing is changed.
-        log(QStringLiteral("failed: the app did not exit within 2 minutes; nothing changed"));
+        log(QStringLiteral("failed: the app did not exit within 10 minutes; nothing changed"));
         return 3;
     }
 

@@ -4,6 +4,7 @@
 #include "update/updatedownloader.h"
 
 #include <QDir>
+#include <QCoreApplication>
 #include <QDirIterator>
 #include <QFileInfo>
 #include <QLocale>
@@ -60,11 +61,7 @@ UpdateController::UpdateController(Config config, QSettings* settings, QNetworkA
             emit progressChanged();
         }
     });
-    connect(m_downloader, &update::UpdateDownloader::finished, this, [this](const QString& app) {
-        m_stagedApp = app;
-        setState(ReadyToRestart);
-        emit restartRequested();
-    });
+    connect(m_downloader, &update::UpdateDownloader::finished, this, &UpdateController::onDownloaded);
     connect(m_downloader, &update::UpdateDownloader::failed, this, [this](const QString& error, bool cancelled) {
         if (cancelled)
             setState(Available);
@@ -261,20 +258,28 @@ void UpdateController::dismissNotice()
     setNotice({}, false);
 }
 
-bool UpdateController::startHandover(qint64 pid)
+void UpdateController::onDownloaded(const QString& stagedApp)
 {
-    if (m_state != ReadyToRestart)
-        return false;
-    const QString exe = QDir(m_stagedApp).filePath(QString::fromLatin1(update::appExecutableName));
+    m_stagedApp = stagedApp;
+    const QString exe = QDir(stagedApp).filePath(QString::fromLatin1(update::appExecutableName));
+    // Started now, while the window is still open: it waits for this process
+    // to exit, so a copy that cannot start is reported here, not lost after
+    // the window has gone.
     QStringList args{QStringLiteral("--apply-update"), QDir::toNativeSeparators(m_config.appFolder),
-                     QStringLiteral("--wait-pid"), QString::number(pid),
+                     QStringLiteral("--wait-pid"), QString::number(QCoreApplication::applicationPid()),
                      QStringLiteral("--from-version"), currentVersion(),
                      QStringLiteral("--log"), QDir::toNativeSeparators(logFile())};
     if (m_config.currentLibrary) {
         if (const QString library = m_config.currentLibrary(); !library.isEmpty())
             args << QStringLiteral("--restart-library") << QDir::toNativeSeparators(library);
     }
-    return QProcess::startDetached(exe, args, m_stagedApp);
+    const bool started = m_starter ? m_starter(exe, args, stagedApp) : QProcess::startDetached(exe, args, stagedApp);
+    if (!started) {
+        setState(InstallFailed, tr("the new version's copy could not be started (%1)").arg(QDir::toNativeSeparators(exe)));
+        return;
+    }
+    setState(ReadyToRestart);
+    emit restartRequested();
 }
 
 void UpdateController::handleStartArguments(const QStringList& args)

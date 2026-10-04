@@ -4,6 +4,7 @@
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
@@ -28,6 +29,28 @@ QByteArray releaseMarker(const Version& version)
     return QJsonDocument(QJsonObject{{QStringLiteral("product"), QString::fromLatin1(productName)},
                                      {QStringLiteral("version"), version.toString()}})
         .toJson();
+}
+
+bool holdsRelease(const QString& folder)
+{
+    return QFileInfo(QDir(folder).filePath(QString::fromLatin1(appExecutableName))).isFile()
+           && readReleaseMarker(folder).has_value();
+}
+
+bool containsLibrary(const QString& folder)
+{
+    if (!QFileInfo(folder).isDir())
+        return false;
+    QDirIterator it(folder, {QStringLiteral("library.sqlite")}, QDir::Files | QDir::Hidden | QDir::System,
+                    QDirIterator::Subdirectories);
+    return it.hasNext();
+}
+
+bool previousMayBeReplaced(const QString& previousFolder)
+{
+    if (!QFileInfo::exists(previousFolder))
+        return true;
+    return holdsRelease(previousFolder) && !containsLibrary(previousFolder);
 }
 
 InstallCheck checkInstall(const QString& appFolder, const Version& running, const QStringList& keptFolders)
@@ -58,6 +81,19 @@ InstallCheck checkInstall(const QString& appFolder, const Version& running, cons
                                          "Downloads or Programs) to update it.")
                               .arg(QDir::toNativeSeparators(kept)));
     }
+    // Not only the library in use: any library the app's folder holds would
+    // be moved to .previous by this update and deleted by the next.
+    if (containsLibrary(appFolder))
+        return refuse(QCoreApplication::translate(
+                          "Updates", "A library is inside the app's folder (%1), which an update replaces. "
+                                     "Move the app's folder, or the library, elsewhere to update.")
+                          .arg(QDir::toNativeSeparators(app)));
+    const QString previous = app + QStringLiteral(".previous");
+    if (!previousMayBeReplaced(previous))
+        return refuse(QCoreApplication::translate(
+                          "Updates", "%1 holds something other than a previous version of the app (for example a "
+                                     "library). An update would replace it, so move what you keep there elsewhere first.")
+                          .arg(QDir::toNativeSeparators(previous)));
     // The new copy and the previous one are made beside the app's folder.
     const QString parent = QFileInfo(QDir::cleanPath(appFolder)).absolutePath();
     QTemporaryFile probe(QDir(parent).filePath(QStringLiteral("mbl-update-probe-XXXXXX")));

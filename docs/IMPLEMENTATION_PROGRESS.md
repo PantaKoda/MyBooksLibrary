@@ -137,6 +137,16 @@ Its first run failed twice, rightly: WinUI's light caution `#9d5d00` reaches 4.3
 
 **Verification (local, Windows 11, Qt 6.11.2 MSVC 2022, SDK 0.4.0):** `verify.ps1` (Release) passed with 39/39 tests and the smoke checks; `package.ps1 -SkipZip` passed, including Schannel and the update hand-over (0.3.0 to 0.3.1 with the packaged binaries), on the code of `4e4aa1e`. Debug not run.
 
+**Review fixes (PR #43, review of `2c7fd9c`):**
+- **Blocking, fixed: an update could delete a library.**
+  - **What was wrong:** `applyUpdate` deleted `<app>.previous` without looking inside it, and `checkInstall` checked only the library that was open. So a library kept inside the app's folder (not the one open) could be moved to `.previous` by one update and deleted by the next. The older `.previous` was also deleted *before* the rename was tried.
+  - **What changed:** `checkInstall` and `applyUpdate` both refuse when the app's folder holds a `library.sqlite` at any depth (`containsLibrary`), and when `.previous` holds anything but a release (`previousMayBeReplaced`). The older `.previous` is now set aside and deleted only after the new copy is in place. When the folder is in use, it is put back, so nothing changes. When a copy fails, both are restored.
+  - **Tests:** `librariesAreNeverMovedOrDeleted` (new) covers a non-current library inside the app's folder, a library inside `.previous`, and the user's own `.previous`. The file-in-use and failed-copy tests now plant an older `.previous` and check that it survives.
+- **Write errors, fixed:** a disk-write failure during the download no longer re-enters as "nothing received for 30 seconds" (the `abort()` before `fail()` was removed).
+- **Silent exit, fixed:** the new copy is started *before* the window closes (`onDownloaded`). If it cannot start, the Updates window shows the reason and the window stays open. `tst_updatecontroller.handOverBeforeClosing` checks both outcomes and the arguments. The updater waits up to 10 minutes for the app to exit.
+- **Library label, fixed:** `--restart-library` is passed only when a plain start would open a different library, so the default or remembered library keeps its label.
+- **Test gap, fixed:** the package's layout and its marker now give two different messages. The online test asserts the marker message, which proves that the real `Compress-Archive` zip unpacks into `MyBooksLibrary\appMyBooksLibrary.exe`. `otherLayoutIsRefused` (new) checks the layout message.
+
 **Remaining:** the first real update can only happen from the release that ships this code (0.4.0) to a later one. Until then, the hand-over is verified by `package.ps1` with the packaged binaries, not by a download from github.com.
 
 ## After M10: fixes from the owner's testing

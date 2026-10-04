@@ -5,10 +5,12 @@
 //   is on (first 30 s after start), and on request. A check lists every
 //   newer release with its notes (plain text), newest first.
 // - Installing, only on request: UpdateDownloader fetches and verifies the
-//   newest release into <app data>/updates. Then the window closes through
-//   its normal flow (work stops first), and, once the event loop has ended,
-//   main.cpp calls startHandover(): the new copy replaces the app's folder
-//   and starts the new version (UpdateApplier).
+//   newest release into <app data>/updates. Then it starts the new copy,
+//   which waits for this process to exit (UpdateApplier), and only if that
+//   started does the window close through its normal flow (work stops
+//   first). The new copy then replaces the app's folder and starts the new
+//   version. A copy that cannot be started is reported in the window, which
+//   stays open.
 // - A copy that was not installed from a release, or whose folder holds the
 //   library or the staging folder, never replaces itself (checkInstall);
 //   the window offers the release page instead.
@@ -100,12 +102,11 @@ public:
     void startAutomaticChecks();
     // --updated-from / --update-failed, before the window shows.
     void handleStartArguments(const QStringList& args);
-    // After the event loop: start the new copy if an install is ready.
-    bool handoverPending() const { return m_state == ReadyToRestart; }
-    bool startHandover(qint64 pid);
-
-    // Tests: read releases from this URL (file:// allowed) and unpack with this tar.
+    // Tests: read releases from this URL (file:// allowed), and start the
+    // hand-over with this instead of QProcess::startDetached.
+    using Starter = std::function<bool(const QString& program, const QStringList& args, const QString& folder)>;
     void setReleasesUrl(const QUrl& url) { m_releasesUrl = url; }
+    void setStarter(Starter starter) { m_starter = std::move(starter); }
     update::UpdateDownloader* downloader() const { return m_downloader; }
 
     Q_INVOKABLE void check();
@@ -120,6 +121,10 @@ signals:
     void noticeChanged();
     // An install is ready: the window should close so the update can be put in place.
     void restartRequested();
+
+private slots:
+    // The verified, unpacked new copy: start it and close (see above).
+    void onDownloaded(const QString& stagedApp);
 
 private:
     void setState(State state, const QString& message = {});
@@ -143,6 +148,7 @@ private:
     QString m_stage;
     QString m_stagedApp;
     QString m_installBlocker;
+    Starter m_starter;
     bool m_autoCheck = true;
     QString m_notice;
     bool m_noticeIsError = false;

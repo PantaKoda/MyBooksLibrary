@@ -131,9 +131,9 @@ void UpdateDownloader::onZipData()
     const QByteArray chunk = m_reply->readAll();
     m_hash->addData(chunk);
     if (m_file->write(chunk) != chunk.size()) {
-        const QString error = m_file->errorString();
-        m_reply->abort();
-        fail(tr("Could not write the download: %1").arg(error));
+        // fail() disconnects the reply before aborting it: aborting here
+        // would report the write error as a stalled download.
+        fail(tr("Could not write the download: %1").arg(m_file->errorString()));
     }
 }
 
@@ -198,10 +198,16 @@ void UpdateDownloader::onUnpacked(int exitCode)
         return;
     }
     const QString app = QDir(m_folder).filePath(QStringLiteral("unpacked/MyBooksLibrary"));
+    // Two refusals, told apart: the package's layout, then its marker.
+    if (!QFileInfo(QDir(app).filePath(QString::fromLatin1(appExecutableName))).isFile()) {
+        fail(tr("The downloaded package does not have the expected layout (MyBooksLibrary\\%1).")
+                 .arg(QString::fromLatin1(appExecutableName)));
+        return;
+    }
     const std::optional<Version> marker = readReleaseMarker(app);
-    if (!QFileInfo(QDir(app).filePath(QString::fromLatin1(appExecutableName))).isFile() || !marker
-        || *marker != m_release.version) {
-        fail(tr("The downloaded package does not hold MyBooksLibrary %1.").arg(m_release.version.toString()));
+    if (!marker || *marker != m_release.version) {
+        fail(tr("The downloaded package is not marked as MyBooksLibrary %1 (release.json).")
+                 .arg(m_release.version.toString()));
         return;
     }
     m_running = false;
