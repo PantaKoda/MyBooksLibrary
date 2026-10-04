@@ -72,6 +72,7 @@ Pane {
             }
             Button {
                 text: qsTr("Read")
+                highlighted: true  // The main action: an accent button.
                 visible: pane.inspector.hasBook && pane.inspector.error.length === 0
                 onClicked: pane.readRequested()
                 Accessible.description: qsTr("Open the book where you last stopped reading")

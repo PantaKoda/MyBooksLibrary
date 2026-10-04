@@ -32,11 +32,11 @@
 ## Theme
 
 The window uses the **FluentWinUI3** style (Qt 6.8+), set in `qtquickcontrols2.conf`, which is built into the app's resources. Qt's default on Windows is the older "Windows" style, which the app used until the UI overhaul.
-- **Light and dark:** both follow the Windows setting. `--color-scheme light|dark` (development) overrides it for screenshots and checks.
+- **Light and dark:** as chosen in the Appearance dialog; by default, as Windows is set. `--color-scheme light|dark` (development) overrides it for screenshots and checks.
 - **Who overrides it:** `QT_QUICK_CONTROLS_STYLE` and `-style` take precedence over the configuration file. The QML tests set `Basic`, because the native styles need a real window.
 - **Fusion fallback:** FluentWinUI3 falls back to Fusion for the controls it does not cover, such as `SplitView`'s handles. The package ships both styles, since `windeployqt` deploys every Qt Quick Controls style.
 
-**`Theme`** (`qml/theme/Theme.qml`, a singleton in `MyBooksLibrary.Presentation`, so every view and QML test can use it) holds the views' shared values. Views use these roles instead of fixed colours, opacities and pixel sizes. Colours the palette already provides (text, window, accent) come from the palette.
+**`Theme`** (`qml/theme/Theme.qml`, a singleton in `MyBooksLibrary.Presentation`, so every view and QML test can use it) holds the views' shared values. Views use these roles instead of fixed colours, opacities and pixel sizes. Colours the palette already provides (text, window) come from the palette. The accent is `Theme.accent`, which the window also sets as `palette.accent`, so the style's controls and popups use it too.
 
 | Group | Roles | Values |
 | --- | --- | --- |
@@ -44,11 +44,12 @@ The window uses the **FluentWinUI3** style (Qt 6.8+), set in `qtquickcontrols2.c
 | Spacing and shape | `spacingXS`…`spacingXL` (4, 8, 12, 16, 24), `controlRadius` (4), `cardRadius` (8) | A 4 px grid |
 | Text | `textSecondary` | WinUI's secondary text: labels, sources, counts. Never made fainter with opacity |
 | Status | `critical`, `success`, `caution` | WinUI's status colours, light and dark, always with words. The light caution is darkened to `#8a5000`, because WinUI's `#9d5d00` reaches only 4.4:1 on a selected row |
-| Surfaces | `selectedFill`, `selectionBarWidth`, `cardFill`, `cardStroke`, `divider` | A selected row the view draws itself, cards and dividers |
+| Accent | `accent`, `tint(alpha)` | The Appearance choice for the current scheme (`Appearance.accentLight` / `accentDark`) |
+| Surfaces | `selectedFill`, `selectionBarWidth`, `paneTint`, `barTint`, `cardFill`, `cardStroke`, `divider` | A selected row the view draws itself (an accent tint), the sidebar and the toolbars (lighter accent tints), cards and dividers. In light the tints are 5% at most, the most that keeps the status colours at 4.5:1 |
 
 **Selected rows:**
 - Lists use the style's own selection: a subtle fill and an accent bar. The text keeps its colour, and views never use `palette.highlightedText`, which would be white on light grey under Fluent.
-- The contents tree draws its current row the same way, with `selectedFill` and an accent bar.
+- The contents tree draws its current row itself, with `selectedFill` (a faint accent tint) and an accent bar. Its fill is therefore slightly coloured, where the lists' Fluent fill is neutral grey; both have the accent bar.
 
 **Panes:** the `SplitView`'s handle is a thin `divider` line with a 7 px grab area. It turns into a 3 px accent line on hover or drag. Fusion's own handle is a thick bar.
 
@@ -62,8 +63,28 @@ Screenshots of PR 1, at the default size (1100×720) on a scratch library with t
 
 `images/ui1-fluent-style-only.png` shows FluentWinUI3 without these changes. The selected book is white on light grey there, and the contents details run under the status bar.
 
+### Appearance: theme and accent
+
+Inspired by [repo-watch](https://github.com/PantaKoda/repo-watch)'s Appearance settings (theme System/Light/Dark, a few restrained accent presets, status colours that never follow the accent, accent-tinted panels).
+
+- **`Appearance`** (`src/presentation/appearance.*`, a QML singleton in `MyBooksLibrary.Presentation`): `theme` (`System`, `Light`, `Dark`), `accent` (a preset id), `accents` (id, name, light and dark colour) and `accentLight` / `accentDark`.
+  - **Theme** sets `QStyleHints::setColorScheme` (System unsets it), which Fluent and `Theme.dark` follow.
+  - **Accents:** Lapis blue (default), Teal, Violet, Rose, Graphite, and Windows accent (the system palette's, updated when Windows changes it). Each preset has a light-scheme colour that carries Fluent's white accent-button text and a dark-scheme colour that carries its black text, both at 4.5:1 or more, and 3:1 on the window as a selection bar. No preset uses the status hues (red, green, amber).
+  - **Stored** in QSettings, `appearance/theme` (`system`, `light`, `dark`) and `appearance/accent`. Only known values are honoured; a hand-edited one falls back to the default, as repo-watch does.
+  - **One instance:** `main.cpp` makes it with `Appearance::fromArguments` and registers it with `setInstance` before the engine loads; QML's `create()` returns it. The class has no default constructor, so QML never makes its own. Without an instance (tests), each engine gets one that stores nothing. Only the registered instance watches for a change of Windows' accent (one application event filter).
+  - **Development:** `--color-scheme` and `--accent <id>` show the window that way; with either, the stored choice is neither read nor written. An unknown accent id prints `warning=unknown --accent …` with the valid ids.
+  - **`accents` changes only with Windows' accent,** not with the choice, so the dialog's swatches are not rebuilt on every click.
+- **`AppearanceDialog.qml`** (`qml/theme/`), from the toolbar's round **Appearance** button (a ring and dot in the accent): the theme as three radio buttons in a row, the accents as colour dots (a ring marks the chosen one, a ring in the text colour marks keyboard focus, the name is in the tooltip and under the dots). The dots are not checkable buttons: the choice alone decides the ring, so clicking the chosen dot again keeps it chosen. Assistive technology reads them as radio buttons, checked for the chosen one. Choices apply at once.
+- **Where the accent shows:** selection bars (lists, the contents tree, tabs), the contents tree's selected row (`selectedFill`), focus and checked controls, the two main actions as accent buttons (**Import PDFs…**, **Read**), and a light tint on the toolbar, the status bar (`barTint`) and the sidebar (`paneTint`).
+
+| Before (Windows' grey accent) | Light, Lapis blue (default) | Dark, Violet | Dark, Teal | Appearance dialog |
+| --- | --- | --- | --- | --- |
+| ![Before](images/ui-accent-before.png) | ![Light, Lapis blue](images/ui-accent-light-lapis.png) | ![Dark, Violet](images/ui-accent-dark-violet.png) | ![Dark, Teal](images/ui-accent-dark-teal.png) | ![Appearance dialog](images/ui-appearance-dialog.png) |
+
+**`tst_appearance`** checks the presets' contrast, that choices are stored and applied to the colour scheme, that unknown stored values fall back, that `--color-scheme` and `--accent` neither read nor overwrite the stored choice (and that an unknown id is reported), and the real dialog (offscreen), including a mouse click and Space on the chosen accent. The offscreen platform ignores colour-scheme requests, so the scheme itself is asserted only where the platform applies it (`QT_QPA_PLATFORM=windows`).
+
 **`tst_theme`** checks three things:
-- the text and status colours have at least **4.5:1** contrast (WCAG 2.2 AA) on Fluent's light (`#f3f3f3`) and dark (`#202020`) window, on a card and on a selected row;
+- the text and status colours have at least **4.5:1** contrast (WCAG 2.2 AA) on Fluent's light (`#f3f3f3`) and dark (`#202020`) window, on a card, on a selected row and on the accent-tinted surfaces, for every accent preset;
 - the type ramp is ordered;
 - no handwritten view sets a fixed colour, a fixed font size or `highlightedText`.
 

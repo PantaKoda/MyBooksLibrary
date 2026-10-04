@@ -22,6 +22,7 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | UI overhaul; build fix; **v0.2.0** | Merged: [PR #37](https://github.com/PantaKoda/MyBooksLibrary/pull/37) (merge `9968194`, the SDK runtime deployed once), [PR #35](https://github.com/PantaKoda/MyBooksLibrary/pull/35) (merge `03859dc`, release notes), [PR #36](https://github.com/PantaKoda/MyBooksLibrary/pull/36) (merge `c100105`, UI PR 1). **v0.2.0** via the release PR `release/v0.2.0` | `fix/ci-sdk-runtime-deploy-race`; `docs/next-release-notes`; `feat/ui-01-presentation-foundation`; `release/v0.2.0` | See "UI overhaul" |
 | Owner's testing after v0.2.0 | Merged: [PR #39](https://github.com/PantaKoda/MyBooksLibrary/pull/39) (merge `5848097`), after the owner's review and CI on `cb19d50` | `fix/inspector-plain-reasons` | See "Plain reasons instead of Why?" |
 | SDK 0.4.0 update; **v0.3.0** | Merged: [PR #40](https://github.com/PantaKoda/MyBooksLibrary/pull/40) (merge `b6501da`), after CI on `f72e14d`. **v0.3.0** (PRs #39, #40) via the release PR `release/v0.3.0` | `chore/sdk-0.4.0`; `release/v0.3.0` | See "SDK 0.4.0 update" |
+| Themes and accents | AwaitingReview: [PR #42](https://github.com/PantaKoda/MyBooksLibrary/pull/42) | `feat/ui-themes-accents` | See "Themes and accents" |
 | M11 | NotStarted | | |
 
 ## UI overhaul (after v0.1.0)
@@ -74,6 +75,41 @@ Its first run failed twice, rightly: WinUI's light caution `#9d5d00` reaches 4.3
 **Released in v0.2.0**, with issue #30's PRs and the page-label fix (`docs/releases/v0.2.0.md`).
 
 **Next:** PR 1b, English plurals.
+
+### Themes and accents (presentation)
+
+**Asked by the owner (2026-10-04):** "the UI is ugly. Take inspiration from https://github.com/PantaKoda/repo-watch to add themes and accents."
+
+**Branch:** `feat/ui-themes-accents`. **Status:** AwaitingReview: [PR #42](https://github.com/PantaKoda/MyBooksLibrary/pull/42).
+
+**Before** (`main` at `f7a26e2`, Release, scratch library with the fixtures, Windows platform): Fluent takes Windows' accent, which is dark grey on this machine, so the selection bars, the tab underline and focus were black or grey on flat grey surfaces.
+
+**Change:**
+- `src/presentation/appearance.*` (new): `Appearance`, the theme (System/Light/Dark, applied with `QStyleHints::setColorScheme`) and accent (six presets, one of them Windows' own), stored in QSettings (`appearance/theme`, `appearance/accent`). A QML singleton; `main.cpp` owns the instance.
+- `qml/theme/AppearanceDialog.qml` (new), opened from a round accent swatch at the right of the toolbar.
+- `qml/theme/Theme.qml`: `accent`, `tint()`, and `selectedFill` / `paneTint` / `barTint` from the accent.
+- `Main.qml`: `palette.accent: Theme.accent`; tinted toolbar and status bar with dividers; the Appearance button; **Import PDFs…** is an accent button. `LibrarySidebar.qml`: tinted background. `BookInspectorPane.qml`: **Read** is an accent button.
+- `main.cpp`: `--accent <id>`; with it or `--color-scheme`, the stored choice is neither read nor written.
+- Docs: UI.md ("Appearance: theme and accent", screenshots), USER_GUIDE.md, BUILDING.md, DECISIONS.md, `releases/UNRELEASED.md`.
+
+**Tests:**
+- `tst_appearance` (new, 5 cases): every preset's contrast (4.5:1 for accent-button text, 3:1 on the window); choices stored and applied again at the next start; unknown stored values fall back; nothing stored without a QSettings; the real dialog changes the choice, its checked state and the Theme singleton's accent. Its first run found that QML built its own `Appearance` instead of using `create()` (now no default constructor).
+- `tst_theme`: text and status colours on every accent-tinted surface, for every preset. Its first runs failed at 8–10% light tints (critical 4.42:1, success 4.38:1 on a selected row); the light tints are now 5%.
+- The offscreen platform ignores colour-scheme requests. `tst_appearance` reports which case applies and asserts the scheme only where it applies; run with `QT_QPA_PLATFORM=windows` locally, all 7 cases passed with the scheme checks included.
+
+**Verification (local, Windows 11, Qt 6.11.2 MSVC 2022, SDK 0.4.0):** `pwsh scripts/verify.ps1` (Release) passed: text checks, guard tests, build, 35/35 tests and the smoke checks, on the code of `f17c18f`. Debug not run.
+
+**Screenshots:** `docs/images/ui-accent-light-lapis.png`, `ui-accent-dark-violet.png`, `ui-accent-dark-teal.png` (`--color-scheme`, `--accent`), and `ui-appearance-dialog.png` (`tst_appearance` with `MBL_SCREENSHOT_DIR`, the FluentWinUI3 style and the Windows platform).
+
+**Review fixes (PR #42, review of `c28aa8b`):**
+- **Blocking, fixed:** clicking the chosen accent again removed its ring (a checkable button outside a group toggles itself off; choosing the same accent emits nothing). The swatches are no longer checkable, so the choice alone decides the ring. They have `Accessible.role: RadioButton` and `checked`. A new test step clicks the chosen swatch with the mouse and with Space. With the old swatch the step fails, offscreen and on the Windows platform.
+- **Found while testing that:** `accents` shared the accent-change signal, so every click rebuilt all the swatches. `accents` now has its own `accentsChanged`, emitted only when Windows' accent really changes.
+- **Nit, fixed:** the application event filter is installed only for the instance registered with `setInstance`, not once for every instance.
+- **Nit, fixed:** the start-up options moved into `Appearance::fromArguments`, tested with a stored choice: the overrides neither read nor overwrite it, and without them it is used.
+- **Nit, fixed:** an unknown `--accent` prints `warning=unknown --accent "…"; use one of: …`.
+- **Design note, documented:** the contents tree's selected row is an accent tint, while the lists keep Fluent's neutral fill; both have the accent bar (UI.md, "Selected rows"). The owner can choose to keep or change this.
+
+**Remaining:** the owner's look at the app on their own Windows settings. The UI overhaul's layout PRs (window layout, book rows, inspector, reader) are unchanged and still to come.
 
 ## After M10: fixes from the owner's testing
 

@@ -41,7 +41,7 @@ It holds the library's own **copy** of each PDF and a catalog of everything the 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────┐
 │ Library  C:\…\Library   [ Search titles, authors and contents ] [All ▾]  │
-│                                    [Library ▾] [Import PDFs…] [Backup ▾] │
+│                                [Library ▾] [Import PDFs…] [Backup ▾] (◉)│
 ├────────────────┬──────────────────────┬──────────────────────────────────┤
 │ Library (12)   │ Book list            │ The selected book                │
 │ Collections    │  Title               │  Title, file, pages              │
@@ -53,9 +53,13 @@ It holds the library's own **copy** of each PDF and a catalog of everything the 
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Toolbar:** the name of what the list shows and the library's folder (point at it to see the whole path); the **search** field and what to search in (**All**, **Titles**, **Authors**, **Contents**); the **Library** menu, to [open another library](#opening-another-library); **Import PDFs…**; and the **Backup** menu.
+- **Toolbar:** the name of what the list shows and the library's folder (point at it to see the whole path); the **search** field and what to search in (**All**, **Titles**, **Authors**, **Contents**); the **Library** menu, to [open another library](#opening-another-library); **Import PDFs…**; the **Backup** menu; and the round **Appearance** button (◉), for the theme and accent colour.
 - **The window's title** names the library, so two windows on two libraries can be told apart.
-- **Light or dark:** the window follows Windows' own setting (*Settings → Personalization → Colors*) and its accent colour.
+- **Theme and accent:** the **Appearance** button (◉, at the right of the toolbar) opens a small window with:
+  - **Theme:** **As Windows is set** (the default: Windows' *Settings → Personalization → Colors*), **Light** or **Dark**;
+  - **Accent:** the colour of selections, the main buttons and the light tint of the bars and sidebar. Lapis blue (the default), Teal, Violet, Rose, Graphite, or **Windows accent**, Windows' own colour. Point at a colour to see its name.
+
+  A choice applies at once and is kept for the next start. Errors, confirmations and warnings keep their own red, green and amber, whatever the accent.
 - **Sidebar:** the **Library** (all books), your **collections**, and **Trash**. The numbers are book counts.
 - **Book list:** each book's title and authors, and its processing state, such as "Analyzing contents…" or "Title uncertain".
 - **Book details** (on the right): the selected book. See [A book's details](#a-books-details).

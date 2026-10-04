@@ -16,6 +16,10 @@ Pane {
     required property LibraryController library
     property bool enabledActions: true
     padding: 6
+    // Set apart from the book list by a light accent tint.
+    background: Rectangle {
+        color: Qt.tint(sidebar.palette.window, Theme.paneTint)
+    }
 
     ColumnLayout {
         anchors.fill: parent

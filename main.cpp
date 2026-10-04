@@ -27,6 +27,9 @@
 //                                            if the reader was still open when the window closed
 //                     [--color-scheme light|dark]  development: show the window light or dark
 //                                            whatever Windows is set to (screenshots, checks)
+//                     [--accent <id>]        development: show the window in that accent (lapis,
+//                                            teal, violet, rose, graphite, windows); with either
+//                                            option the Appearance choice is not read or stored
 //   appMyBooksLibrary --sdk-check [<pdf>]    no window: print the pdfbookmark SDK identity and,
 //                                            with a PDF, its identity and extracted title.
 //                                            Exit 0 on success, 1 on an SDK error.
@@ -48,6 +51,7 @@
 #include "processing/sdk/sdkinfo.h"
 #include "processing/sdk/sdkcontentsanalyzer.h"
 #include "processing/sdk/sdkmetadataextractor.h"
+#include "presentation/appearance.h"
 #include "presentation/librarycontroller.h"
 #include "reader/readercheck.h"
 
@@ -56,7 +60,6 @@
 #include <QQmlApplicationEngine>
 #include <QQmlExtensionPlugin>
 #include <QQuickWindow>
-#include <QStyleHints>
 #include <QSettings>
 #include <QTextStream>
 #include <QTimer>
@@ -187,21 +190,24 @@ int main(int argc, char *argv[])
     QCoreApplication::setOrganizationName(QStringLiteral("MyBooksLibrary"));
     QCoreApplication::setApplicationName(QStringLiteral("MyBooksLibrary"));
     const QStringList args = QCoreApplication::arguments();
-    // Development: --color-scheme light|dark, before the window exists. The
-    // style and the Theme follow it as they follow Windows' setting.
-    if (const qsizetype at = args.indexOf(QLatin1String("--color-scheme")); at >= 0 && at + 1 < args.size()) {
-        const QString scheme = args.at(at + 1);
-        if (scheme == QLatin1String("dark"))
-            QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Dark);
-        else if (scheme == QLatin1String("light"))
-            QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Light);
-    }
 
     // The library last opened from the app (on Windows in
     // HKCU\Software\MyBooksLibrary\MyBooksLibrary). Declared before the
     // library session, which may write to it, so it outlives the session.
     QSettings settings;
     mbl::app::LibraryMemory memory(settings);
+
+    // The theme and accent chosen in the Appearance dialog, before the window
+    // exists. Development: --color-scheme light|dark and --accent <id> show
+    // the window that way instead, and then the choice is neither read nor
+    // stored (screenshots never change the user's appearance).
+    QString appearanceWarning;
+    const std::unique_ptr<mbl::presentation::Appearance> appearance =
+        mbl::presentation::Appearance::fromArguments(settings, args, &appearanceWarning);
+    // Printed like the other development output (a GUI-subsystem exe: redirect to see it).
+    if (!appearanceWarning.isEmpty())
+        QTextStream(stdout) << "warning=" << appearanceWarning << Qt::endl;
+    mbl::presentation::Appearance::setInstance(appearance.get());
 
     // Composition root: the library session, its SDK extractor and its window.
     mbl::presentation::LibraryController library;
