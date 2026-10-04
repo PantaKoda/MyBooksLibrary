@@ -22,6 +22,7 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | UI overhaul; build fix; **v0.2.0** | Merged: [PR #37](https://github.com/PantaKoda/MyBooksLibrary/pull/37) (merge `9968194`, the SDK runtime deployed once), [PR #35](https://github.com/PantaKoda/MyBooksLibrary/pull/35) (merge `03859dc`, release notes), [PR #36](https://github.com/PantaKoda/MyBooksLibrary/pull/36) (merge `c100105`, UI PR 1). **v0.2.0** via the release PR `release/v0.2.0` | `fix/ci-sdk-runtime-deploy-race`; `docs/next-release-notes`; `feat/ui-01-presentation-foundation`; `release/v0.2.0` | See "UI overhaul" |
 | Owner's testing after v0.2.0 | Merged: [PR #39](https://github.com/PantaKoda/MyBooksLibrary/pull/39) (merge `5848097`), after the owner's review and CI on `cb19d50` | `fix/inspector-plain-reasons` | See "Plain reasons instead of Why?" |
 | SDK 0.4.0 update; **v0.3.0** | Merged: [PR #40](https://github.com/PantaKoda/MyBooksLibrary/pull/40) (merge `b6501da`), after CI on `f72e14d`. **v0.3.0** (PRs #39, #40) via the release PR `release/v0.3.0` | `chore/sdk-0.4.0`; `release/v0.3.0` | See "SDK 0.4.0 update" |
+| Themes and accents | AwaitingReview (PR to be linked) | `feat/ui-themes-accents` | See "Themes and accents" |
 | M11 | NotStarted | | |
 
 ## UI overhaul (after v0.1.0)
@@ -74,6 +75,33 @@ Its first run failed twice, rightly: WinUI's light caution `#9d5d00` reaches 4.3
 **Released in v0.2.0**, with issue #30's PRs and the page-label fix (`docs/releases/v0.2.0.md`).
 
 **Next:** PR 1b, English plurals.
+
+### Themes and accents (presentation)
+
+**Asked by the owner (2026-10-04):** "the UI is ugly. Take inspiration from https://github.com/PantaKoda/repo-watch to add themes and accents."
+
+**Branch:** `feat/ui-themes-accents`. **Status:** AwaitingReview.
+
+**Before** (`main` at `f7a26e2`, Release, scratch library with the fixtures, Windows platform): Fluent takes Windows' accent, which is dark grey on this machine, so the selection bars, the tab underline and focus were black or grey on flat grey surfaces.
+
+**Change:**
+- `src/presentation/appearance.*` (new): `Appearance`, the theme (System/Light/Dark, applied with `QStyleHints::setColorScheme`) and accent (six presets, one of them Windows' own), stored in QSettings (`appearance/theme`, `appearance/accent`). A QML singleton; `main.cpp` owns the instance.
+- `qml/theme/AppearanceDialog.qml` (new), opened from a round accent swatch at the right of the toolbar.
+- `qml/theme/Theme.qml`: `accent`, `tint()`, and `selectedFill` / `paneTint` / `barTint` from the accent.
+- `Main.qml`: `palette.accent: Theme.accent`; tinted toolbar and status bar with dividers; the Appearance button; **Import PDFs…** is an accent button. `LibrarySidebar.qml`: tinted background. `BookInspectorPane.qml`: **Read** is an accent button.
+- `main.cpp`: `--accent <id>`; with it or `--color-scheme`, the stored choice is neither read nor written.
+- Docs: UI.md ("Appearance: theme and accent", screenshots), USER_GUIDE.md, BUILDING.md, DECISIONS.md, `releases/UNRELEASED.md`.
+
+**Tests:**
+- `tst_appearance` (new, 5 cases): every preset's contrast (4.5:1 for accent-button text, 3:1 on the window); choices stored and applied again at the next start; unknown stored values fall back; nothing stored without a QSettings; the real dialog changes the choice, its checked state and the Theme singleton's accent. Its first run found that QML built its own `Appearance` instead of using `create()` (now no default constructor).
+- `tst_theme`: text and status colours on every accent-tinted surface, for every preset. Its first runs failed at 8–10% light tints (critical 4.42:1, success 4.38:1 on a selected row); the light tints are now 5%.
+- The offscreen platform ignores colour-scheme requests. `tst_appearance` reports which case applies and asserts the scheme only where it applies; run with `QT_QPA_PLATFORM=windows` locally, all 7 cases passed with the scheme checks included.
+
+**Verification (local, Windows 11, Qt 6.11.2 MSVC 2022, SDK 0.4.0):** see the PR for the `verify.ps1` result on the tested head.
+
+**Screenshots:** `docs/images/ui-accent-light-lapis.png`, `ui-accent-dark-violet.png`, `ui-accent-dark-teal.png` (`--color-scheme`, `--accent`), and `ui-appearance-dialog.png` (`tst_appearance` with `MBL_SCREENSHOT_DIR`, the FluentWinUI3 style and the Windows platform).
+
+**Remaining:** the owner's look at the app on their own Windows settings. The UI overhaul's layout PRs (window layout, book rows, inspector, reader) are unchanged and still to come.
 
 ## After M10: fixes from the owner's testing
 

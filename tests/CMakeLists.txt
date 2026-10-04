@@ -111,6 +111,11 @@ mbl_add_test(tst_theme presentation/tst_theme.cpp)
 target_link_libraries(tst_theme PRIVATE mbl_presentation mbl_presentationplugin Qt6::Quick)
 target_compile_definitions(tst_theme PRIVATE MBL_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 
+# The theme and accent (Appearance) and the real AppearanceDialog.qml (offscreen).
+mbl_add_test(tst_appearance presentation/tst_appearance.cpp)
+target_link_libraries(tst_appearance PRIVATE mbl_presentation mbl_presentationplugin Qt6::Quick)
+target_compile_definitions(tst_appearance PRIVATE MBL_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+
 # Loads the real library sidebar QML (offscreen) against the presentation module.
 mbl_add_test(tst_librarysidebar presentation/tst_librarysidebar.cpp)
 target_link_libraries(tst_librarysidebar PRIVATE mbl_presentation mbl_presentationplugin Qt6::Quick)

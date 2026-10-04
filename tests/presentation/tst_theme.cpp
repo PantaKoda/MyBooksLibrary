@@ -74,18 +74,33 @@ void TestTheme::textIsReadableInBothSchemes()
     QVERIFY(theme->setProperty("colorScheme", scheme));
     QCOMPARE(theme->property("dark").toBool(), scheme == int(Qt::ColorScheme::Dark));
 
-    // Text sits on the window, or on a card (the contents entry's details).
-    const QColor card = over(theme->property("cardFill").value<QColor>(), window);
-    const QColor selected = over(theme->property("selectedFill").value<QColor>(), window);
-    for (const char* role : {"textSecondary", "critical", "success", "caution"}) {
-        const QColor text = theme->property(role).value<QColor>();
-        QVERIFY2(text.isValid(), role);
-        for (const QColor& background : {window, card, selected}) {
-            const double ratio = contrast(text, background);
-            QVERIFY2(ratio >= 4.5, qPrintable(QStringLiteral("%1 %2 on %3: %4:1")
-                                                  .arg(QString::fromLatin1(role), over(text, background).name(),
-                                                       background.name())
-                                                  .arg(ratio, 0, 'f', 2)));
+    // Text sits on the window, on a card (the contents entry's details), on a
+    // selected row, or on a surface tinted with the accent (sidebar,
+    // toolbars), whichever accent preset is chosen.
+    QObject* appearance = engine.singletonInstance<QObject*>("MyBooksLibrary.Presentation", "Appearance");
+    QVERIFY2(appearance, "the Appearance singleton is not registered");
+    const QVariantList accents = appearance->property("accents").toList();
+    QVERIFY(!accents.isEmpty());
+    for (const QVariant& accent : accents) {
+        const QString id = accent.toMap().value(QStringLiteral("id")).toString();
+        QVERIFY(appearance->setProperty("accent", id));
+        const QColor card = over(theme->property("cardFill").value<QColor>(), window);
+        QList<QColor> backgrounds{window, card};
+        for (const char* tinted : {"selectedFill", "paneTint", "barTint"}) {
+            const QColor fill = theme->property(tinted).value<QColor>();
+            QVERIFY2(fill.isValid(), tinted);
+            backgrounds << over(fill, window);
+        }
+        for (const char* role : {"textSecondary", "critical", "success", "caution"}) {
+            const QColor text = theme->property(role).value<QColor>();
+            QVERIFY2(text.isValid(), role);
+            for (const QColor& background : std::as_const(backgrounds)) {
+                const double ratio = contrast(text, background);
+                QVERIFY2(ratio >= 4.5, qPrintable(QStringLiteral("%1 %2 on %3 (accent %4): %5:1")
+                                                      .arg(QString::fromLatin1(role), over(text, background).name(),
+                                                           background.name(), id)
+                                                      .arg(ratio, 0, 'f', 2)));
+            }
         }
     }
 }

@@ -112,6 +112,8 @@ qt_add_library(mbl_presentation STATIC
     src/app/librarymemory.cpp
     src/app/libraryroot.h
     src/app/libraryroot.cpp
+    src/presentation/appearance.h
+    src/presentation/appearance.cpp
     src/presentation/bookinspector.h
     src/presentation/bookinspector.cpp
     src/presentation/booklistmodel.h
@@ -197,6 +199,7 @@ qt_add_qml_module(appMyBooksLibrary
         qml/reader/ReaderPane.qml
         qml/export/ExportDialog.qml
         qml/backup/BackupDialog.qml
+        qml/theme/AppearanceDialog.qml
 )
 
 # The window's Qt Quick Controls style: FluentWinUI3 (docs/UI.md, "Theme").

@@ -5,7 +5,9 @@ pragma Singleton
 // Fluent's WinUI 3 values, in light and dark as Windows is set. Views use the
 // roles here (secondary text, a critical message, a selected row) instead of
 // raw colours, opacities and pixel sizes. Colours that the style's palette
-// already provides (text, window, accent) come from the palette.
+// already provides (text, window) come from the palette. The accent is the
+// one chosen in the Appearance dialog (Appearance); the window sets it as the
+// palette's accent, so the style's controls use it too.
 import QtQuick
 
 QtObject {
@@ -49,11 +51,25 @@ QtObject {
     readonly property color success: dark ? "#6ccb5f" : "#0f7b0f"   // Confirmed, done.
     readonly property color caution: dark ? "#fce100" : "#8a5000"   // Uncertain, needs a look.
 
-    // A selected row the view draws itself (the contents tree), as the style
-    // draws one in a list: a subtle fill, the text unchanged, and an accent
-    // bar (selectionBarWidth) in the palette's accent colour.
-    readonly property color selectedFill: dark ? Qt.rgba(1, 1, 1, 0.0605) : Qt.rgba(0, 0, 0, 0.0373)
+    // The accent for this scheme: white text on the light one, black on the
+    // dark one (tst_appearance). Never alone for a status.
+    readonly property color accent: dark ? Appearance.accentDark : Appearance.accentLight
+
+    // A selected row the view draws itself (the contents tree): a faint
+    // accent fill, the text unchanged, and an accent bar (selectionBarWidth).
+    readonly property color selectedFill: tint(dark ? 0.16 : 0.05)
     readonly property int selectionBarWidth: 3
+
+    // Surfaces lightly tinted with the accent, as repo-watch's panels are:
+    // the sidebar and the toolbars. In light, 5% at most: more takes the
+    // status colours below 4.5:1 on them, and on a selected row (tst_theme).
+    readonly property color paneTint: tint(dark ? 0.07 : 0.05)
+    readonly property color barTint: tint(dark ? 0.10 : 0.05)
+
+    // The accent at `alpha`, to draw over the window.
+    function tint(alpha: real): color {
+        return Qt.rgba(accent.r, accent.g, accent.b, alpha)
+    }
 
     // Cards (a framed group such as the contents entry's details) and dividers.
     readonly property color cardFill: dark ? Qt.rgba(1, 1, 1, 0.0512) : Qt.rgba(1, 1, 1, 0.7)

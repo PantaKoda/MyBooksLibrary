@@ -14,6 +14,8 @@ Merged since v0.3.0: none yet.
 
 ## New
 
+- **Themes and accent colours.** The new round **Appearance** button at the right of the toolbar chooses the theme (as Windows is set, light or dark) and an accent colour: Lapis blue, Teal, Violet, Rose, Graphite or Windows' own. The accent colours selections, the main buttons and a light tint on the bars and sidebar; the choice is kept for the next start. (#PR)
+
 ## Fixed
 
 ## Known limits

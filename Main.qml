@@ -26,6 +26,9 @@ ApplicationWindow {
     title: window.library.switcher.currentName.length > 0
            ? qsTr("%1 – MyBooksLibrary").arg(window.library.switcher.currentName)
            : qsTr("MyBooksLibrary")
+    // The accent chosen in the Appearance dialog, for the style's controls
+    // and their popups (selection bars, focus, accent buttons) as for ours.
+    palette.accent: Theme.accent
 
     property bool showActivity: false
     // Development (--inspect-first): select the first book once the list has one.
@@ -99,6 +102,11 @@ ApplicationWindow {
         enabledForUse: window.library.ready && !window.closeRequested
     }
 
+    // Theme and accent, from the toolbar's Appearance button.
+    AppearanceDialog {
+        id: appearanceDialog
+    }
+
     FileDialog {
         id: importDialog
         title: qsTr("Import PDF files")
@@ -122,6 +130,16 @@ ApplicationWindow {
     }
 
     header: ToolBar {
+        // Tinted with the accent, with a divider below.
+        background: Rectangle {
+            color: Qt.tint(window.palette.window, Theme.barTint)
+            Rectangle {
+                anchors.bottom: parent.bottom
+                width: parent.width
+                height: 1
+                color: Theme.divider
+            }
+        }
         RowLayout {
             anchors.fill: parent
             anchors.leftMargin: 8
@@ -198,6 +216,7 @@ ApplicationWindow {
             Button {
                 id: importButton
                 text: qsTr("Import PDFs…")
+                highlighted: true  // The main action: an accent button.
                 enabled: window.library.ready && !window.closeRequested
                 onClicked: importDialog.open()
                 Accessible.description: qsTr("Choose PDF files to copy into the library")
@@ -221,6 +240,36 @@ ApplicationWindow {
                         objectName: "restoreItem"
                         text: qsTr("Restore a backup…")
                         onTriggered: backupDialog.openForRestore()
+                    }
+                }
+            }
+            // A swatch of the current accent: a ring and a dot.
+            ToolButton {
+                id: appearanceButton
+                objectName: "appearanceButton"
+                onClicked: appearanceDialog.open()
+                Accessible.name: qsTr("Appearance")
+                Accessible.description: qsTr("Choose the theme and the accent colour")
+                ToolTip.visible: hovered
+                ToolTip.delay: 500
+                ToolTip.text: qsTr("Appearance: theme and accent")
+                contentItem: Item {
+                    implicitWidth: 20
+                    implicitHeight: 20
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: 18
+                        height: 18
+                        radius: 9
+                        color: "transparent"
+                        border.width: 2
+                        border.color: Theme.accent
+                        Rectangle {
+                            anchors.fill: parent
+                            anchors.margins: 4
+                            radius: width / 2
+                            color: Theme.accent
+                        }
                     }
                 }
             }
@@ -496,6 +545,14 @@ ApplicationWindow {
     }
 
     footer: ToolBar {
+        background: Rectangle {
+            color: Qt.tint(window.palette.window, Theme.barTint)
+            Rectangle {
+                width: parent.width
+                height: 1
+                color: Theme.divider
+            }
+        }
         ColumnLayout {
             anchors.fill: parent
             anchors.leftMargin: 8

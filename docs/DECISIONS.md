@@ -674,3 +674,20 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - **The blockers are not reworded either.** They name SDK candidate IDs and scores, so they stay behind "Analysis notes". The summary says only what the user needs: contents were seen but not trusted, and none are shown rather than wrong ones.
   - **Why this book fails is the engine's to fix** (PDFMegine): the scan's section numbers are separate text regions, so one TOC page falls below S2's row density and the TOC splits in two. This PR changes only the wording.
 - **Verified:** See IMPLEMENTATION_PROGRESS.md, "Plain reasons instead of Why?".
+
+## 2026-10-04 — Themes and accents (Appearance)
+
+- **Change:**
+  - An **Appearance** dialog, from a round button at the right of the toolbar: the theme (As Windows is set, Light, Dark) and an accent colour (Lapis blue, Teal, Violet, Rose, Graphite, Windows accent). Choices apply at once and are kept in QSettings.
+  - `Appearance` (C++, QML singleton) applies the theme through `QStyleHints::setColorScheme` and gives each accent's light-scheme and dark-scheme colour. The window sets `palette.accent: Theme.accent`.
+  - The accent tints the toolbar, the status bar and the sidebar lightly, fills the contents tree's selected row, and colours the two main actions (**Import PDFs…**, **Read**) as accent buttons.
+  - `--accent <id>` (development), next to `--color-scheme`; with either, the stored choice is neither read nor written.
+- **Why:** the owner found the UI "ugly" and asked for themes and accents in the manner of [repo-watch](https://github.com/PantaKoda/repo-watch). The 2026-10-04 screenshots of `main` showed why: Fluent takes Windows' accent, which was a dark grey there, so selections, tabs and focus were black or grey, and every surface was the same flat grey.
+- **Assumptions:**
+  - **repo-watch's model, not its look:** its theme choice (System/Light/Dark), a few presets rather than a free colour picker (a free colour has no contrast guarantee; repo-watch honours only presets for the same reason), status colours that never follow the accent, and accent-tinted panels. Its "space station" gradients and glows are not copied: this app stays a Fluent Windows app (2026-10-02 decision).
+  - **Lapis blue is the default, not Windows accent:** Windows' accent can be grey (it was on the owner's machine) and then the app has no colour at all. "Windows accent" stays a choice. The theme still defaults to Windows' setting, as decided on 2026-10-02.
+  - **Contrast by test:** each preset's light colour carries white accent-button text and its dark colour black text (Fluent's), at 4.5:1 or more; as a selection bar both are 3:1 or more on the window (`tst_appearance`). `tst_theme` now checks the text and status colours on every tinted surface for every preset. That capped the light tints at 5%: at 8% the light critical red fell to 4.42:1 on a selected row.
+  - **No default constructor:** Qt's QML engine built its own `Appearance` with the default constructor instead of calling `create()`, so the dialog changed another instance (`tst_appearance` caught it). The constructor now takes the QSettings pointer explicitly.
+  - **The scheme is asserted only where it applies:** the offscreen platform ignores colour-scheme requests, so CI (offscreen) checks storage and the dialog, and the scheme is checked with `QT_QPA_PLATFORM=windows` locally.
+  - **A ring and a dot, not an icon file:** the toolbar button draws the accent itself, so no SVG plugin or icon licence is needed.
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, "Themes and accents".
