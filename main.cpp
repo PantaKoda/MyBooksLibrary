@@ -30,6 +30,16 @@
 //                     [--accent <id>]        development: show the window in that accent (lapis,
 //                                            teal, violet, rose, graphite, windows); with either
 //                                            option the Appearance choice is not read or stored
+//                     [--updated-from <version>]  started by the update that replaced <version>
+//                                            (src/update/updateapplier.h): says so, tidies up
+//                     [--update-failed <reason>]  started again after a failed update: says why
+//   appMyBooksLibrary --apply-update <app folder> --wait-pid <pid> --from-version <v> --log <file>
+//                                            no window: run by the new copy of an update, from
+//                                            its staging folder: wait for the old app to exit,
+//                                            put this copy in its place, start it
+//                                            (src/update/updateapplier.h)
+//   appMyBooksLibrary --tls-check            no window: HTTPS for update checks (Qt's TLS
+//                                            backends). Exit 0 when HTTPS is available.
 //   appMyBooksLibrary --sdk-check [<pdf>]    no window: print the pdfbookmark SDK identity and,
 //                                            with a PDF, its identity and extracted title.
 //                                            Exit 0 on success, 1 on an SDK error.
@@ -53,17 +63,25 @@
 #include "processing/sdk/sdkmetadataextractor.h"
 #include "presentation/appearance.h"
 #include "presentation/librarycontroller.h"
+#include "presentation/updatecontroller.h"
 #include "reader/readercheck.h"
+#include "update/updateapplier.h"
 
 #include <QCoreApplication>
+#include <QDir>
+#include <QFileInfo>
 #include <QGuiApplication>
+#include <QNetworkAccessManager>
 #include <QQmlApplicationEngine>
 #include <QQmlExtensionPlugin>
 #include <QQuickWindow>
 #include <QSettings>
+#include <QSslSocket>
+#include <QStandardPaths>
 #include <QTextStream>
 #include <QTimer>
 
+#include <algorithm>
 #include <atomic>
 #include <cstring>
 #include <functional>
@@ -130,10 +148,36 @@ int sqliteCheck()
     return caps.searchReady() ? 0 : 1;
 }
 
+int tlsCheck()
+{
+    QTextStream out(stdout);
+    out << "tls.backends=" << QSslSocket::availableBackends().join(u' ') << Qt::endl
+        << "tls.active=" << QSslSocket::activeBackend() << Qt::endl
+        << "tls.supported=" << yesNo(QSslSocket::supportsSsl()) << Qt::endl;
+    return QSslSocket::supportsSsl() ? 0 : 1;
+}
+
+void setIdentity()
+{
+    QCoreApplication::setOrganizationName(QStringLiteral("MyBooksLibrary"));
+    QCoreApplication::setApplicationName(QStringLiteral("MyBooksLibrary"));
+    QCoreApplication::setApplicationVersion(QStringLiteral(MBL_VERSION));
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
 {
+    if (argc >= 2 && std::strcmp(argv[1], "--apply-update") == 0) {
+        QCoreApplication app(argc, argv);
+        setIdentity();
+        return mbl::update::runUpdater(QCoreApplication::arguments());
+    }
+    if (argc >= 2 && std::strcmp(argv[1], "--tls-check") == 0) {
+        QCoreApplication app(argc, argv);
+        setIdentity();
+        return tlsCheck();
+    }
     if (argc >= 2 && std::strcmp(argv[1], "--sdk-check") == 0) {
         QCoreApplication app(argc, argv);
         return sdkCheck();
@@ -187,8 +231,7 @@ int main(int argc, char *argv[])
     }
 
     QGuiApplication app(argc, argv);
-    QCoreApplication::setOrganizationName(QStringLiteral("MyBooksLibrary"));
-    QCoreApplication::setApplicationName(QStringLiteral("MyBooksLibrary"));
+    setIdentity();
     const QStringList args = QCoreApplication::arguments();
 
     // The library last opened from the app (on Windows in
@@ -214,6 +257,37 @@ int main(int argc, char *argv[])
     library.setProcessors(std::make_shared<mbl::sdk::SdkMetadataExtractor>(),
                           std::make_shared<mbl::sdk::SdkContentsAnalyzer>(), mbl::sdk::querySdkIdentity().modelsFound);
     library.setExporter(std::make_shared<mbl::sdk::SdkBookExporter>());
+    // Updates (docs/UPDATES.md): checked daily unless a development option is
+    // given (smoke runs and screenshots never reach the network).
+    QNetworkAccessManager network;
+    mbl::presentation::UpdateController::Config updateConfig;
+    updateConfig.repository = QStringLiteral(MBL_UPDATE_REPOSITORY);
+    updateConfig.current = *mbl::update::Version::parse(QStringLiteral(MBL_VERSION));
+    updateConfig.appFolder = QCoreApplication::applicationDirPath();
+    updateConfig.dataFolder = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+    updateConfig.keptFolders = [&library] { return QStringList{library.libraryPath()}; };
+    // Reopened after the update only when a plain start would open another
+    // library: otherwise its source stays "default" or "remembered".
+    updateConfig.currentLibrary = [&library, &memory, exe = args.value(0)] {
+        if (library.failed())
+            return QString();
+        const QString plain = mbl::app::resolveLibraryRoot({exe}, memory.remembered()).path;
+        const auto clean = [](const QString& path) { return QDir::cleanPath(QFileInfo(path).absoluteFilePath()); };
+        return clean(plain).compare(clean(library.libraryPath()), Qt::CaseInsensitive) == 0 ? QString()
+                                                                                             : library.libraryPath();
+    };
+    mbl::presentation::UpdateController updates(updateConfig, &settings, &network);
+    updates.handleStartArguments(args);
+    const QStringList developmentOptions{
+        QStringLiteral("--import"), QStringLiteral("--screenshot"), QStringLiteral("--close"),
+        QStringLiteral("--activity"), QStringLiteral("--inspect-first"), QStringLiteral("--correct"),
+        QStringLiteral("--search"), QStringLiteral("--read-page"), QStringLiteral("--export-first"),
+        QStringLiteral("--color-scheme"), QStringLiteral("--accent")};
+    const bool development = std::any_of(developmentOptions.cbegin(), developmentOptions.cend(),
+                                         [&args](const QString& option) { return args.contains(option); });
+    if (!development)
+        updates.startAutomaticChecks();
+
     QQmlApplicationEngine engine;
     QObject::connect(
         &engine,
@@ -221,7 +295,9 @@ int main(int argc, char *argv[])
         &app,
         []() { QCoreApplication::exit(-1); },
         Qt::QueuedConnection);
-    engine.setInitialProperties({{QStringLiteral("library"), QVariant::fromValue<QObject*>(&library)}});
+
+    engine.setInitialProperties({{QStringLiteral("library"), QVariant::fromValue<QObject*>(&library)},
+                                 {QStringLiteral("updates"), QVariant::fromValue<QObject*>(&updates)}});
     engine.loadFromModule("MyBooksLibrary", "Main");
     if (engine.rootObjects().isEmpty())
         return -1;
@@ -339,6 +415,8 @@ int main(int argc, char *argv[])
         QTimer::singleShot(300, *trySave);
     }
 
+    // An update's new copy, if one was started, waits for this process to
+    // exit, then replaces the app's folder and starts the new version.
     const int code = QGuiApplication::exec();
     if (*exportFailed)
         return 1;

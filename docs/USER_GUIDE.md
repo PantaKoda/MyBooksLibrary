@@ -53,7 +53,7 @@ It holds the library's own **copy** of each PDF and a catalog of everything the 
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Toolbar:** the name of what the list shows and the library's folder (point at it to see the whole path); the **search** field and what to search in (**All**, **Titles**, **Authors**, **Contents**); the **Library** menu, to [open another library](#opening-another-library); **Import PDFs…**; the **Backup** menu; and the round **Appearance** button (◉), for the theme and accent colour.
+- **Toolbar:** the name of what the list shows and the library's folder (point at it to see the whole path); the **search** field and what to search in (**All**, **Titles**, **Authors**, **Contents**); the **Library** menu, to [open another library](#opening-another-library); **Import PDFs…**; the **Backup** menu; an **Update to X.Y.Z** button, only when a newer version is available ([Updates](#updates)); and the round **Appearance** button (◉), for the theme and accent colour.
 - **The window's title** names the library, so two windows on two libraries can be told apart.
 - **Theme and accent:** the **Appearance** button (◉, at the right of the toolbar) opens a small window with:
   - **Theme:** **As Windows is set** (the default: Windows' *Settings → Personalization → Colors*), **Light** or **Dark**;
@@ -235,6 +235,19 @@ Keep backups on another disk, or in cloud storage, to be safe from a disk failur
 - **Retry** runs a failed or cancelled analysis again.
 - The status bar summarizes it, for example "Analyzing contents: *title* · 2 books waiting".
 
+## Updates
+
+MyBooksLibrary checks once a day whether a newer version has been published on its [Releases page](https://github.com/PantaKoda/MyBooksLibrary/releases). To check right away, choose **Library → Check for updates…**.
+- **When there is one,** an **Update to X.Y.Z** button appears in the toolbar. It opens the **Updates** window, which shows what is new in every version since yours.
+- **Install update** downloads the new version, checks it against the published checksum, then closes the app and starts the new version. Running work stops first and continues after the restart, as with any closing. Your libraries and settings are kept.
+- **If it cannot be installed,** for example because another MyBooksLibrary window was still open, nothing changes. The app starts again and says why.
+- **To go back** to the version before, close the app, delete its folder, and rename the folder `<name>.previous` next to it back to the original name.
+- **Some copies cannot update themselves.** This is the case for a copy built from source, a copy that holds any library inside its own folder (open or not), or one in a folder you cannot write to (such as `C:\Program Files`). The Updates window then says why and offers **Open release page**, to download the new version by hand. An update never moves or deletes a library.
+- **Keep nothing of your own in the app's folder.** An update replaces the whole folder. Your libraries and settings are kept elsewhere.
+- **To stop the daily check,** clear **Check for updates once a day** in the Updates window. Checking only asks GitHub which versions exist. It sends nothing about you or your books.
+
+**Coming from 0.3.0 or earlier:** those versions cannot update themselves. Download the new zip once, close the app, and replace the app's folder with the new one. From then on the app updates itself.
+
 ## Closing the app
 
 You can close the app at any time.
@@ -250,7 +263,7 @@ You can close the app at any time.
 - **No permanent deletion:** books in Trash stay in the library (and take disk space).
 - **One library per window.** Another library opens in its own window ([Opening another library](#opening-another-library)), and the app starts with the library you last opened from the app.
 - **Windows 10 and 11 (64-bit) only.** macOS and Linux need native builds of the text-recognition library.
-- **Not code-signed**, so SmartScreen may warn the first time.
+- **Not code-signed**, so SmartScreen may warn the first time. Updates are checked against the release's published checksum, but that is not a signature (see `docs/UPDATES.md`).
 - **The reader is simple:** previous and next page, and a page number. It has **no zoom** and **no search inside a book**; for those, open the PDF in another reader.
 - **No cloud sync**, no online lookup of book data, and no annotations.
 

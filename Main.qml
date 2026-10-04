@@ -12,6 +12,7 @@ ApplicationWindow {
     id: window
 
     required property LibraryController library
+    required property UpdateController updates
     property bool closeRequested: false
 
     // Fluent's controls are larger than the classic style's: room for the
@@ -100,6 +101,18 @@ ApplicationWindow {
         id: exportDialog
         exporter: window.library.exporter
         enabledForUse: window.library.ready && !window.closeRequested
+    }
+
+    // Updates: from the toolbar's Update button and Library → Check for updates….
+    UpdateDialog {
+        id: updateDialog
+        updates: window.updates
+    }
+    // A downloaded update is ready: close as the close button does (work
+    // stops first); main.cpp then hands over to the new version.
+    Connections {
+        target: window.updates
+        function onRestartRequested() { window.close() }
     }
 
     // Theme and accent, from the toolbar's Appearance button.
@@ -211,6 +224,12 @@ ApplicationWindow {
                         enabled: !window.library.switcher.currentIsDefault
                         onTriggered: openLibraryDialog.openDefault()
                     }
+                    MenuSeparator {}
+                    MenuItem {
+                        objectName: "checkUpdatesItem"
+                        text: qsTr("Check for updates… (version %1)").arg(window.updates.currentVersion)
+                        onTriggered: updateDialog.openAndCheck()
+                    }
                 }
             }
             Button {
@@ -242,6 +261,15 @@ ApplicationWindow {
                         onTriggered: backupDialog.openForRestore()
                     }
                 }
+            }
+            // Shown only when a newer release exists.
+            Button {
+                objectName: "updateButton"
+                visible: window.updates.available
+                highlighted: true
+                text: qsTr("Update to %1").arg(window.updates.latestVersion)
+                onClicked: updateDialog.open()
+                Accessible.description: qsTr("A newer version of MyBooksLibrary is available")
             }
             // A swatch of the current accent: a ring and a dot.
             ToolButton {
@@ -559,6 +587,24 @@ ApplicationWindow {
             anchors.rightMargin: 8
             spacing: 2
 
+            // After an update: "Updated from … to …", or why it failed.
+            RowLayout {
+                Layout.fillWidth: true
+                visible: window.updates.notice.length > 0
+                Label {
+                    objectName: "updateNotice"
+                    Layout.fillWidth: true
+                    text: window.updates.notice
+                    textFormat: Text.PlainText
+                    wrapMode: Text.Wrap
+                    color: window.updates.noticeIsError ? Theme.critical : Theme.success
+                }
+                Button {
+                    flat: true
+                    text: qsTr("Dismiss")
+                    onClicked: window.updates.dismissNotice()
+                }
+            }
             RowLayout {
                 Layout.fillWidth: true
                 BusyIndicator {

@@ -69,6 +69,8 @@ build\cli-debug\appMyBooksLibrary.exe --sdk-check tests\fixtures\title-page.pdf 
 
 ## SQLite check
 
+`appMyBooksLibrary --tls-check` runs without a window. It prints Qt's TLS backends and the active one, and exits with 0 when HTTPS is available (update checks, docs/UPDATES.md). `--apply-update` is the update hand-over, run by the new copy of an update; it is not meant to be run by hand.
+
 `appMyBooksLibrary --sqlite-check` runs without a window. It creates and queries a temporary FTS5 table through Qt's QSQLITE driver, then prints the SQLite version, compile options and each capability. It exits with 0 when search prerequisites (driver, FTS5, `bm25()`) are met and 1 otherwise. Redirect or pipe its output, as with `--sdk-check`.
 
 ## Tests
@@ -119,6 +121,8 @@ It builds `appMyBooksLibrary` (Release, no tests) in `build\package-release`, th
 | `appMyBooksLibrary.exe`, the pdfbookmark DLLs, `models\` | The build folder, where `pdfbookmark_deploy_runtime` placed the SDK's runtime and OCR models. |
 | Qt DLLs, `platforms\`, `sqldrivers\qsqlite.dll`, `qml\` (including `QtQuick\Pdf`) | `windeployqt --release --qmldir qml`. It ships only the SQLite driver, and leaves out software OpenGL, the D3D and DXC shader compilers (Qt Quick's Direct3D 11 backend uses precompiled shaders), QML debugging plugins and translations. |
 | `vcruntime140*.dll`, `msvcp140*.dll`, … | The Visual C++ runtime, app-local, from `VCToolsRedistDir`. |
+| `release.json` | The release marker (`{"product": "MyBooksLibrary", "version": "X.Y.Z"}`): only a copy unpacked from a release may update itself (docs/UPDATES.md). |
+| `tls\qschannelbackend.dll` | HTTPS for update checks through Windows' own TLS. The OpenSSL and certificate-only backends are left out (`--exclude-plugins`). |
 | `USER_GUIDE.md` | `docs/USER_GUIDE.md`: what every feature does, for users, and the limitations. |
 | `NOTICE.txt`, `licenses\` | Qt's licence text (`C:\Qt\Licenses\LICENSE` by default, or `-QtLicenseFile`), the SBOM of **every Qt module whose files are shipped**, listing its third-party components (for example PDFium in Qt PDF), the SDK's `share\doc\pdfbookmark\licenses`, and the OCR models' licence. Each shipped Qt file is mapped to its module and each SDK DLL to its licence files. An unmapped file or a missing licence stops the script, so no notice goes missing silently. |
 
@@ -129,7 +133,9 @@ It then checks **what the package leaves to Windows**. It runs `dumpbin /depende
 Then it **checks the package from a copy outside the repository**, with `PATH` reduced to Windows' own folders, no Qt variables and the real platform, each run with a time limit:
 - `--sdk-check`, `--sqlite-check` (FTS5);
 - `--reader-check` on a text PDF and, with `--require-ocr`, on `image-only.pdf`, which uses the packaged OCR models;
-- the window: `--import`, `--read-page 15`, `--export-first` (a copy with bookmarks saved to a non-ASCII name through the Export dialog's session), and `--close`.
+- the window: `--import`, `--read-page 15`, `--export-first` (a copy with bookmarks saved to a non-ASCII name through the Export dialog's session), and `--close`;
+- `--tls-check`, which must report Schannel;
+- the **update hand-over** with the packaged binaries: a copy of the package marked as the next patch version runs `--apply-update` from a staging folder. It replaces the trial folder, keeps the old one as `.previous` and starts the new version on the trial library, which the script then stops.
 
 It prints `PACKAGE PASSED` and exits 0 only if everything passed. It deletes only its own fixed output folders under `build\` and its own temporary copy.
 

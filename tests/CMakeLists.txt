@@ -144,3 +144,16 @@ mbl_add_test(tst_readerpane reader/tst_readerpane.cpp)
 target_link_libraries(tst_readerpane PRIVATE mbl_presentation mbl_presentationplugin Qt6::Quick)
 target_compile_definitions(tst_readerpane PRIVATE MBL_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
                            MBL_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+
+# Updates (src/update/): releases, the downloader (Windows' tar.exe, local
+# files) and the folder swap.
+mbl_add_test(tst_releases update/tst_releases.cpp)
+target_link_libraries(tst_releases PRIVATE mbl_update)
+mbl_add_test(tst_updateinstall update/tst_updateinstall.cpp)
+target_link_libraries(tst_updateinstall PRIVATE mbl_update)
+mbl_add_test(tst_updatedownloader update/tst_updatedownloader.cpp)
+target_link_libraries(tst_updatedownloader PRIVATE mbl_update)
+# The update controller and the real UpdateDialog.qml (offscreen).
+mbl_add_test(tst_updatecontroller presentation/tst_updatecontroller.cpp)
+target_link_libraries(tst_updatecontroller PRIVATE mbl_presentation mbl_presentationplugin Qt6::Quick)
+target_compile_definitions(tst_updatecontroller PRIVATE MBL_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
