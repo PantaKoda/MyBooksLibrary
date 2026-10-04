@@ -69,12 +69,19 @@ Dialog {
                     required property var modelData
                     readonly property color shown: Theme.dark ? modelData.dark : modelData.light
                     objectName: "accent_" + modelData.id
-                    checkable: true
+                    // Not checkable: a click never unchecks the chosen accent
+                    // (a checkable button outside a group toggles itself off,
+                    // and choosing the same accent again changes nothing).
+                    // The choice alone decides the ring.
                     checked: Appearance.accent === modelData.id
                     onClicked: Appearance.accent = modelData.id
                     focusPolicy: Qt.StrongFocus
                     implicitWidth: 36
                     implicitHeight: 36
+                    // One of a group, as the theme's radio buttons are.
+                    Accessible.role: Accessible.RadioButton
+                    Accessible.checkable: true
+                    Accessible.checked: swatch.checked
                     Accessible.name: modelData.name
                     ToolTip.visible: hovered || visualFocus
                     ToolTip.delay: 300

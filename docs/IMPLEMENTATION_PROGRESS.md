@@ -101,6 +101,14 @@ Its first run failed twice, rightly: WinUI's light caution `#9d5d00` reaches 4.3
 
 **Screenshots:** `docs/images/ui-accent-light-lapis.png`, `ui-accent-dark-violet.png`, `ui-accent-dark-teal.png` (`--color-scheme`, `--accent`), and `ui-appearance-dialog.png` (`tst_appearance` with `MBL_SCREENSHOT_DIR`, the FluentWinUI3 style and the Windows platform).
 
+**Review fixes (PR #42, review of `c28aa8b`):**
+- **Blocking, fixed:** clicking the chosen accent again removed its ring (a checkable button outside a group toggles itself off; choosing the same accent emits nothing). The swatches are no longer checkable, so the choice alone decides the ring. They have `Accessible.role: RadioButton` and `checked`. A new test step clicks the chosen swatch with the mouse and with Space. With the old swatch the step fails, offscreen and on the Windows platform.
+- **Found while testing that:** `accents` shared the accent-change signal, so every click rebuilt all the swatches. `accents` now has its own `accentsChanged`, emitted only when Windows' accent really changes.
+- **Nit, fixed:** the application event filter is installed only for the instance registered with `setInstance`, not once for every instance.
+- **Nit, fixed:** the start-up options moved into `Appearance::fromArguments`, tested with a stored choice: the overrides neither read nor overwrite it, and without them it is used.
+- **Nit, fixed:** an unknown `--accent` prints `warning=unknown --accent "…"; use one of: …`.
+- **Design note, documented:** the contents tree's selected row is an accent tint, while the lists keep Fluent's neutral fill; both have the accent bar (UI.md, "Selected rows"). The owner can choose to keep or change this.
+
 **Remaining:** the owner's look at the app on their own Windows settings. The UI overhaul's layout PRs (window layout, book rows, inspector, reader) are unchanged and still to come.
 
 ## After M10: fixes from the owner's testing

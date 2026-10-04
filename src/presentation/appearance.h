@@ -24,7 +24,10 @@
 #include <QObject>
 #include <QQmlEngine>
 #include <QString>
+#include <QStringList>
 #include <QVariantList>
+
+#include <memory>
 
 class QSettings;
 
@@ -36,8 +39,10 @@ class Appearance : public QObject {
     QML_SINGLETON
     Q_PROPERTY(ThemeChoice theme READ theme WRITE setTheme NOTIFY themeChanged FINAL)
     Q_PROPERTY(QString accent READ accent WRITE setAccent NOTIFY accentChanged FINAL)
-    // [{id, name, light, dark}], in the order the dialog shows them.
-    Q_PROPERTY(QVariantList accents READ accents NOTIFY accentColorsChanged FINAL)
+    // [{id, name, light, dark}], in the order the dialog shows them. Changes
+    // only with the system's accent, so the dialog's swatches are not rebuilt
+    // when the choice changes.
+    Q_PROPERTY(QVariantList accents READ accents NOTIFY accentsChanged FINAL)
     // The chosen accent for each scheme (the system's colour for "windows").
     Q_PROPERTY(QColor accentLight READ accentLight NOTIFY accentColorsChanged FINAL)
     Q_PROPERTY(QColor accentDark READ accentDark NOTIFY accentColorsChanged FINAL)
@@ -60,7 +65,17 @@ public:
     // constructor: QML then always goes through create().
     explicit Appearance(QSettings* settings, QObject* parent = nullptr);
 
-    // The instance QML's singleton returns. Not owned; must outlive the engines.
+    // The composition root's Appearance from the command line: the stored
+    // choice from `settings`, or, with --color-scheme light|dark or
+    // --accent <id> (development), those instead, with nothing read or
+    // stored. An unknown --accent id is reported in `warning` (with the
+    // valid ids) and leaves the default accent.
+    static std::unique_ptr<Appearance> fromArguments(QSettings& settings, const QStringList& args,
+                                                     QString* warning = nullptr);
+
+    // The instance QML's singleton returns. Not owned; must outlive the
+    // engines. Only this instance follows a change of the system's accent
+    // (one application-wide event filter, not one per instance).
     static void setInstance(Appearance* appearance);
     static Appearance* create(QQmlEngine* qmlEngine, QJSEngine* jsEngine);
 
@@ -77,6 +92,7 @@ signals:
     void themeChanged();
     void accentChanged();
     void accentColorsChanged();
+    void accentsChanged();
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -86,6 +102,7 @@ private:
     static QColor systemAccentColor();
 
     QSettings* m_settings = nullptr;
+    QColor m_systemAccent;  // As last seen, to tell a real change from any palette event.
     ThemeChoice m_theme = System;
     QString m_accent;
 };

@@ -67,7 +67,7 @@ private slots:
     void accentsKeepTextReadable();
     void choicesAreRememberedAndApplied();
     void unknownStoredValuesFallBack();
-    void withoutSettingsNothingIsStored();
+    void overridesNeitherReadNorStore();
     void theDialogChangesTheChoice();
 
 private:
@@ -170,15 +170,52 @@ void TestAppearance::unknownStoredValuesFallBack()
     QCOMPARE(appearance.accent(), Appearance::defaultAccent());
 }
 
-void TestAppearance::withoutSettingsNothingIsStored()
+// main.cpp's start-up: without development options the stored choice is
+// used and kept up to date; with --color-scheme or --accent it is neither
+// read nor overwritten, and an unknown accent id is reported.
+void TestAppearance::overridesNeitherReadNorStore()
 {
-    Appearance appearance(nullptr);  // As for --color-scheme or --accent.
-    appearance.setTheme(Appearance::Dark);
-    appearance.setAccent(QStringLiteral("rose"));
-    QCOMPARE(appearance.accent(), QStringLiteral("rose"));
-    QSettings settings(iniPath("untouched.ini"), QSettings::IniFormat);
-    QVERIFY(settings.allKeys().isEmpty());
-    appearance.setTheme(Appearance::System);
+    QSettings settings(iniPath("startup.ini"), QSettings::IniFormat);
+    settings.setValue(QStringLiteral("appearance/theme"), QStringLiteral("dark"));
+    settings.setValue(QStringLiteral("appearance/accent"), QStringLiteral("teal"));
+    const QStringList app{QStringLiteral("appMyBooksLibrary")};
+    QString warning;
+
+    {
+        const auto appearance = Appearance::fromArguments(settings, app, &warning);
+        QCOMPARE(appearance->theme(), Appearance::Dark);
+        QCOMPARE(appearance->accent(), QStringLiteral("teal"));
+        QVERIFY(warning.isEmpty());
+    }
+    {
+        const auto appearance = Appearance::fromArguments(
+            settings, app + QStringList{QStringLiteral("--accent"), QStringLiteral("rose")}, &warning);
+        QCOMPARE(appearance->theme(), Appearance::System);  // Not read.
+        QCOMPARE(appearance->accent(), QStringLiteral("rose"));
+        appearance->setTheme(Appearance::Light);
+        appearance->setAccent(QStringLiteral("violet"));
+        QVERIFY(warning.isEmpty());
+    }
+    {
+        const auto appearance = Appearance::fromArguments(
+            settings, app + QStringList{QStringLiteral("--color-scheme"), QStringLiteral("light")}, &warning);
+        QCOMPARE(appearance->theme(), Appearance::Light);
+        QCOMPARE(appearance->accent(), Appearance::defaultAccent());  // Not read.
+        appearance->setTheme(Appearance::System);
+    }
+    {
+        const auto appearance = Appearance::fromArguments(
+            settings, app + QStringList{QStringLiteral("--accent"), QStringLiteral("blue")}, &warning);
+        QCOMPARE(appearance->accent(), Appearance::defaultAccent());
+        QVERIFY2(warning.contains(QLatin1String("\"blue\"")) && warning.contains(QLatin1String("lapis"))
+                     && warning.contains(QLatin1String("graphite")),
+                 qPrintable(warning));
+    }
+    // The user's stored choice is untouched.
+    settings.sync();
+    QCOMPARE(settings.value(QStringLiteral("appearance/theme")).toString(), QStringLiteral("dark"));
+    QCOMPARE(settings.value(QStringLiteral("appearance/accent")).toString(), QStringLiteral("teal"));
+    QGuiApplication::styleHints()->unsetColorScheme();
 }
 
 void TestAppearance::theDialogChangesTheChoice()
@@ -196,6 +233,8 @@ void TestAppearance::theDialogChangesTheChoice()
         {{QStringLiteral("parent"), QVariant::fromValue<QObject*>(window.contentItem())}}));
     QVERIFY2(dialog, qPrintable(component.errorString()));
     window.show();
+    // Laid out (the swatches placed) only once the window is exposed.
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
     QVERIFY(QMetaObject::invokeMethod(dialog.get(), "open"));
     QTRY_VERIFY_WITH_TIMEOUT(dialog->property("opened").toBool(), 5000);
     auto* content = qvariant_cast<QQuickItem*>(dialog->property("contentItem"));
@@ -216,6 +255,31 @@ void TestAppearance::theDialogChangesTheChoice()
     QCOMPARE(appearance.accent(), QStringLiteral("violet"));
     QTRY_VERIFY(findItem(content, QStringLiteral("accent_violet"))->property("checked").toBool());
     QVERIFY(!findItem(content, QStringLiteral("accent_lapis"))->property("checked").toBool());
+
+    // Clicking the chosen accent again, with the mouse and with Space, keeps
+    // it chosen: the ring stays and it stays checked for assistive technology.
+    // Dark can change Windows' accent shade, which rebuilds the swatches:
+    // wait until the current ones are placed (violet is the third).
+    QTRY_VERIFY(findItem(content, QStringLiteral("accent_violet"))->x() > 0);
+    QQuickItem* chosen = findItem(content, QStringLiteral("accent_violet"));
+    const QPoint centre = chosen->mapToScene(QPointF(chosen->width() / 2, chosen->height() / 2)).toPoint();
+    QTest::mouseClick(&window, Qt::LeftButton, Qt::NoModifier, centre);
+    QTest::qWait(50);
+    QVERIFY(chosen->property("checked").toBool());
+    chosen->forceActiveFocus();
+    QTest::keyClick(&window, Qt::Key_Space);
+    QTest::qWait(50);
+    QVERIFY(chosen->property("checked").toBool());
+    QCOMPARE(appearance.accent(), QStringLiteral("violet"));
+    // A mouse click on another accent chooses it.
+    QQuickItem* rose = findItem(content, QStringLiteral("accent_rose"));
+    QTest::mouseClick(&window, Qt::LeftButton, Qt::NoModifier,
+                      rose->mapToScene(QPointF(rose->width() / 2, rose->height() / 2)).toPoint());
+    QTRY_COMPARE(appearance.accent(), QStringLiteral("rose"));
+    QVERIFY(rose->property("checked").toBool());
+    QVERIFY(!chosen->property("checked").toBool());
+    click("accent_violet");
+    QTRY_VERIFY(chosen->property("checked").toBool());
     QCOMPARE(findItem(content, QStringLiteral("accentNameLabel"))->property("text").toString(), QStringLiteral("Violet"));
     QCOMPARE(settings.value(QStringLiteral("appearance/theme")).toString(), QStringLiteral("dark"));
     QCOMPARE(settings.value(QStringLiteral("appearance/accent")).toString(), QStringLiteral("violet"));

@@ -201,21 +201,13 @@ int main(int argc, char *argv[])
     // exists. Development: --color-scheme light|dark and --accent <id> show
     // the window that way instead, and then the choice is neither read nor
     // stored (screenshots never change the user's appearance).
-    const auto option = [&args](const char* name) {
-        const qsizetype at = args.indexOf(QLatin1String(name));
-        return at >= 0 && at + 1 < args.size() ? args.at(at + 1) : QString();
-    };
-    const QString schemeOption = option("--color-scheme");
-    const QString accentOption = option("--accent");
-    const bool appearanceOverride = !schemeOption.isEmpty() || !accentOption.isEmpty();
-    mbl::presentation::Appearance appearance(appearanceOverride ? nullptr : &settings);
-    if (schemeOption == QLatin1String("dark"))
-        appearance.setTheme(mbl::presentation::Appearance::Dark);
-    else if (schemeOption == QLatin1String("light"))
-        appearance.setTheme(mbl::presentation::Appearance::Light);
-    if (!accentOption.isEmpty())
-        appearance.setAccent(accentOption);
-    mbl::presentation::Appearance::setInstance(&appearance);
+    QString appearanceWarning;
+    const std::unique_ptr<mbl::presentation::Appearance> appearance =
+        mbl::presentation::Appearance::fromArguments(settings, args, &appearanceWarning);
+    // Printed like the other development output (a GUI-subsystem exe: redirect to see it).
+    if (!appearanceWarning.isEmpty())
+        QTextStream(stdout) << "warning=" << appearanceWarning << Qt::endl;
+    mbl::presentation::Appearance::setInstance(appearance.get());
 
     // Composition root: the library session, its SDK extractor and its window.
     mbl::presentation::LibraryController library;

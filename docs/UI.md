@@ -49,7 +49,7 @@ The window uses the **FluentWinUI3** style (Qt 6.8+), set in `qtquickcontrols2.c
 
 **Selected rows:**
 - Lists use the style's own selection: a subtle fill and an accent bar. The text keeps its colour, and views never use `palette.highlightedText`, which would be white on light grey under Fluent.
-- The contents tree draws its current row the same way, with `selectedFill` and an accent bar.
+- The contents tree draws its current row itself, with `selectedFill` (a faint accent tint) and an accent bar. Its fill is therefore slightly coloured, where the lists' Fluent fill is neutral grey; both have the accent bar.
 
 **Panes:** the `SplitView`'s handle is a thin `divider` line with a 7 px grab area. It turns into a 3 px accent line on hover or drag. Fusion's own handle is a thick bar.
 
@@ -71,16 +71,17 @@ Inspired by [repo-watch](https://github.com/PantaKoda/repo-watch)'s Appearance s
   - **Theme** sets `QStyleHints::setColorScheme` (System unsets it), which Fluent and `Theme.dark` follow.
   - **Accents:** Lapis blue (default), Teal, Violet, Rose, Graphite, and Windows accent (the system palette's, updated when Windows changes it). Each preset has a light-scheme colour that carries Fluent's white accent-button text and a dark-scheme colour that carries its black text, both at 4.5:1 or more, and 3:1 on the window as a selection bar. No preset uses the status hues (red, green, amber).
   - **Stored** in QSettings, `appearance/theme` (`system`, `light`, `dark`) and `appearance/accent`. Only known values are honoured; a hand-edited one falls back to the default, as repo-watch does.
-  - **One instance:** `main.cpp` owns it and registers it with `setInstance` before the engine loads; QML's `create()` returns it. The class has no default constructor, so QML never makes its own. Without an instance (tests), each engine gets one that stores nothing.
-  - **Development:** `--color-scheme` and `--accent <id>` show the window that way; with either, the stored choice is neither read nor written.
-- **`AppearanceDialog.qml`** (`qml/theme/`), from the toolbar's round **Appearance** button (a ring and dot in the accent): the theme as three radio buttons in a row, the accents as colour dots (a ring marks the chosen one, a ring in the text colour marks keyboard focus, the name is in the tooltip and under the dots). Choices apply at once.
+  - **One instance:** `main.cpp` makes it with `Appearance::fromArguments` and registers it with `setInstance` before the engine loads; QML's `create()` returns it. The class has no default constructor, so QML never makes its own. Without an instance (tests), each engine gets one that stores nothing. Only the registered instance watches for a change of Windows' accent (one application event filter).
+  - **Development:** `--color-scheme` and `--accent <id>` show the window that way; with either, the stored choice is neither read nor written. An unknown accent id prints `warning=unknown --accent …` with the valid ids.
+  - **`accents` changes only with Windows' accent,** not with the choice, so the dialog's swatches are not rebuilt on every click.
+- **`AppearanceDialog.qml`** (`qml/theme/`), from the toolbar's round **Appearance** button (a ring and dot in the accent): the theme as three radio buttons in a row, the accents as colour dots (a ring marks the chosen one, a ring in the text colour marks keyboard focus, the name is in the tooltip and under the dots). The dots are not checkable buttons: the choice alone decides the ring, so clicking the chosen dot again keeps it chosen. Assistive technology reads them as radio buttons, checked for the chosen one. Choices apply at once.
 - **Where the accent shows:** selection bars (lists, the contents tree, tabs), the contents tree's selected row (`selectedFill`), focus and checked controls, the two main actions as accent buttons (**Import PDFs…**, **Read**), and a light tint on the toolbar, the status bar (`barTint`) and the sidebar (`paneTint`).
 
 | Before (Windows' grey accent) | Light, Lapis blue (default) | Dark, Violet | Dark, Teal | Appearance dialog |
 | --- | --- | --- | --- | --- |
 | ![Before](images/ui-accent-before.png) | ![Light, Lapis blue](images/ui-accent-light-lapis.png) | ![Dark, Violet](images/ui-accent-dark-violet.png) | ![Dark, Teal](images/ui-accent-dark-teal.png) | ![Appearance dialog](images/ui-appearance-dialog.png) |
 
-**`tst_appearance`** checks the presets' contrast, that choices are stored and applied to the colour scheme, that unknown stored values fall back, that nothing is stored without a QSettings, and the real dialog (offscreen). The offscreen platform ignores colour-scheme requests, so the scheme itself is asserted only where the platform applies it (`QT_QPA_PLATFORM=windows`).
+**`tst_appearance`** checks the presets' contrast, that choices are stored and applied to the colour scheme, that unknown stored values fall back, that `--color-scheme` and `--accent` neither read nor overwrite the stored choice (and that an unknown id is reported), and the real dialog (offscreen), including a mouse click and Space on the chosen accent. The offscreen platform ignores colour-scheme requests, so the scheme itself is asserted only where the platform applies it (`QT_QPA_PLATFORM=windows`).
 
 **`tst_theme`** checks three things:
 - the text and status colours have at least **4.5:1** contrast (WCAG 2.2 AA) on Fluent's light (`#f3f3f3`) and dark (`#202020`) window, on a card, on a selected row and on the accent-tinted surfaces, for every accent preset;

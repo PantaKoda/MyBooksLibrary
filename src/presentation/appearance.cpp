@@ -63,7 +63,7 @@ QString Appearance::defaultAccent()
 }
 
 Appearance::Appearance(QSettings* settings, QObject* parent)
-    : QObject(parent), m_settings(settings), m_accent(defaultAccent())
+    : QObject(parent), m_settings(settings), m_accent(defaultAccent()), m_systemAccent(systemAccentColor())
 {
     if (m_settings) {
         const QString theme = m_settings->value(themeKey).toString();
@@ -77,14 +77,43 @@ Appearance::Appearance(QSettings* settings, QObject* parent)
     // System leaves the scheme as it is (Windows', or --color-scheme's).
     if (m_theme != System)
         applyTheme();
-    // The system's accent may change while the app runs.
-    if (qApp)
-        qApp->installEventFilter(this);
+}
+
+std::unique_ptr<Appearance> Appearance::fromArguments(QSettings& settings, const QStringList& args, QString* warning)
+{
+    const auto option = [&args](const char* name) {
+        const qsizetype at = args.indexOf(QLatin1String(name));
+        return at >= 0 && at + 1 < args.size() ? args.at(at + 1) : QString();
+    };
+    const QString scheme = option("--color-scheme");
+    const QString accent = option("--accent");
+    const bool override = !scheme.isEmpty() || !accent.isEmpty();
+    auto appearance = std::make_unique<Appearance>(override ? nullptr : &settings);
+    if (scheme == QLatin1String("dark"))
+        appearance->setTheme(Dark);
+    else if (scheme == QLatin1String("light"))
+        appearance->setTheme(Light);
+    if (!accent.isEmpty()) {
+        if (findPreset(accent)) {
+            appearance->setAccent(accent);
+        } else if (warning) {
+            QStringList ids;
+            for (const Preset& preset : presets())
+                ids << preset.id;
+            *warning = QStringLiteral("unknown --accent \"%1\"; use one of: %2").arg(accent, ids.join(QLatin1String(", ")));
+        }
+    }
+    return appearance;
 }
 
 void Appearance::setInstance(Appearance* appearance)
 {
+    if (s_instance && qApp)
+        qApp->removeEventFilter(s_instance);
     s_instance = appearance;
+    // The system's accent may change while the app runs.
+    if (s_instance && qApp)
+        qApp->installEventFilter(s_instance);
 }
 
 Appearance* Appearance::create(QQmlEngine* qmlEngine, QJSEngine* jsEngine)
@@ -150,8 +179,15 @@ QColor Appearance::accentDark() const
 
 bool Appearance::eventFilter(QObject* watched, QEvent* event)
 {
-    if (watched == qApp && event->type() == QEvent::ApplicationPaletteChange)
-        emit accentColorsChanged();  // Only "Windows accent" changes, but the list shows it too.
+    if (watched == qApp && event->type() == QEvent::ApplicationPaletteChange) {
+        // Only "Windows accent" can change, and only if the system's did.
+        if (const QColor system = systemAccentColor(); system != m_systemAccent) {
+            m_systemAccent = system;
+            emit accentsChanged();
+            if (m_accent == QLatin1String(systemAccent))
+                emit accentColorsChanged();
+        }
+    }
     return QObject::eventFilter(watched, event);
 }
 
