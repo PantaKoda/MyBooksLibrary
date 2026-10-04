@@ -24,7 +24,7 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | SDK 0.4.0 update; **v0.3.0** | Merged: [PR #40](https://github.com/PantaKoda/MyBooksLibrary/pull/40) (merge `b6501da`), after CI on `f72e14d`. **v0.3.0** (PRs #39, #40) via the release PR `release/v0.3.0` | `chore/sdk-0.4.0`; `release/v0.3.0` | See "SDK 0.4.0 update" |
 | Themes and accents | Merged: [PR #42](https://github.com/PantaKoda/MyBooksLibrary/pull/42) (merge `9665924`), after review and CI on `6d0ed71` | `feat/ui-themes-accents` | See "Themes and accents" |
 | In-app updates | Merged: [PR #43](https://github.com/PantaKoda/MyBooksLibrary/pull/43) (merge `110d726`), after review and CI on `d65b1f8` | `feat/app-updates` | See "In-app updates" |
-| Uncertain titles: best guess and one-click candidates | AwaitingReview (PR to be linked) | `feat/metadata-title-candidates` | See "Uncertain titles" |
+| Uncertain titles: best guess and one-click candidates | AwaitingReview: [PR #45](https://github.com/PantaKoda/MyBooksLibrary/pull/45) | `feat/metadata-title-candidates` | See "Uncertain titles" |
 | M11 | NotStarted | | |
 
 ## UI overhaul (after v0.1.0)
@@ -156,7 +156,7 @@ Its first run failed twice, rightly: WinUI's light caution `#9d5d00` reaches 4.3
 - **Diagnosis:** the SDK read the book's embedded text in about a second. It found the title as two close candidates and chose neither: "Black Holes, White Dwarfs, and Neutron Stars The Physics of Compact Objects" (score 140) and the same title with the subtitle "THE PHYSICS OF" (131). The contributors were also ambiguous and wrong, which is an SDK matter. The copyright year (2004) and the ISBN were found.
 - **Owner's choice:** "Show best guess + pick".
 
-**Branch:** `feat/metadata-title-candidates`. **Status:** AwaitingReview.
+**Branch:** `feat/metadata-title-candidates`. **Status:** AwaitingReview: [PR #45](https://github.com/PantaKoda/MyBooksLibrary/pull/45). Screenshot: `docs/images/title-candidates.png`.
 
 **Change:** see DECISIONS.md (2026-10-04, "Uncertain titles").
 - `domain`: `MetadataCandidate.title` and `.subtitle`, `titleParts()`, `BookSummary.suggestedTitle`.

@@ -16,7 +16,7 @@ Merged since v0.3.0: #42, #43.
 
 - **Themes and accent colours.** The new round **Appearance** button at the right of the toolbar chooses the theme (as Windows is set, light or dark) and an accent colour: Lapis blue, Teal, Violet, Rose, Graphite or Windows' own. The accent colours selections, the main buttons and a light tint on the bars and sidebar; the choice is kept for the next start. (#42)
 - **Updates from inside the app.** MyBooksLibrary checks its Releases page once a day (or when you choose **Library → Check for updates…**). When a newer version exists, an **Update to X.Y.Z** button shows what is new, and **Install update** downloads it, checks it against the published checksum, and restarts into the new version on the same library. The previous version is kept next to it for going back. See "Updates" in the user guide. (#43)
-- **Uncertain titles are easier to settle.** When a book's title is uncertain, the list shows the most likely title, marked as a best guess, instead of the file name. The book's details list the candidates, each with **Use this**, so one click makes it the title. (#PR)
+- **Uncertain titles are easier to settle.** When a book's title is uncertain, the list shows the most likely title, marked as a best guess, instead of the file name. The book's details list the candidates, each with **Use this**, so one click makes it the title. (#45)
 
 ## Fixed
 
