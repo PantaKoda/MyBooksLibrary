@@ -33,6 +33,10 @@ The repository is `MBL_UPDATE_REPOSITORY` in CMake (default `PantaKoda/MyBooksLi
   - a library, or the updates folder, inside the app's folder (for example the zip unpacked into `%LOCALAPPDATA%\MyBooksLibrary\MyBooksLibrary` itself). Move the app's folder elsewhere first;
   - a folder holding the app that cannot be written (for example under `C:\Program Files` without administrator rights).
 
+![The Updates window with two newer releases](images/updates-dialog.png)
+
+*The Updates window (FluentWinUI3, from `tst_updatecontroller` with `MBL_SCREENSHOT_DIR`): two releases since 0.3.0, their notes as plain text, and Install update.*
+
 ## Security notes
 
 - **The checksum** proves the download is the file published with the release, and **HTTPS** from GitHub proves it came from GitHub. Neither is a **code signature**: someone able to publish a release on the repository could publish a harmful one. Signing the executable (Authenticode) and signed update metadata remain future work.
