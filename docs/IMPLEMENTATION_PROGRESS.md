@@ -23,7 +23,8 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | Owner's testing after v0.2.0 | Merged: [PR #39](https://github.com/PantaKoda/MyBooksLibrary/pull/39) (merge `5848097`), after the owner's review and CI on `cb19d50` | `fix/inspector-plain-reasons` | See "Plain reasons instead of Why?" |
 | SDK 0.4.0 update; **v0.3.0** | Merged: [PR #40](https://github.com/PantaKoda/MyBooksLibrary/pull/40) (merge `b6501da`), after CI on `f72e14d`. **v0.3.0** (PRs #39, #40) via the release PR `release/v0.3.0` | `chore/sdk-0.4.0`; `release/v0.3.0` | See "SDK 0.4.0 update" |
 | Themes and accents | Merged: [PR #42](https://github.com/PantaKoda/MyBooksLibrary/pull/42) (merge `9665924`), after review and CI on `6d0ed71` | `feat/ui-themes-accents` | See "Themes and accents" |
-| In-app updates | AwaitingReview: [PR #43](https://github.com/PantaKoda/MyBooksLibrary/pull/43) | `feat/app-updates` | See "In-app updates" |
+| In-app updates | Merged: [PR #43](https://github.com/PantaKoda/MyBooksLibrary/pull/43) (merge `110d726`), after review and CI on `d65b1f8` | `feat/app-updates` | See "In-app updates" |
+| Processing activity in the window | AwaitingReview (PR to be linked) | `feat/ui-processing-activity` | See "Processing activity" |
 | M11 | NotStarted | | |
 
 ## UI overhaul (after v0.1.0)
@@ -116,7 +117,7 @@ Its first run failed twice, rightly: WinUI's light caution `#9d5d00` reaches 4.3
 
 **Asked by the owner (2026-10-04):** "a similar release cycle as well. An update button that checks for new releases on github and installs locally in the spirit of" repo-watch's commit fdfe02f.
 
-**Branch:** `feat/app-updates`. **Status:** AwaitingReview: [PR #43](https://github.com/PantaKoda/MyBooksLibrary/pull/43).
+**Branch:** `feat/app-updates`. **Status:** Merged: [PR #43](https://github.com/PantaKoda/MyBooksLibrary/pull/43), merge `110d726` (2026-10-04), after review and CI on the head `d65b1f8`. The owner's copy in `Downloads\MyBooksLibrary-0.3.0-win64\MyBooksLibrary` was replaced by a package of `110d726` (old copy kept beside it as `MyBooksLibrary.0.3.0-original`), so the next release reaches it through the Update button.
 
 **Change:** see docs/UPDATES.md and DECISIONS.md (2026-10-04, "In-app updates").
 - `src/update/` (new, `mbl_update`, Qt Network):
@@ -148,6 +149,20 @@ Its first run failed twice, rightly: WinUI's light caution `#9d5d00` reaches 4.3
 - **Test gap, fixed:** the package's layout and its marker now give two different messages. The online test asserts the marker message, which proves that the real `Compress-Archive` zip unpacks into `MyBooksLibrary\appMyBooksLibrary.exe`. `otherLayoutIsRefused` (new) checks the layout message.
 
 **Remaining:** the first real update can only happen from the release that ships this code (0.4.0) to a later one. Until then, the hand-over is verified by `package.ps1` with the packaged binaries, not by a download from github.com.
+
+### Processing activity (presentation)
+
+**Asked by the owner (2026-10-04):** "when it processes pdfs there is no animation that indicated working on it". Only a small busy indicator in the status bar showed it.
+
+**Branch:** `feat/ui-processing-activity`. **Status:** AwaitingReview.
+
+**Change:**
+- `BookListModel`: an `activity` role (and `activityOf`). It is "running" while a metadata or contents job of the book runs or is being cancelled, "waiting" while one is queued, and "" otherwise (exports and trashed books never count). It changes with the processing state.
+- `BookListView.qml`: each row ends with the indicator: a turning accent arc (running) or a faint still ring (waiting), with a tooltip and an accessible name.
+- `Main.qml`: a 2 px accent bar runs along the bottom of the toolbar while files are imported or jobs are pending (`workBar`).
+- Docs: UI.md, USER_GUIDE.md, `releases/UNRELEASED.md`.
+
+**Tests:** `tst_jobmodels.activityFollowsTheJobs` (queued, running, cancel requested, done, export ignored, and the dataChanged role) and `tst_booklistview.rowsShowTheirActivity` (the real list: waiting rings after import, a spinner once a job runs, none when done; it can save `book-activity.png`).
 
 ## After M10: fixes from the owner's testing
 
