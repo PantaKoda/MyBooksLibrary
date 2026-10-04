@@ -22,7 +22,7 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | UI overhaul; build fix; **v0.2.0** | Merged: [PR #37](https://github.com/PantaKoda/MyBooksLibrary/pull/37) (merge `9968194`, the SDK runtime deployed once), [PR #35](https://github.com/PantaKoda/MyBooksLibrary/pull/35) (merge `03859dc`, release notes), [PR #36](https://github.com/PantaKoda/MyBooksLibrary/pull/36) (merge `c100105`, UI PR 1). **v0.2.0** via the release PR `release/v0.2.0` | `fix/ci-sdk-runtime-deploy-race`; `docs/next-release-notes`; `feat/ui-01-presentation-foundation`; `release/v0.2.0` | See "UI overhaul" |
 | Owner's testing after v0.2.0 | Merged: [PR #39](https://github.com/PantaKoda/MyBooksLibrary/pull/39) (merge `5848097`), after the owner's review and CI on `cb19d50` | `fix/inspector-plain-reasons` | See "Plain reasons instead of Why?" |
 | SDK 0.4.0 update; **v0.3.0** | Merged: [PR #40](https://github.com/PantaKoda/MyBooksLibrary/pull/40) (merge `b6501da`), after CI on `f72e14d`. **v0.3.0** (PRs #39, #40) via the release PR `release/v0.3.0` | `chore/sdk-0.4.0`; `release/v0.3.0` | See "SDK 0.4.0 update" |
-| Themes and accents | AwaitingReview (PR to be linked) | `feat/ui-themes-accents` | See "Themes and accents" |
+| Themes and accents | AwaitingReview: [PR #42](https://github.com/PantaKoda/MyBooksLibrary/pull/42) | `feat/ui-themes-accents` | See "Themes and accents" |
 | M11 | NotStarted | | |
 
 ## UI overhaul (after v0.1.0)
@@ -80,7 +80,7 @@ Its first run failed twice, rightly: WinUI's light caution `#9d5d00` reaches 4.3
 
 **Asked by the owner (2026-10-04):** "the UI is ugly. Take inspiration from https://github.com/PantaKoda/repo-watch to add themes and accents."
 
-**Branch:** `feat/ui-themes-accents`. **Status:** AwaitingReview.
+**Branch:** `feat/ui-themes-accents`. **Status:** AwaitingReview: [PR #42](https://github.com/PantaKoda/MyBooksLibrary/pull/42).
 
 **Before** (`main` at `f7a26e2`, Release, scratch library with the fixtures, Windows platform): Fluent takes Windows' accent, which is dark grey on this machine, so the selection bars, the tab underline and focus were black or grey on flat grey surfaces.
 
@@ -97,7 +97,7 @@ Its first run failed twice, rightly: WinUI's light caution `#9d5d00` reaches 4.3
 - `tst_theme`: text and status colours on every accent-tinted surface, for every preset. Its first runs failed at 8–10% light tints (critical 4.42:1, success 4.38:1 on a selected row); the light tints are now 5%.
 - The offscreen platform ignores colour-scheme requests. `tst_appearance` reports which case applies and asserts the scheme only where it applies; run with `QT_QPA_PLATFORM=windows` locally, all 7 cases passed with the scheme checks included.
 
-**Verification (local, Windows 11, Qt 6.11.2 MSVC 2022, SDK 0.4.0):** see the PR for the `verify.ps1` result on the tested head.
+**Verification (local, Windows 11, Qt 6.11.2 MSVC 2022, SDK 0.4.0):** `pwsh scripts/verify.ps1` (Release) passed: text checks, guard tests, build, 35/35 tests and the smoke checks, on the code of `f17c18f`. Debug not run.
 
 **Screenshots:** `docs/images/ui-accent-light-lapis.png`, `ui-accent-dark-violet.png`, `ui-accent-dark-teal.png` (`--color-scheme`, `--accent`), and `ui-appearance-dialog.png` (`tst_appearance` with `MBL_SCREENSHOT_DIR`, the FluentWinUI3 style and the Windows platform).
 
