@@ -24,7 +24,7 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | SDK 0.4.0 update; **v0.3.0** | Merged: [PR #40](https://github.com/PantaKoda/MyBooksLibrary/pull/40) (merge `b6501da`), after CI on `f72e14d`. **v0.3.0** (PRs #39, #40) via the release PR `release/v0.3.0` | `chore/sdk-0.4.0`; `release/v0.3.0` | See "SDK 0.4.0 update" |
 | Themes and accents | Merged: [PR #42](https://github.com/PantaKoda/MyBooksLibrary/pull/42) (merge `9665924`), after review and CI on `6d0ed71` | `feat/ui-themes-accents` | See "Themes and accents" |
 | In-app updates | Merged: [PR #43](https://github.com/PantaKoda/MyBooksLibrary/pull/43) (merge `110d726`), after review and CI on `d65b1f8` | `feat/app-updates` | See "In-app updates" |
-| Processing activity in the window | AwaitingReview (PR to be linked) | `feat/ui-processing-activity` | See "Processing activity" |
+| Processing activity in the window | AwaitingReview: [PR #44](https://github.com/PantaKoda/MyBooksLibrary/pull/44) | `feat/ui-processing-activity` | See "Processing activity" |
 | M11 | NotStarted | | |
 
 ## UI overhaul (after v0.1.0)
@@ -154,7 +154,7 @@ Its first run failed twice, rightly: WinUI's light caution `#9d5d00` reaches 4.3
 
 **Asked by the owner (2026-10-04):** "when it processes pdfs there is no animation that indicated working on it". Only a small busy indicator in the status bar showed it.
 
-**Branch:** `feat/ui-processing-activity`. **Status:** AwaitingReview.
+**Branch:** `feat/ui-processing-activity`. **Status:** AwaitingReview: [PR #44](https://github.com/PantaKoda/MyBooksLibrary/pull/44). Screenshot: `docs/images/book-activity.png`.
 
 **Change:**
 - `BookListModel`: an `activity` role (and `activityOf`). It is "running" while a metadata or contents job of the book runs or is being cancelled, "waiting" while one is queued, and "" otherwise (exports and trashed books never count). It changes with the processing state.
