@@ -28,6 +28,7 @@ public:
         TitleFromFileNameRole, // True when no title is known yet.
         ContributorsRole,      // Effective contributor names joined for display.
         ProcessingStateRole,   // Plain-language processing state.
+        ActivityRole,          // "running" (a job of this book runs), "waiting" (queued) or "".
         SuggestedTitleRole,    // The best title candidate when the title is uncertain; else "".
     };
 
@@ -55,6 +56,7 @@ public:
 
     QString titleOf(const domain::BookId& id) const;  // Empty when unknown.
     QString processingStateOf(const domain::BookId& id) const;  // Empty when unknown.
+    QString activityOf(const domain::BookId& id) const;         // As ActivityRole.
     Q_INVOKABLE int rowOfBook(const QString& bookId) const;  // -1 when absent.
     Q_INVOKABLE QString bookIdAt(int row) const;
 

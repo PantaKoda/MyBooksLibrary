@@ -39,6 +39,7 @@ ListView {
         required property bool titleFromFileName
         required property string contributors
         required property string processingState
+        required property string activity  // "running", "waiting" or "".
         // An uncertain title's best candidate: shown instead of the file
         // name, and said to be a guess. Never the book's title until chosen.
         required property string suggestedTitle
@@ -50,29 +51,92 @@ ListView {
         onClicked: bookList.currentIndex = index
         onDoubleClicked: bookList.openRequested(row.bookId)
 
-        contentItem: ColumnLayout {
-            spacing: 2
-            Label {
+        contentItem: RowLayout {
+            spacing: Theme.spacingS
+            ColumnLayout {
                 Layout.fillWidth: true
-                objectName: "bookTitle_" + row.index
-                text: row.guessed ? row.suggestedTitle : row.title
-                textFormat: Text.PlainText   // Extracted text is never markup.
-                // The style draws the selection (Fluent: a subtle fill and an
-                // accent bar) and keeps the text colour.
-                font.weight: Theme.headingWeight
-                elide: Text.ElideRight
+                spacing: 2
+                Label {
+                    Layout.fillWidth: true
+                    objectName: "bookTitle_" + row.index
+                    text: row.guessed ? row.suggestedTitle : row.title
+                    textFormat: Text.PlainText   // Extracted text is never markup.
+                    // The style draws the selection (Fluent: a subtle fill and an
+                    // accent bar) and keeps the text colour.
+                    font.weight: Theme.headingWeight
+                    elide: Text.ElideRight
+                }
+                Label {
+                    Layout.fillWidth: true
+                    textFormat: Text.PlainText
+                    text: row.guessed
+                          ? qsTr("Best guess, not confirmed · %1").arg(row.processingState)
+                          : row.titleFromFileName
+                          ? qsTr("From the file name · %1").arg(row.processingState)
+                          : (row.contributors.length > 0 ? row.contributors + " · " + row.processingState
+                                                         : row.processingState)
+                    color: Theme.textSecondary
+                    elide: Text.ElideRight
+                }
             }
-            Label {
-                Layout.fillWidth: true
-                textFormat: Text.PlainText
-                text: row.guessed
-                      ? qsTr("Best guess, not confirmed · %1").arg(row.processingState)
-                      : row.titleFromFileName
-                      ? qsTr("From the file name · %1").arg(row.processingState)
-                      : (row.contributors.length > 0 ? row.contributors + " · " + row.processingState
-                                                     : row.processingState)
-                color: Theme.textSecondary
-                elide: Text.ElideRight
+            // This book's activity: a spinning arc while its title or contents
+            // are being read, a still ring while it waits its turn. Words
+            // (processingState) say the same; this only makes it visible at a glance.
+            Item {
+                objectName: "bookActivity_" + row.index
+                Layout.preferredWidth: 20
+                Layout.preferredHeight: 20
+                Layout.alignment: Qt.AlignVCenter
+                visible: row.activity.length > 0
+                ToolTip.visible: activityHover.hovered
+                ToolTip.delay: 300
+                ToolTip.text: row.activity === "running" ? qsTr("Being processed") : qsTr("Waiting its turn")
+                HoverHandler { id: activityHover }
+                Accessible.role: Accessible.Indicator
+                Accessible.name: ToolTip.text
+
+                // Waiting: a faint ring.
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: 14
+                    height: 14
+                    radius: 7
+                    color: "transparent"
+                    border.width: 2
+                    border.color: Theme.tint(0.45)
+                    visible: row.activity === "waiting"
+                }
+                // Running: an accent arc that turns.
+                Canvas {
+                    id: arc
+                    anchors.centerIn: parent
+                    width: 16
+                    height: 16
+                    visible: row.activity === "running"
+                    readonly property color stroke: Theme.accent
+                    onStrokeChanged: requestPaint()
+                    onPaint: {
+                        const ctx = getContext("2d")
+                        ctx.reset()
+                        ctx.lineWidth = 2
+                        ctx.lineCap = "round"
+                        ctx.strokeStyle = Theme.tint(0.2)
+                        ctx.beginPath()
+                        ctx.arc(width / 2, height / 2, width / 2 - 1.5, 0, 2 * Math.PI)
+                        ctx.stroke()
+                        ctx.strokeStyle = stroke
+                        ctx.beginPath()
+                        ctx.arc(width / 2, height / 2, width / 2 - 1.5, 0, Math.PI * 0.6)
+                        ctx.stroke()
+                    }
+                    RotationAnimator on rotation {
+                        from: 0
+                        to: 360
+                        duration: 900
+                        loops: Animation.Infinite
+                        running: arc.visible
+                    }
+                }
             }
         }
     }

@@ -81,7 +81,9 @@ Every new book is **analyzed automatically in the background**. You can keep wor
 2. **Contents:** the book's printed table of contents is found and read, and each entry is matched to the PDF page where that chapter starts.
    - Some publishers' PDFs leave out the blank pages of the printed book, so the printed page numbers skip ahead at chapter ends. The app then uses the page numbering stored in the PDF (its page labels) and reads the book a second time, which takes about as long again.
 
-**One book at a time.** Books are processed in the order they were added; the **Activity** panel shows which one and how many are waiting.
+**One book at a time.** Books are processed in the order they were added.
+- **You can see it working:** while books are imported or processed, a thin accent bar runs along the bottom of the toolbar. In the book list, the book being processed has a **turning arc** at the right of its row, and books waiting their turn have a **still ring**. Point at either to see what it means.
+- The **Activity** panel shows which book is being processed and how many are waiting.
 - A book with real text takes **seconds to about half a minute**.
 - A **scanned** book, whose pages are pictures, needs OCR (text recognition). That takes **several seconds per page** and up to about **2.5 GB of memory**, so a batch of scanned books can take hours.
 - **If you close the app**, unfinished work continues the next time you open it; nothing is lost.
