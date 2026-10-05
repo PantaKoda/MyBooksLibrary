@@ -19,8 +19,8 @@ runs:
           'QT_VERSION=6.11.2'
           'QT_ARCH=win64_msvc2022_64'
           'AQT_SOURCE=git+https://github.com/miurahr/aqtinstall.git@076e1659807d0b362a3ed684d54c2e9c775eb9c7'
-          'PDFBOOKMARK_SDK_VERSION=0.4.0'
-          'PDFBOOKMARK_SDK_SHA256=cfe9df4eb470b1ac34347e3672982bffa905195b0ac858e5985d4d2d6816577c'
+          'PDFBOOKMARK_SDK_VERSION=0.4.1'
+          'PDFBOOKMARK_SDK_SHA256=a45c25391cf2582e84d5f2c0908674f740ab227c51a787abfb2ea4f5d735ecd2'
         ) | Add-Content -Path $env:GITHUB_ENV -Encoding utf8
 
     - name: Install Qt with Qt PDF
