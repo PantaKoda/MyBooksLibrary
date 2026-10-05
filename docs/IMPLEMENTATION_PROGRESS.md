@@ -25,7 +25,7 @@ One active milestone at a time. Status values: **NotStarted**, **InProgress**, *
 | Themes and accents | Merged: [PR #42](https://github.com/PantaKoda/MyBooksLibrary/pull/42) (merge `9665924`), after review and CI on `6d0ed71` | `feat/ui-themes-accents` | See "Themes and accents" |
 | In-app updates | Merged: [PR #43](https://github.com/PantaKoda/MyBooksLibrary/pull/43) (merge `110d726`), after review and CI on `d65b1f8` | `feat/app-updates` | See "In-app updates" |
 | Processing activity in the window | AwaitingReview: [PR #44](https://github.com/PantaKoda/MyBooksLibrary/pull/44) | `feat/ui-processing-activity` | See "Processing activity" |
-| SDK 0.4.1 update | AwaitingReview (PR to be linked) | `chore/sdk-0.4.1` | See "SDK 0.4.1 update" |
+| SDK 0.4.1 update | AwaitingReview: [PR #46](https://github.com/PantaKoda/MyBooksLibrary/pull/46) | `chore/sdk-0.4.1` | See "SDK 0.4.1 update" |
 | M11 | NotStarted | | |
 
 ## UI overhaul (after v0.1.0)
@@ -169,13 +169,13 @@ Its first run failed twice, rightly: WinUI's light caution `#9d5d00` reaches 4.3
 
 **Asked by the owner (2026-10-05):** "there is a new PDFMegine release. update this project's engine and create a new release".
 
-**Branch:** `chore/sdk-0.4.1`. **Status:** AwaitingReview.
+**Branch:** `chore/sdk-0.4.1`. **Status:** AwaitingReview: [PR #46](https://github.com/PantaKoda/MyBooksLibrary/pull/46).
 
 **The SDK:** PDFMegine `v0.4.1`, PR #14, fixing issue #13 (the owner's `shapiro1983.pdf` and the general patterns behind it). Zip SHA-256 `a45c25391cf2582e84d5f2c0908674f740ab227c51a787abfb2ea4f5d735ecd2`, equal to the release's digest. Installed at `…\Dev\pdfbookmark-sdk\0.4.1` next to the earlier versions. Public headers equal 0.4.0's apart from `version.hpp`; `JSON_FORMATS.md` names the new `policy_id` only.
 
 **Change:** `find_package(pdfbookmark 0.4.1 …)`; CI's pinned version and digest; the CLAUDE.md SDK brief path; AGENTS.md baseline; the scripts' and BUILDING.md's example paths; DECISIONS.md; release notes. No application code.
 
-**Verification:** see the PR.
+**Verification (local, Release, SDK 0.4.1):** `verify.ps1 -Clean` passed (39/39, header and loaded version 0.4.1); `package.ps1 -SkipZip` passed; `shapiro1983.pdf` in a scratch library: title, subtitle, both authors, copyright 1983, 160 contents entries all confirmed (0.4.0: ambiguous title, wrong authors, no contents).
 
 ## After M10: fixes from the owner's testing
 

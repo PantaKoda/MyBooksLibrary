@@ -20,7 +20,7 @@ Merged since v0.3.0: #42, #43.
 
 ## Fixed
 
-- **Better titles, authors, years and contents for reprinted books** (text-recognition engine 0.4.1). Books whose built-in text was itself machine-read when they were published — common for reprints of older books — now get their title and subtitle, every author on the title page, the original copyright year (with the reprint year), and their whole table of contents even when it runs over several pages. Books you already added keep their results until you choose **More → Read title and authors again** or **Analyze contents again**; your corrections are kept. (#PR)
+- **Better titles, authors, years and contents for reprinted books** (text-recognition engine 0.4.1). Books whose built-in text was itself machine-read when they were published — common for reprints of older books — now get their title and subtitle, every author on the title page, the original copyright year (with the reprint year), and their whole table of contents even when it runs over several pages. Books you already added keep their results until you choose **More → Read title and authors again** or **Analyze contents again**; your corrections are kept. (#46)
 
 ## Known limits
 
