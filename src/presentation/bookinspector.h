@@ -92,6 +92,10 @@ public:
     Q_INVOKABLE void setContributors(const QString& bookId, const QVariantList& contributors);
     Q_INVOKABLE void clearField(const QString& bookId, const QString& field);        // Deliberately empty.
     Q_INVOKABLE void useDocumentValue(const QString& bookId, const QString& field);  // Remove the correction.
+    // Saves title candidate `index` (of the title field's `candidates`) as the
+    // correction of the title, and of the subtitle when the candidate has one.
+    // Only for the shown book: a stale index is refused with correctionError.
+    Q_INVOKABLE void useTitleCandidate(const QString& bookId, int index);
     Q_INVOKABLE void dismissCorrectionError() { setCorrectionError({}); }
 
     // Contents edits of the shown book, by entry key (TocTreeModel's
@@ -166,6 +170,7 @@ private:
 
     std::shared_ptr<catalog::Library> m_library;
     std::optional<domain::BookId> m_book;
+    QList<domain::MetadataCandidate> m_titleCandidates;  // Of the shown book, as offered.
     quint64 m_generation = 0;  // Tags loads; only the newest is applied.
     bool m_loading = false;
     std::optional<domain::RunId> m_shownTocRun;            // The contents shown: run and edited revision.

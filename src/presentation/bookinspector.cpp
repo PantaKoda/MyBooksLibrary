@@ -113,6 +113,8 @@ QVariantMap field(const FieldView& v, const EffectiveMetadata& m, bool extracted
     // correction; a found value's reasons stay with its evidence, on request.
     QString note;
     QString detailsLabel;
+    QVariantList candidates;  // Title only: {index, title, subtitle, reasons}.
+    bool offerCandidates = false;
     if (detail) {
         evidence = evidenceLines(detail->evidence);
         if (extracted && v.status != FieldStatus::Resolved)
@@ -136,6 +138,20 @@ QVariantMap field(const FieldView& v, const EffectiveMetadata& m, bool extracted
             detailsLabel = tr("Show candidates (%1)").arg(detail->alternatives.size());
         else if (!evidence.isEmpty())
             detailsLabel = tr("Show evidence");
+        // Title candidates can be used as they are, in one click; offered at
+        // once while the title is uncertain and not corrected.
+        if (v.field == MetadataField::Title) {
+            for (qsizetype i = 0; i < detail->alternatives.size() && i < kShown; ++i) {
+                const MetadataCandidate& c = detail->alternatives.at(i);
+                const auto [title, subtitle] = titleParts(c);
+                candidates << QVariantMap{{QStringLiteral("index"), int(i)},
+                                          {QStringLiteral("title"), title},
+                                          {QStringLiteral("subtitle"), subtitle},
+                                          {QStringLiteral("reasons"), c.reasons.join(QStringLiteral("; "))}};
+            }
+            offerCandidates = !candidates.isEmpty() && v.status == FieldStatus::Ambiguous
+                              && v.source == ValueSource::None;
+        }
     }
     // The editor starts from the value shown (nothing when cleared or absent).
     QString editText;
@@ -163,7 +179,9 @@ QVariantMap field(const FieldView& v, const EffectiveMetadata& m, bool extracted
                        {QStringLiteral("editText"), editText},
                        {QStringLiteral("editContributors"), editContributors},
                        {QStringLiteral("evidence"), evidence},
-                       {QStringLiteral("alternatives"), alternatives}};
+                       {QStringLiteral("alternatives"), alternatives},
+                       {QStringLiteral("candidates"), candidates},
+                       {QStringLiteral("offerCandidates"), offerCandidates}};
 }
 
 const MetadataFieldDetail* detailOf(const QList<MetadataFieldDetail>& details, MetadataField f)
@@ -358,6 +376,8 @@ void BookInspector::apply(const Loaded& result)
         return FieldView{f, label, value, source, status(statusMember), d.overrides[f].mode, documentValue(f)};
     };
     // Title and subtitle share one extracted status and one set of evidence.
+    const MetadataFieldDetail* titleDetail = detailOf(result.fieldDetails, MetadataField::Title);
+    m_titleCandidates = titleDetail ? titleDetail->alternatives : QList<MetadataCandidate>();
     m_metadataFields = {
         field(view(MetadataField::Title, tr("Title"), m.title.value_or(QString()), m.titleSource,
                    &ExtractedMetadata::titleStatus),
@@ -727,6 +747,23 @@ void BookInspector::useDocumentValue(const QString& bookId, const QString& field
     save(bookId, field, MetadataOverride::automatic());
 }
 
+void BookInspector::useTitleCandidate(const QString& bookId, int index)
+{
+    const BookId book = BookId::fromString(bookId);
+    if (!m_book || *m_book != book || index < 0 || index >= m_titleCandidates.size()) {
+        setCorrectionError(tr("That candidate is no longer shown; choose again."));
+        return;
+    }
+    const auto [title, subtitle] = titleParts(m_titleCandidates.at(index));
+    if (title.trimmed().isEmpty()) {
+        setCorrectionError(tr("That candidate has no title to use."));
+        return;
+    }
+    save(bookId, toCode(MetadataField::Title), MetadataOverride::withText(title.trimmed()));
+    if (!subtitle.trimmed().isEmpty())
+        save(bookId, toCode(MetadataField::Subtitle), MetadataOverride::withText(subtitle.trimmed()));
+}
+
 void BookInspector::save(const QString& bookId, const QString& fieldCode, const MetadataOverride& value)
 {
     const BookId book = BookId::fromString(bookId);
@@ -767,6 +804,7 @@ void BookInspector::setCorrectionError(const QString& error)
 
 void BookInspector::clear()
 {
+    m_titleCandidates.clear();
     m_title.clear();
     m_fileText.clear();
     m_inTrash = false;

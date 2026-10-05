@@ -119,7 +119,16 @@ ExtractedMetadata normalizeMetadata(const pm::MetadataResult& r, QList<MetadataF
 
     if (details) {
         details->clear();
-        *details << detail(MetadataField::Title, r.title) << detail(MetadataField::Contributors, r.contributors)
+        MetadataFieldDetail title = detail(MetadataField::Title, r.title);
+        // Title candidates keep their title and subtitle apart, so one can be
+        // chosen as a correction as it was read.
+        for (qsizetype i = 0; i < title.alternatives.size() && i < qsizetype(r.title.alternatives.size()); ++i) {
+            const pm::TitleValue& v = r.title.alternatives.at(std::size_t(i)).value;
+            title.alternatives[i].title = text(v.title);
+            if (v.subtitle)
+                title.alternatives[i].subtitle = text(*v.subtitle);
+        }
+        *details << title << detail(MetadataField::Contributors, r.contributors)
                  << detail(MetadataField::Edition, r.edition)
                  << detail(MetadataField::PublicationYear, r.publication_year)
                  << detail(MetadataField::CopyrightYear, r.copyright_year);

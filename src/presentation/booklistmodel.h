@@ -29,6 +29,7 @@ public:
         ContributorsRole,      // Effective contributor names joined for display.
         ProcessingStateRole,   // Plain-language processing state.
         ActivityRole,          // "running" (a job of this book runs), "waiting" (queued) or "".
+        SuggestedTitleRole,    // The best title candidate when the title is uncertain; else "".
     };
 
     explicit BookListModel(QObject* parent = nullptr);

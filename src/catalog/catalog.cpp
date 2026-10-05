@@ -1,6 +1,7 @@
 #include "catalog/catalog.h"
 
 #include "catalog/catalog_internal.h"
+#include "catalog/jobs.h"
 #include "search/searchindex.h"
 
 #include <QDateTime>
@@ -393,6 +394,19 @@ Result<Computed> compute(QSqlDatabase& db, const BookRow& row)
             s.tocEntryCount += e.removed ? 0 : 1;
     }
     s.trashedAt = row.trashedAt;
+    // An uncertain title with no correction: the strongest candidate, shown
+    // as a guess (the list says so). A cleared title stays cleared.
+    if (s.displayTitleFromFileName && row.activeMetadataRun && s.extractedTitleStatus == FieldStatus::Ambiguous
+        && s.metadata.titleSource != ValueSource::Cleared) {
+        if (auto details = metadataDetails(db, *row.activeMetadataRun)) {
+            for (const MetadataFieldDetail& d : details.value()) {
+                if (d.field == MetadataField::Title && !d.alternatives.isEmpty()) {
+                    s.suggestedTitle = titleParts(d.alternatives.first()).first.trimmed();
+                    break;
+                }
+            }
+        }
+    }
     s.tocEdited = c.tocRevision.has_value();
     s.tocNeedsReconciliation = c.tocRevision && c.tocRevision->needsReconciliation;
     return c;
