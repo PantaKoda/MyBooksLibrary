@@ -729,3 +729,13 @@ Significant changes, newest last. Each entry lists **Change / Why / Assumptions*
   - **Not a code signature:** the checksum and HTTPS prove the file is the one published on GitHub, not who built it. Authenticode signing remains future work, as in repo-watch.
   - **0.3.0 and earlier cannot update themselves.** Their users replace the folder once by hand; the release notes and the user guide say so.
 - **Verified:** See IMPLEMENTATION_PROGRESS.md, "In-app updates".
+
+## 2026-10-05 — pdfbookmark SDK 0.4.1
+
+- **Change:** the SDK baseline is 0.4.1 (PDFMegine `v0.4.1`, PR #14, fixing issue #13). `find_package(pdfbookmark 0.4.1 …)`; CI pins 0.4.1 and its SHA-256 (`a45c2539…5d735ecd2`, equal to the release's digest); the CLAUDE.md SDK brief path, AGENTS.md baseline and the scripts' examples name 0.4.1.
+- **Why:** the owner asked for the new engine release. 0.4.1 is the fix for the owner's `shapiro1983.pdf` and the patterns behind it (issue #13): a title read as rival candidates, title-page authors read line by line, "©" exported as "0", and one contents split around a sparse page. PDFMegine reports more resolved entries on its 84-book corpus too.
+- **Assumptions:**
+  - **0.4.1, not 0.4:** the package's version rule accepts any version at or above the one asked for, so `0.4` would still build against the 0.4.0 SDK and ship the old rules. Asking for 0.4.1 makes a stale SDK folder fail at configure instead.
+  - **No code change:** the public headers equal 0.4.0's apart from `version.hpp`; JSON members are unchanged (only `policy_id` values: `s6-document-metadata-v3`, `s2-toc-detection-v3`, `s3-toc-parsing-v3`, `s4-page-mapping-v4`). Stored reports from 0.4.0 stay readable; the app keeps the raw JSON.
+  - **Existing books keep their results** until analysed again (More → read title and authors / contents again). A new SDK does not rerun anything by itself, so a user's corrections and results never change behind their back.
+- **Verified:** See IMPLEMENTATION_PROGRESS.md, "SDK 0.4.1 update".

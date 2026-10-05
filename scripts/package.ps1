@@ -39,7 +39,7 @@
     5. build\package\MyBooksLibrary-<version>-win64.zip (unless -SkipZip).
 
 .EXAMPLE
-    pwsh scripts/package.ps1 -SdkDir C:\Dev\pdfbookmark-sdk\0.4.0
+    pwsh scripts/package.ps1 -SdkDir C:\Dev\pdfbookmark-sdk\0.4.1
 #>
 [CmdletBinding()]
 param(

@@ -19,7 +19,7 @@ Configuration fails with a clear message when neither is set. A nonempty cached 
 
 ## Switching SDK versions
 
-Install each SDK version in its own folder (for example `…\pdfbookmark-sdk\0.4.0\`) instead of overwriting the old one, so you can switch back. Then:
+Install each SDK version in its own folder (for example `…\pdfbookmark-sdk\0.4.1\`) instead of overwriting the old one, so you can switch back. Then:
 
 1. Point `PDFBOOKMARK_SDK` at the new folder. In an existing build folder, pass `-DPDFBOOKMARK_SDK=…` again, or change it under Qt Creator's **Projects → Build → CMake → Current Configuration** and run CMake.
 2. **Rebuild from clean**: delete the build folder, or use Qt Creator's **Build → Clear CMake Configuration** and then **Rebuild All**. The C++ API passes option structs by value, and its binary interface is not guaranteed between versions (0.2.0 changed the option structs' size). Objects compiled against older headers must not be linked with the new DLL.
@@ -98,7 +98,7 @@ On this Windows setup, the Qt Test plain-text logger prints nothing to a console
 It finds MSVC itself (through `vswhere`/`vcvars64` when `cl.exe` is not on `PATH`), along with CMake and Ninja (Qt's `Tools` folder or Visual Studio's). It prints the verified commit and exits 0 only if every step passed.
 
 ```powershell
-pwsh scripts/verify.ps1 -SdkDir C:\Dev\pdfbookmark-sdk\0.4.0              # Release, build\verify-release
+pwsh scripts/verify.ps1 -SdkDir C:\Dev\pdfbookmark-sdk\0.4.1              # Release, build\verify-release
 pwsh scripts/verify.ps1 -Configuration Debug -Clean                        # SDK from PDFBOOKMARK_SDK
 ```
 
@@ -109,7 +109,7 @@ pwsh scripts/verify.ps1 -Configuration Debug -Clean                        # SDK
 ## Windows package (`scripts/package.ps1`)
 
 ```powershell
-pwsh scripts/package.ps1 -SdkDir C:\Dev\pdfbookmark-sdk\0.4.0
+pwsh scripts/package.ps1 -SdkDir C:\Dev\pdfbookmark-sdk\0.4.1
 ```
 
 Qt's licence text comes from a pinned copy in `third_party/licenses/` (see its README), because CI's Qt has no `Licenses` folder; `-QtLicenseFile` overrides it. The OCR models' licence (PaddleOCR, Apache-2.0) comes from the SDK, which ships it since 0.4.0 ([PantaKoda/PDFMegine#6](https://github.com/PantaKoda/PDFMegine/issues/6)); the script refuses to package the models without it.

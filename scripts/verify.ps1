@@ -11,7 +11,7 @@
     PR head.
 
 .EXAMPLE
-    pwsh scripts/verify.ps1 -SdkDir C:\Dev\pdfbookmark-sdk\0.4.0
+    pwsh scripts/verify.ps1 -SdkDir C:\Dev\pdfbookmark-sdk\0.4.1
 .EXAMPLE
     pwsh scripts/verify.ps1 -Configuration Debug -Clean
 
