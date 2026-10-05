@@ -1,7 +1,8 @@
 // Presentation: the real BookListView.qml, offscreen, with a LibraryController
 // on imported fixtures. When the selected book leaves the list (moved to
 // Trash, another view), the list's selection and the inspector must still
-// show the same book (or none): rows change without a model reset.
+// show the same book (or none): rows change without a model reset. Each row
+// shows its book's activity: a spinner while processed, a ring while waiting.
 #include "presentation/bookinspector.h"
 #include "presentation/booklistmodel.h"
 #include "presentation/librarycontroller.h"
@@ -34,6 +35,7 @@ class TestBookListView : public QObject {
 
 private slots:
     void selectionAndInspectorStayTogether();
+    void rowsShowTheirActivity();
 };
 
 void TestBookListView::selectionAndInspectorStayTogether()
@@ -98,6 +100,81 @@ void TestBookListView::selectionAndInspectorStayTogether()
     list->setProperty("currentIndex", 1);
     QTest::qWait(100);
     QCOMPARE(inspector->bookId(), middle);
+}
+
+QQuickItem* findItem(QQuickItem* root, const QString& name)
+{
+    if (!root)
+        return nullptr;
+    if (root->objectName() == name)
+        return root;
+    for (QQuickItem* child : root->childItems()) {
+        if (QQuickItem* found = findItem(child, name))
+            return found;
+    }
+    return nullptr;
+}
+
+void TestBookListView::rowsShowTheirActivity()
+{
+    QTemporaryDir dir;
+    LibraryController controller;  // No processors: every job waits.
+    controller.open(dir.path());
+    QTRY_VERIFY_WITH_TIMEOUT(controller.ready() && !controller.busy(), 10000);
+    controller.importFiles({fixture("title-page.pdf"), fixture("contents-book.pdf")});
+    QTRY_COMPARE_WITH_TIMEOUT(controller.libraryCount(), 2, 20000);
+    QTRY_VERIFY_WITH_TIMEOUT(!controller.busy(), 20000);
+
+    QQmlEngine engine;
+    QQmlComponent component(&engine, QUrl::fromLocalFile(QStringLiteral(MBL_SOURCE_DIR "/qml/library/BookListView.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    QQuickWindow window;
+    window.resize(400, 200);
+    std::unique_ptr<QObject> object(component.createWithInitialProperties(
+        {{QStringLiteral("library"), QVariant::fromValue<QObject*>(&controller)}}));
+    auto* list = qobject_cast<QQuickItem*>(object.get());
+    QVERIFY(list);
+    list->setParentItem(window.contentItem());
+    list->setSize(QSizeF(400, 200));
+    window.show();
+    auto* books = controller.books();
+
+    // Imported, jobs queued: both rows wait.
+    QTRY_VERIFY_WITH_TIMEOUT(findItem(list, QStringLiteral("bookActivity_0")), 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(books->data(books->index(0), mbl::presentation::BookListModel::ActivityRole).toString(),
+                              QStringLiteral("waiting"), 5000);
+    QTRY_VERIFY(findItem(list, QStringLiteral("bookActivity_0"))->isVisible());
+    QTRY_VERIFY(findItem(list, QStringLiteral("bookActivity_1"))->isVisible());
+
+    // The first book's metadata job starts: its row spins.
+    mbl::domain::JobRecord running;
+    running.id = mbl::domain::JobId::create();
+    running.book = mbl::domain::BookId::fromString(books->bookIdAt(0));
+    running.kind = mbl::domain::JobKind::Metadata;
+    running.state = mbl::domain::JobState::Running;
+    running.createdAt = QDateTime::currentDateTimeUtc().addSecs(60);
+    running.updatedAt = running.createdAt;
+    books->updateJob(running);
+    QCOMPARE(books->activityOf(running.book), QStringLiteral("running"));
+    QTRY_VERIFY(findItem(list, QStringLiteral("bookActivity_0"))->isVisible());
+
+    // For the PR: MBL_SCREENSHOT_DIR=<folder> saves the list.
+    if (const QString shots = qEnvironmentVariable("MBL_SCREENSHOT_DIR"); !shots.isEmpty()) {
+        QTest::qWait(400);
+        window.grabWindow().save(QDir(shots).filePath(QStringLiteral("book-activity.png")));
+    }
+
+    // Both jobs done: no indicator.
+    running.state = mbl::domain::JobState::Succeeded;
+    running.updatedAt = running.updatedAt.addSecs(5);
+    books->updateJob(running);
+    mbl::domain::JobRecord contents = running;
+    contents.id = mbl::domain::JobId::create();
+    contents.kind = mbl::domain::JobKind::Toc;
+    contents.state = mbl::domain::JobState::Succeeded;
+    books->updateJob(contents);
+    QTRY_COMPARE_WITH_TIMEOUT(books->activityOf(running.book), QString(), 5000);
+    QTRY_VERIFY(!findItem(list, QStringLiteral("bookActivity_0"))->isVisible());
 }
 
 int main(int argc, char* argv[])

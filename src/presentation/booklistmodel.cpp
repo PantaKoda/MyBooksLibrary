@@ -5,6 +5,8 @@
 #include <QSet>
 #include <QStringList>
 
+#include <optional>
+
 namespace mbl::presentation {
 
 namespace {
@@ -115,6 +117,8 @@ QVariant BookListModel::data(const QModelIndex& index, int role) const
     }
     case ProcessingStateRole:
         return stateOf(book);
+    case ActivityRole:
+        return activityOf(book.id);
     }
     return {};
 }
@@ -127,6 +131,7 @@ QHash<int, QByteArray> BookListModel::roleNames() const
         {TitleFromFileNameRole, "titleFromFileName"},
         {ContributorsRole, "contributors"},
         {ProcessingStateRole, "processingState"},
+        {ActivityRole, "activity"},
     };
 }
 
@@ -209,7 +214,7 @@ void BookListModel::setLatestJobs(const QList<domain::JobRecord>& jobs)
     for (const domain::JobRecord& job : jobs)
         changed = acceptJob(job) || changed;
     if (changed && !m_books.isEmpty())
-        emit dataChanged(index(0), index(int(m_books.size() - 1)), {ProcessingStateRole});
+        emit dataChanged(index(0), index(int(m_books.size() - 1)), {ProcessingStateRole, ActivityRole});
 }
 
 void BookListModel::updateJob(const domain::JobRecord& job)
@@ -222,7 +227,7 @@ void BookListModel::emitStateChanged(const domain::BookId& id)
 {
     for (qsizetype row = 0; row < m_books.size(); ++row) {
         if (m_books.at(row).id == id) {
-            emit dataChanged(index(int(row)), index(int(row)), {ProcessingStateRole});
+            emit dataChanged(index(int(row)), index(int(row)), {ProcessingStateRole, ActivityRole});
             return;
         }
     }
@@ -265,6 +270,28 @@ QString BookListModel::processingStateOf(const domain::BookId& id) const
 {
     const domain::BookSummary* book = find(id);
     return book ? stateOf(*book) : QString();
+}
+
+QString BookListModel::activityOf(const domain::BookId& id) const
+{
+    using domain::JobState;
+    const domain::BookSummary* book = find(id);
+    if (!book || book->lifecycle == domain::Lifecycle::Trashed)
+        return {};
+    const auto stateOfJob = [](const QHash<domain::BookId, domain::JobRecord>& jobs, const domain::BookId& book) {
+        const auto job = jobs.constFind(book);
+        return job == jobs.cend() ? std::optional<JobState>() : std::optional<JobState>(job->state);
+    };
+    const std::optional<JobState> states[] = {stateOfJob(m_metadataJobs, id), stateOfJob(m_contentsJobs, id)};
+    for (const std::optional<JobState>& state : states) {
+        if (state == JobState::Running || state == JobState::CancelRequested)
+            return QStringLiteral("running");
+    }
+    for (const std::optional<JobState>& state : states) {
+        if (state == JobState::Queued)
+            return QStringLiteral("waiting");
+    }
+    return {};
 }
 
 QString BookListModel::titleOf(const domain::BookId& id) const

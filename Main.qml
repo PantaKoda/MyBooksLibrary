@@ -143,7 +143,9 @@ ApplicationWindow {
     }
 
     header: ToolBar {
-        // Tinted with the accent, with a divider below.
+        // Tinted with the accent, with a divider below. While books are
+        // imported or processed, an accent bar runs along the divider: the
+        // whole window shows that work is going on, not only the status bar.
         background: Rectangle {
             color: Qt.tint(window.palette.window, Theme.barTint)
             Rectangle {
@@ -151,6 +153,31 @@ ApplicationWindow {
                 width: parent.width
                 height: 1
                 color: Theme.divider
+            }
+            Item {
+                id: workBar
+                objectName: "workBar"
+                anchors.bottom: parent.bottom
+                width: parent.width
+                height: 2
+                clip: true
+                visible: !window.closeRequested
+                         && (window.library.importing || (window.library.processingAvailable
+                                                          && window.library.jobs.pendingCount > 0))
+                Rectangle {
+                    id: workRun
+                    width: workBar.width * 0.3
+                    height: parent.height
+                    radius: 1
+                    color: Theme.accent
+                    XAnimator on x {
+                        from: -workRun.width
+                        to: workBar.width
+                        duration: 1400
+                        loops: Animation.Infinite
+                        running: workBar.visible
+                    }
+                }
             }
         }
         RowLayout {

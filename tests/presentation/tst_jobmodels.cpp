@@ -1,10 +1,13 @@
 // Presentation: export jobs in the job queue and the book list. Writing a
 // bookmarked copy is its own kind of work: it has its own words in the queue,
 // is asked for again with a destination rather than retried, and never
-// changes a book's metadata or contents state in the list.
+// changes a book's metadata or contents state in the list. And a book's
+// activity (the row's spinner): running while a job of it runs, waiting
+// while one is queued, nothing otherwise.
 #include "presentation/booklistmodel.h"
 #include "presentation/joblistmodel.h"
 
+#include <QSignalSpy>
 #include <QTest>
 #include <QTimeZone>
 
@@ -35,6 +38,7 @@ class TestJobModels : public QObject {
 private slots:
     void exportsHaveTheirOwnWordsInTheQueue();
     void exportsDoNotChangeTheBookList();
+    void activityFollowsTheJobs();
 };
 
 void TestJobModels::exportsHaveTheirOwnWordsInTheQueue()
@@ -87,6 +91,45 @@ void TestJobModels::exportsDoNotChangeTheBookList()
     QCOMPARE(books.processingStateOf(summary.id), before);
     books.setLatestJobs({jobOf(summary.id, JobKind::Export, JobState::Failed, 20)});
     QCOMPARE(books.processingStateOf(summary.id), before);
+}
+
+void TestJobModels::activityFollowsTheJobs()
+{
+    BookSummary summary;
+    summary.id = BookId::create();
+    summary.displayTitle = QStringLiteral("Neutron Stars");
+    BookListModel books;
+    books.setBooks({summary});
+    const QModelIndex row = books.index(0);
+    const auto activity = [&] { return books.data(row, BookListModel::ActivityRole).toString(); };
+    QCOMPARE(activity(), QString());
+    QCOMPARE(books.roleNames().value(BookListModel::ActivityRole), QByteArray("activity"));
+
+    // Both jobs queued: waiting.
+    books.setLatestJobs({jobOf(summary.id, JobKind::Metadata, JobState::Queued, 0),
+                         jobOf(summary.id, JobKind::Toc, JobState::Queued, 0)});
+    QCOMPARE(activity(), QStringLiteral("waiting"));
+    // One running: running, and the row says it changed.
+    JobRecord metadata = jobOf(summary.id, JobKind::Metadata, JobState::Running, 1);
+    QSignalSpy changed(&books, &BookListModel::dataChanged);
+    books.updateJob(metadata);
+    QCOMPARE(activity(), QStringLiteral("running"));
+    QCOMPARE(changed.size(), 1);
+    QVERIFY(changed.first().at(2).value<QList<int>>().contains(BookListModel::ActivityRole));
+    // Metadata done, contents still queued: waiting again.
+    metadata.state = JobState::Succeeded;
+    metadata.updatedAt = metadata.updatedAt.addSecs(5);
+    books.updateJob(metadata);
+    QCOMPARE(activity(), QStringLiteral("waiting"));
+    // A cancel being honoured still runs.
+    books.updateJob(jobOf(summary.id, JobKind::Toc, JobState::CancelRequested, 10));
+    QCOMPARE(activity(), QStringLiteral("running"));
+    // All finished, or only an export running: nothing.
+    books.updateJob(jobOf(summary.id, JobKind::Toc, JobState::Failed, 20));
+    QCOMPARE(activity(), QString());
+    books.updateJob(jobOf(summary.id, JobKind::Export, JobState::Running, 30));
+    QCOMPARE(activity(), QString());
+    QCOMPARE(books.activityOf(summary.id), QString());
 }
 
 QTEST_GUILESS_MAIN(TestJobModels)
